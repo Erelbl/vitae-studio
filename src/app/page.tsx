@@ -1,24 +1,30 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export default function LandingPage() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
   async function handleStartOrder() {
-    const res = await fetch("/api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        person_name: "",
-        person_gender: "male",
-      }),
-    });
+    setLoading(true);
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ person_name: "", person_gender: "male" }),
+      });
 
-    if (res.ok) {
-      const { id } = await res.json();
-      router.push(`/order/${id}/questionnaire`);
+      if (res.ok) {
+        const { id, access_token } = await res.json();
+        // Persist token for this order so it survives navigation
+        sessionStorage.setItem(`token:${id}`, access_token);
+        router.push(`/order/${id}/questionnaire?token=${access_token}`);
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -38,8 +44,9 @@ export default function LandingPage() {
           size="lg"
           className="text-lg px-8 py-6"
           onClick={handleStartOrder}
+          disabled={loading}
         >
-          התחילו את האלבום שלכם
+          {loading ? "טוען..." : "התחילו את האלבום שלכם"}
         </Button>
       </section>
 
