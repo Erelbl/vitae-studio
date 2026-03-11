@@ -12,7 +12,9 @@ const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   generating_text: ["text_ready", "error_generation"],
   text_ready: ["generating_illustrations"],
   generating_illustrations: ["preview_ready", "error_generation"],
-  preview_ready: ["admin_review"],
+  // Admin can publish directly from preview_ready (skipping explicit review step)
+  // or after marking as admin_review first.
+  preview_ready: ["admin_review", "approved"],
   admin_review: ["approved", "revision_requested"],
   revision_requested: [
     "generating_text",

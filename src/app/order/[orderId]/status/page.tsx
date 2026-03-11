@@ -1,6 +1,14 @@
+import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
 import type { OrderStatus } from "@/types/order";
+
+// Customer can only view the album after admin explicitly publishes (approves) it.
+const CUSTOMER_PREVIEW_VISIBLE_STATUSES: OrderStatus[] = [
+  "approved",
+  "generating_pdf",
+  "delivered",
+];
 
 const CUSTOMER_STEPS: { statuses: OrderStatus[]; label: string; desc: string }[] = [
   {
@@ -172,6 +180,19 @@ export default async function StatusPage({
           })}
         </div>
       </div>
+
+      {/* Preview CTA — only shown after admin publishes the album */}
+      {CUSTOMER_PREVIEW_VISIBLE_STATUSES.includes(currentStatus) && (
+        <div className="mb-5 rounded-2xl border border-primary/30 bg-primary/5 p-6 text-center">
+          <p className="mb-4 text-base font-medium">האלבום שלכם מוכן לצפייה!</p>
+          <Link
+            href={`/order/${orderId}/preview?token=${token}`}
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-accent"
+          >
+            צפו באלבום
+          </Link>
+        </div>
+      )}
 
       {/* Contact footer */}
       <div className="rounded-xl border border-border/50 bg-secondary/40 px-5 py-4 text-center text-sm text-muted-foreground">

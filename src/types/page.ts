@@ -74,6 +74,28 @@ export interface PageVersion {
   created_by: VersionCreatedBy;
 }
 
+export const TEXT_POSITIONS = ["top", "bottom", "overlay"] as const;
+export type TextPosition = (typeof TEXT_POSITIONS)[number];
+
+/** Slim read model for the customer album preview */
+export interface PreviewPage {
+  id: string;
+  page_number: number;
+  page_type: PageType;
+  text_content: string | null;
+  /** Pre-resolved signed URL. null when illustration is pending or unavailable. */
+  image_url: string | null;
+  /** Where the text sits relative to the illustration. Defaults to "top" if omitted. */
+  text_position?: TextPosition;
+}
+
+export interface PreviewData {
+  personName: string;
+  pages: PreviewPage[];
+  /** true when real pages do not exist yet and mock data is shown */
+  isMock: boolean;
+}
+
 export interface GenerationSettings {
   id: string;
   order_id: string | null;

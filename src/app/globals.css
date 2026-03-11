@@ -2,6 +2,15 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Album-only font — applied exclusively to album page text, never to UI */
+@font-face {
+  font-family: "YardenAlbum";
+  src: url("/fonts/album/yarden-regular-alefalefalef-3.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -36,10 +36,20 @@ export async function middleware(request: NextRequest) {
 
   // Protect admin routes
   if (request.nextUrl.pathname.startsWith("/admin")) {
+    const isLoginPage = request.nextUrl.pathname === "/admin/login";
+
     if (!user) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/admin/login";
-      if (request.nextUrl.pathname !== "/admin/login") {
+      if (!isLoginPage) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/admin/login";
+        return NextResponse.redirect(url);
+      }
+    } else {
+      // Require role = "admin" in app_metadata (set server-side via Supabase service role)
+      const isAdmin = user.app_metadata?.role === "admin";
+      if (!isAdmin && !isLoginPage) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/admin/login";
         return NextResponse.redirect(url);
       }
     }
