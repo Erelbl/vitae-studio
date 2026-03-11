@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,17 +12,6 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // If the admin is already authenticated (e.g. navigated directly to /admin/login),
-  // redirect them to the dashboard immediately without waiting for middleware.
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        window.location.href = "/admin";
-      }
-    });
-  }, []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -42,8 +31,8 @@ export default function AdminLoginPage() {
     }
 
     // Hard navigation so the browser sends the new session cookies to the server.
-    // Using router.push() + router.refresh() causes a race where refresh() re-renders
-    // the current page in-place and the navigation never actually completes.
+    // router.push() + router.refresh() causes a race where refresh() re-renders
+    // the current page in-place and the navigation never completes.
     window.location.href = "/admin";
   }
 
