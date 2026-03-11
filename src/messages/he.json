@@ -1,0 +1,123 @@
+{
+  "common": {
+    "appName": "Vitae Studio",
+    "loading": "טוען...",
+    "error": "שגיאה",
+    "save": "שמירה",
+    "cancel": "ביטול",
+    "next": "הבא",
+    "previous": "הקודם",
+    "submit": "שליחה",
+    "delete": "מחיקה",
+    "edit": "עריכה",
+    "back": "חזרה",
+    "close": "סגירה",
+    "confirm": "אישור",
+    "yes": "כן",
+    "no": "לא"
+  },
+  "landing": {
+    "hero": {
+      "title": "סיפור חיים בחרוזים",
+      "subtitle": "אלבום מאויר אישי ומרגש - מתנה שלא תשכח",
+      "cta": "התחילו את האלבום שלכם"
+    },
+    "features": {
+      "questionnaire": "ספרו לנו על סיפור החיים",
+      "photos": "העלו תמונות אמיתיות",
+      "illustrations": "נהפוך אותן לאיורי צבעי מים",
+      "album": "קבלו אלבום מודפס מרגש"
+    }
+  },
+  "questionnaire": {
+    "title": "ספרו לנו על {name}",
+    "steps": {
+      "about": "על האדם",
+      "childhood": "ילדות",
+      "youth": "נעורים והשכלה",
+      "career": "קריירה וחיים",
+      "family": "משפחה",
+      "character": "אופי וערכים",
+      "special": "בקשות מיוחדות",
+      "buyer": "פרטי המזמין"
+    },
+    "fields": {
+      "personName": "שם מלא",
+      "birthDate": "תאריך לידה",
+      "birthCity": "עיר לידה",
+      "gender": "מגדר",
+      "male": "זכר",
+      "female": "נקבה",
+      "relationship": "קשר למזמין",
+      "childhoodCity": "עיר מגורים בילדות",
+      "siblings": "אחים ואחיות",
+      "childhoodMemories": "זיכרונות ילדות",
+      "childhoodHobbies": "תחביבי ילדות",
+      "schools": "בתי ספר",
+      "militaryService": "שירות צבאי",
+      "formativeExperiences": "חוויות מעצבות",
+      "profession": "מקצוע",
+      "achievements": "הישגים",
+      "passions": "תשוקות",
+      "definingMoments": "רגעים מכוננים",
+      "partner": "בן/בת זוג",
+      "children": "ילדים",
+      "grandchildren": "נכדים",
+      "familyTraditions": "מסורות משפחתיות",
+      "personalityTraits": "תכונות אופי",
+      "favoriteSayings": "אמרות אהובות",
+      "knownFor": "ידוע/ה בזכות",
+      "dedications": "הקדשות",
+      "specificEvents": "אירועים ספציפיים לכלול",
+      "tonePreference": "סגנון מועדף",
+      "humorous": "הומוריסטי",
+      "emotional": "רגשי",
+      "mixed": "משולב",
+      "buyerName": "שם המזמין",
+      "buyerEmail": "אימייל",
+      "buyerPhone": "טלפון",
+      "occasion": "אירוע",
+      "birthday": "יום הולדת",
+      "retirement": "פרישה",
+      "memorial": "הנצחה",
+      "anniversary": "יום נישואים",
+      "other": "אחר"
+    }
+  },
+  "photos": {
+    "title": "העלו תמונות",
+    "subtitle": "העלו תמונות מתקופות שונות בחיים - לפחות 10, עד 40",
+    "dragAndDrop": "גררו תמונות לכאן או לחצו להעלאה",
+    "uploading": "מעלה...",
+    "minPhotos": "נדרשות לפחות {min} תמונות",
+    "maxPhotos": "ניתן להעלות עד {max} תמונות",
+    "submitPhotos": "סיימתי להעלות"
+  },
+  "status": {
+    "title": "האלבום שלכם בהכנה",
+    "generatingText": "כותבים את הסיפור שלכם בחרוזים...",
+    "generatingIllustrations": "מציירים את הזיכרונות שלכם בצבעי מים...",
+    "illustrationProgress": "{completed} מתוך {total} איורים מוכנים",
+    "previewReady": "האלבום מוכן לתצוגה מקדימה!",
+    "viewPreview": "צפו באלבום"
+  },
+  "preview": {
+    "title": "תצוגה מקדימה",
+    "pageOf": "עמוד {current} מתוך {total}"
+  },
+  "admin": {
+    "title": "ניהול",
+    "orders": "הזמנות",
+    "orderDetail": "פרטי הזמנה",
+    "approve": "אישור",
+    "reject": "דחייה",
+    "regenerateText": "יצירת טקסט מחדש",
+    "regenerateIllustration": "יצירת איור מחדש",
+    "exportPdf": "ייצוא PDF",
+    "markPaid": "סמן כשולם",
+    "markDelivered": "סמן כנמסר",
+    "login": "כניסה",
+    "email": "אימייל",
+    "password": "סיסמה"
+  }
+}

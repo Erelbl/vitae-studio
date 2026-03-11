@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vitae Studio
 
-## Getting Started
+Premium web application for creating personalized "life story in rhymes" illustrated albums. Hebrew-first.
 
-First, run the development server:
+Customers fill a questionnaire about a person's life → AI asks targeted follow-up questions → customer uploads real photos → system generates Hebrew rhyming story + watercolor illustrations → admin reviews with version history → printable PDF exported.
+
+## Tech Stack
+
+- **Frontend/Backend**: Next.js 16 (App Router), TypeScript, Tailwind CSS v4, shadcn/ui
+- **Database & Auth**: Supabase (Postgres, Storage, Auth, Realtime)
+- **AI**: Claude API (story generation, follow-up questions), Gemini API (image stylization)
+- **PDF**: @react-pdf/renderer
+- **Email**: Resend
+- **Hosting**: Vercel
+
+## Prerequisites
+
+- Node.js 20+
+- npm
+- Supabase CLI (`npm install -g supabase`)
+- A Supabase project (or local Supabase via `supabase start`)
+
+## Setup
 
 ```bash
+# Clone and install
+npm install
+
+# Copy environment variables
+cp .env.example .env.local
+# Fill in your Supabase and API keys in .env.local
+
+# Start local Supabase (optional, for local development)
+supabase start
+supabase db push
+
+# Generate database types
+npx supabase gen types typescript --local > src/lib/supabase/types.ts
+
+# Start dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Available Scripts
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `npm run dev` — Start development server (with Turbopack)
+- `npm run build` — Build for production
+- `npm run start` — Start production server
+- `npm run lint` — Run ESLint
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Structure
 
-## Learn More
+```
+src/
+├── app/          # Pages and API routes
+├── components/   # React components by domain
+├── services/     # AI provider services (story, illustration, followup, pdf, email)
+├── lib/          # Shared utilities (supabase, validation, state machine, access tokens)
+├── hooks/        # React hooks
+├── types/        # TypeScript types
+├── i18n/         # Internationalization config
+└── messages/     # i18n translation files (he.json, en.json)
+supabase/
+├── migrations/   # Database migrations
+└── functions/    # Edge Functions (future)
+docs/             # Architecture documentation
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Architecture
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+See [docs/architecture.md](docs/architecture.md) for the full technical architecture document, including:
+- Data model with versioning and prompt tracking
+- Order state machine
+- Privacy model for customer preview links
+- Service abstraction design for AI providers
+- Background job strategy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## License
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Private — All rights reserved.
