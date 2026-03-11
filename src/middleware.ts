@@ -47,9 +47,17 @@ export async function middleware(request: NextRequest) {
     } else {
       // Require role = "admin" in app_metadata (set server-side via Supabase service role)
       const isAdmin = user.app_metadata?.role === "admin";
-      if (!isAdmin && !isLoginPage) {
+      if (!isAdmin) {
+        // Authenticated but not admin — always send to login
+        if (!isLoginPage) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/admin/login";
+          return NextResponse.redirect(url);
+        }
+      } else if (isLoginPage) {
+        // Already-authenticated admin visiting login — send to dashboard
         const url = request.nextUrl.clone();
-        url.pathname = "/admin/login";
+        url.pathname = "/admin";
         return NextResponse.redirect(url);
       }
     }

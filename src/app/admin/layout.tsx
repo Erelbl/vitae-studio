@@ -12,9 +12,12 @@ export default async function AdminLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Allow login page without auth
-  // Middleware handles the redirect, but this is a safety net
-  if (!user) {
+  const isAdmin = !!user && user.app_metadata?.role === "admin";
+
+  if (!isAdmin) {
+    // Not authenticated or not admin — render children without shell.
+    // Middleware already blocks non-admin access to all routes except /admin/login,
+    // so children here will always be the login page.
     return <>{children}</>;
   }
 

@@ -32,8 +32,10 @@ export default function AdminLoginPage() {
       return;
     }
 
-    router.push("/admin");
-    router.refresh();
+    // Hard redirect so the browser sends the fresh session cookie to the server.
+    // router.push() + router.refresh() causes a race where refresh() re-renders
+    // the current page in-place and the navigation never completes.
+    window.location.href = "/admin";
   }
 
   return (
