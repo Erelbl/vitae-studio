@@ -72,6 +72,7 @@ export async function generatePageTexts(
   const userMessage = `כתוב שירה עברית מחורזת עבור האלבום של:
 שם: ${profile.subject_name} (${genderLabel})
 טון: ${toneLabel}
+סוג האלבום: ${profile.occasion_context}
 
 פרופיל האדם:
 ${profileSections || "אין פרטים — כתוב שירה חמה וכללית"}
@@ -81,10 +82,11 @@ ${outlineText}
 
 הוראות:
 - כתוב בדיוק ${textPages.length} עמודים: ${pageNumbers}
-- עמוד הקדשה (2): פנייה אישית וחמה למי שמקבל את האלבום
+- עמוד הקדשה (2): פנייה אישית וחמה למי שמקבל את האלבום, עם התייחסות לאירוע (${profile.occasion_context})
 - שאר העמודים: שירה כרונולוגית על חיי ${profile.subject_name}
 - כל עמוד: 2–4 שורות, חרוז ברור, עברית טבעית
-- אל תמציא עובדות
+- השתמש בשמות, מקומות ופרטים ספציפיים מהפרופיל בכל מקום שניתן
+- אל תמציא עובדות שאינן בפרופיל
 
 פורמט תשובה — JSON בלבד:
 [

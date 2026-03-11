@@ -1,21 +1,42 @@
 "use client";
 
 import { useState } from "react";
-import type { PreviewData } from "@/types/page";
+import type { PreviewData, PreviewPage } from "@/types/page";
 import { AlbumPageView } from "./AlbumPageView";
 
 interface AlbumPreviewProps {
   data: PreviewData;
 }
 
-export function AlbumPreview({ data }: AlbumPreviewProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const { pages, personName } = data;
-  const total = pages.length;
-  const currentPage = pages[currentIndex];
+/** Groups a flat page list into consecutive pairs (spreads). */
+function buildSpreads(pages: PreviewPage[]): [PreviewPage, PreviewPage | null][] {
+  const spreads: [PreviewPage, PreviewPage | null][] = [];
+  for (let i = 0; i < pages.length; i += 2) {
+    spreads.push([pages[i], pages[i + 1] ?? null]);
+  }
+  return spreads;
+}
 
-  const goPrev = () => setCurrentIndex((i) => Math.max(0, i - 1));
-  const goNext = () => setCurrentIndex((i) => Math.min(total - 1, i + 1));
+export function AlbumPreview({ data }: AlbumPreviewProps) {
+  const { pages, personName } = data;
+  const spreads = buildSpreads(pages);
+  const totalSpreads = spreads.length;
+
+  const [spreadIndex, setSpreadIndex] = useState(0);
+  const [animKey, setAnimKey] = useState(0);
+
+  function navigate(next: number) {
+    setSpreadIndex(next);
+    setAnimKey((k) => k + 1);
+  }
+
+  const goPrev = () => navigate(Math.max(0, spreadIndex - 1));
+  const goNext = () => navigate(Math.min(totalSpreads - 1, spreadIndex + 1));
+
+  const [rightPage, leftPage] = spreads[spreadIndex];
+  const firstPageNum = rightPage.page_number;
+  const lastPageNum = leftPage?.page_number ?? firstPageNum;
+  const pageLabel = leftPage ? `${firstPageNum}–${lastPageNum}` : `${firstPageNum}`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -26,36 +47,53 @@ export function AlbumPreview({ data }: AlbumPreviewProps) {
         </div>
       )}
 
-      {/* Page */}
-      <div key={currentIndex}>
-        <AlbumPageView page={currentPage} personName={personName} />
+      {/*
+        Two-page spread.
+        In RTL context the grid flows right → left, so col-1 is the right panel
+        and col-2 is the left panel — matching a Hebrew book where odd/lower-numbered
+        pages sit on the right side.
+      */}
+      <div
+        key={animKey}
+        className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
+        style={{ animation: "albumSpreadIn 0.22s ease-out" }}
+      >
+        {/* Right page (first in spread) */}
+        <AlbumPageView page={rightPage} personName={personName} />
+
+        {/* Left page (second in spread) */}
+        {leftPage ? (
+          <AlbumPageView page={leftPage} personName={personName} />
+        ) : (
+          <div className="hidden sm:block" />
+        )}
       </div>
 
       {/* Navigation row */}
       <div className="flex items-center justify-between px-1 pt-1">
-        <NavButton onClick={goPrev} disabled={currentIndex === 0}>
+        <NavButton onClick={goPrev} disabled={spreadIndex === 0}>
           הקודם
         </NavButton>
 
         <span className="text-sm tabular-nums text-muted-foreground select-none">
-          {currentIndex + 1} / {total}
+          עמודים {pageLabel} / {pages.length}
         </span>
 
-        <NavButton onClick={goNext} disabled={currentIndex === total - 1}>
+        <NavButton onClick={goNext} disabled={spreadIndex === totalSpreads - 1}>
           הבא
         </NavButton>
       </div>
 
-      {/* Dot indicators (up to 12 pages) */}
-      {total <= 12 && (
-        <div className="flex justify-center gap-2 pb-2">
-          {pages.map((_, i) => (
+      {/* Spread dot indicators (up to 25 spreads = 50 pages) */}
+      {totalSpreads <= 25 && (
+        <div className="flex justify-center gap-1.5 pb-2 flex-wrap">
+          {spreads.map((_, i) => (
             <button
               key={i}
-              onClick={() => setCurrentIndex(i)}
-              aria-label={`עמוד ${i + 1}`}
+              onClick={() => navigate(i)}
+              aria-label={`פריסה ${i + 1}`}
               className={`h-1.5 rounded-full transition-all duration-200 ${
-                i === currentIndex
+                i === spreadIndex
                   ? "w-5 bg-primary"
                   : "w-1.5 bg-muted-foreground/25 hover:bg-muted-foreground/45"
               }`}
@@ -63,6 +101,13 @@ export function AlbumPreview({ data }: AlbumPreviewProps) {
           ))}
         </div>
       )}
+
+      <style>{`
+        @keyframes albumSpreadIn {
+          from { opacity: 0; transform: translateY(5px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }

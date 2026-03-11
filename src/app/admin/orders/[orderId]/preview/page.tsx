@@ -39,7 +39,7 @@ export default async function AdminOrderPreviewPage({
   const previewData = await loadPreviewData(orderId, personName);
 
   return (
-    <div className="max-w-xl mx-auto py-10 px-4 space-y-6">
+    <div className="max-w-3xl mx-auto py-10 px-4 space-y-6">
       {/* Back + status bar */}
       <div className="flex items-center justify-between">
         <Link

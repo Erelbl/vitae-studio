@@ -34,6 +34,10 @@ export interface StoryGenerationProvider {
 export interface StoryProfile {
   subject_name: string;
   person_gender: "male" | "female";
+  /** e.g. "life_story_birthday", "retirement", "memorial" */
+  album_type: string;
+  /** A framing sentence for the album purpose, e.g. "אלבום יום הולדת — מוגש על ידי הבת" */
+  occasion_context: string;
   birth_background: string;
   childhood_memories: string;
   youth_adolescence: string;

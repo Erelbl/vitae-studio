@@ -1,6 +1,30 @@
 import type { StoryProfile } from "./types";
 import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
 
+const ALBUM_TYPE_LABELS: Record<string, string> = {
+  life_story_birthday: "אלבום יום הולדת",
+  wedding: "אלבום חתונה",
+  anniversary: "אלבום יובל / זוגיות",
+  retirement: "אלבום פרישה לגמלאות",
+  memorial: "אלבום זיכרון",
+  other: "אלבום חיים",
+};
+
+function deriveOccasionContext(
+  albumType: string | undefined,
+  relationship: string | undefined
+): string {
+  const label = ALBUM_TYPE_LABELS[albumType ?? ""] ?? "אלבום חיים";
+  return relationship ? `${label} — מוגש על ידי: ${relationship}` : label;
+}
+
+function deriveTonePreference(albumType: string | undefined): string {
+  if (albumType === "memorial") return "emotional";
+  if (albumType === "wedding" || albumType === "anniversary") return "emotional";
+  if (albumType === "retirement") return "mixed";
+  return "mixed";
+}
+
 /**
  * Converts questionnaire responses + follow-up Q&A into a structured StoryProfile
  * that downstream generators use as context for the album.
@@ -100,6 +124,11 @@ export function buildStoryProfile(
   return {
     subject_name: personName,
     person_gender: personGender,
+    album_type: responses.album_type ?? "life_story_birthday",
+    occasion_context: deriveOccasionContext(
+      responses.album_type,
+      responses.relationship_to_buyer
+    ),
     birth_background: birthBackground,
     childhood_memories: childhoodMemories,
     youth_adolescence: youthAdolescence,
@@ -107,7 +136,7 @@ export function buildStoryProfile(
     family_relationships: familyRelationships,
     personality_traits: personalityTraits,
     emotional_highlights: emotionalHighlights,
-    tone_preference: "mixed",
+    tone_preference: deriveTonePreference(responses.album_type),
     key_anecdotes: followupContext,
   };
 }

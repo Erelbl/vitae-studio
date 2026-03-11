@@ -58,9 +58,12 @@ export async function generateAlbumOutline(
 שם: ${profile.subject_name}
 מין: ${genderLabel}
 טון: ${toneLabel}
+סוג האלבום: ${profile.occasion_context}
 
 פרטי הסיפור:
 ${sections || "אין פרטים — השתמש בתבנית כללית חמה"}
+
+חשוב: ה-description של כל עמוד צריך להתבסס על הפרטים הספציפיים שניתנו לעיל (שמות, מקומות, מקצוע, אירועים). אל תשתמש בתיאורים גנריים כשיש נתונים ספציפיים.
 
 פורמט תשובה — JSON בלבד (ללא הסברים):
 [

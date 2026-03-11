@@ -58,7 +58,7 @@ export default async function PreviewPage({
   const previewData = await loadPreviewData(orderId, personName);
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-10 sm:py-14">
+    <div className="mx-auto max-w-3xl px-4 py-10 sm:py-14">
       {/* Page header */}
       <div className="mb-8 text-center">
         <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold mb-3">
