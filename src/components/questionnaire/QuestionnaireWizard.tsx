@@ -16,14 +16,15 @@ import { StepBuyer } from "./steps/StepBuyer";
 interface Props {
   orderId: string;
   token: string;
+  initialData?: Record<string, unknown>;
 }
 
 const TOTAL_STEPS = 8;
 
-export function QuestionnaireWizard({ orderId, token }: Props) {
+export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props) {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
-  const [allData, setAllData] = useState<Record<string, unknown>>({});
+  const [allData, setAllData] = useState<Record<string, unknown>>(initialData);
   const [submitting, setSubmitting] = useState(false);
 
   async function saveStep(
@@ -76,10 +77,14 @@ export function QuestionnaireWizard({ orderId, token }: Props) {
   };
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-10">
+    <div className="mx-auto max-w-xl px-4 py-8 sm:py-10">
       <WizardProgress currentStep={currentStep} />
 
-      <div key={currentStep}>
+      {/* Form card */}
+      <div
+        key={currentStep}
+        className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-8"
+      >
         {currentStep === 0 && (
           <StepAbout
             defaultValues={allData}

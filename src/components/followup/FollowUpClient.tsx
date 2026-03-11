@@ -43,7 +43,6 @@ export function FollowUpClient({
           }
         } else if (res.status === 409) {
           // Already enrichment_complete — questions were loaded server-side
-          // (shouldn't happen here since needsGeneration=false in that case)
         } else {
           setGenerationError("שגיאה ביצירת השאלות");
         }
@@ -63,14 +62,27 @@ export function FollowUpClient({
     );
   }
 
-  function handleContinue() {
+  async function handleContinue() {
+    // Save answers before navigating (best-effort — never blocks the flow)
+    try {
+      await fetch(`/api/orders/${orderId}/followup?token=${token}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: questions }),
+      });
+    } catch {
+      // Non-blocking
+    }
     router.push(`/order/${orderId}/photos?token=${token}`);
   }
 
   if (generating) {
     return (
-      <div className="mx-auto max-w-xl px-4 py-20 text-center">
-        <p className="text-lg text-muted-foreground">
+      <div className="mx-auto max-w-xl px-4 py-16 text-center sm:py-24">
+        <div className="mx-auto mb-4 h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-1/2 animate-pulse rounded-full bg-primary/50" />
+        </div>
+        <p className="text-sm text-muted-foreground sm:text-base">
           מכינים שאלות המשך מותאמות אישית...
         </p>
       </div>
@@ -78,24 +90,34 @@ export function FollowUpClient({
   }
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-10">
-      <h1 className="mb-2 font-serif text-3xl font-bold">שאלות המשך</h1>
-      <p className="mb-8 text-muted-foreground">
-        על בסיס מה שסיפרתם, הכנו כמה שאלות שיעזרו לנו להכיר טוב יותר.
-        ניתן גם לדלג ולהמשיך.
-      </p>
+    <div className="mx-auto max-w-xl px-4 py-8 sm:py-10">
+
+      {/* Page header */}
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl font-semibold sm:text-3xl">שאלות המשך</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
+          על בסיס מה שסיפרתם, הכנו כמה שאלות שיעזרו לנו להכיר טוב יותר.
+          כל התשובות אופציונליות — ניתן לדלג ולהמשיך.
+        </p>
+      </div>
 
       {generationError && (
-        <p className="mb-6 rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+        <div className="mb-6 rounded-xl border border-border/50 bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           לא הצלחנו לייצר שאלות הפעם — תוכלו להמשיך ישירות להעלאת תמונות.
-        </p>
+        </div>
       )}
 
       {questions.length > 0 ? (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {questions.map((qa, i) => (
-            <div key={i} className="space-y-2">
-              <Label htmlFor={`q-${i}`} className="text-base font-medium">
+            <div
+              key={i}
+              className="rounded-xl border border-border/60 bg-card p-5 shadow-sm"
+            >
+              <Label
+                htmlFor={`q-${i}`}
+                className="mb-3 block text-sm font-medium leading-relaxed text-foreground"
+              >
                 {qa.question}
               </Label>
               <Textarea
@@ -104,18 +126,24 @@ export function FollowUpClient({
                 onChange={(e) => handleAnswerChange(i, e.target.value)}
                 placeholder="תשובתכם כאן (אופציונלי)..."
                 rows={3}
+                className="resize-none"
               />
             </div>
           ))}
         </div>
       ) : (
-        <div className="rounded-md bg-muted px-4 py-8 text-center text-muted-foreground">
+        <div className="rounded-xl border border-border/50 bg-muted/40 px-4 py-10 text-center text-sm text-muted-foreground">
           אין שאלות המשך כרגע.
         </div>
       )}
 
-      <div className="mt-8 flex justify-start">
-        <Button onClick={handleContinue}>המשיכו להעלאת תמונות</Button>
+      <div className="mt-8">
+        <Button
+          onClick={handleContinue}
+          className="w-full rounded-full sm:w-auto sm:px-8"
+        >
+          המשיכו להעלאת תמונות
+        </Button>
       </div>
     </div>
   );

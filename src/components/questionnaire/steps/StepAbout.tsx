@@ -101,8 +101,8 @@ export function StepAbout({ defaultValues, onSubmit }: Props) {
         )}
       </div>
 
-      <div className="flex justify-start pt-2">
-        <Button type="submit">הבא</Button>
+      <div className="pt-2">
+        <Button type="submit" className="w-full sm:w-auto">הבא</Button>
       </div>
     </form>
   );

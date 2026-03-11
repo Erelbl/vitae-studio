@@ -148,3 +148,44 @@ export async function POST(
     order_status: "enrichment_complete",
   });
 }
+
+// PATCH /api/orders/[orderId]/followup?token=...
+// Saves the customer's answers to the follow-up questions.
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ orderId: string }> }
+) {
+  const { orderId } = await params;
+  const token = request.nextUrl.searchParams.get("token");
+
+  const supabase = createAdminClient();
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("id, access_token, access_token_expires_at")
+    .eq("id", orderId)
+    .single();
+
+  if (!order) {
+    return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  const tokenResult = validateAccessToken(
+    token,
+    order.access_token as string | null,
+    order.access_token_expires_at as string | null
+  );
+  if (!tokenResult.valid) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await request.json();
+  const answers: FollowUpQA[] = body.answers ?? [];
+
+  await supabase
+    .from("questionnaire_responses")
+    .update({ followup_questions: answers })
+    .eq("order_id", orderId);
+
+  return NextResponse.json({ success: true });
+}

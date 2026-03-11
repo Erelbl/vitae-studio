@@ -107,11 +107,11 @@ export function StepBuyer({ defaultValues, onSubmit, onBack, submitting }: Props
         )}
       </div>
 
-      <div className="flex justify-between pt-2">
-        <Button type="button" variant="outline" onClick={onBack}>
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-between">
+        <Button type="button" variant="outline" onClick={onBack} className="w-full sm:w-auto">
           חזרה
         </Button>
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
           {submitting ? "שומר..." : "סיום השאלון"}
         </Button>
       </div>

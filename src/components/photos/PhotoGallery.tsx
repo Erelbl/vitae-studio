@@ -18,7 +18,7 @@ interface Props {
 }
 
 interface UploadingFile {
-  id: string; // temp id
+  id: string;
   name: string;
   progress: "pending" | "uploading" | "done" | "error";
   preview: string;
@@ -32,7 +32,6 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
   const [completing, setCompleting] = useState(false);
 
   async function uploadFile(file: File, tempId: string) {
-    // 1. Request signed upload URL + create DB record
     const res = await fetch(`/api/orders/${orderId}/photos?token=${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -49,7 +48,6 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
 
     const { photoId, uploadUrl } = await res.json();
 
-    // 2. Upload directly to storage
     const uploadRes = await fetch(uploadUrl, {
       method: "PUT",
       body: file,
@@ -60,7 +58,6 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
       throw new Error("שגיאה בהעלאת הקובץ");
     }
 
-    // 3. Confirm upload
     const confirmRes = await fetch(
       `/api/orders/${orderId}/photos/${photoId}?token=${token}`,
       {
@@ -75,7 +72,6 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
     }
 
     const confirmedPhoto = await confirmRes.json();
-    // Use an object URL for immediate display; signed URL is generated on next page load
     return { ...confirmedPhoto, display_url: URL.createObjectURL(file) } as PhotoWithUrl;
   }
 
@@ -91,7 +87,6 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
 
     setUploading((prev) => [...prev, ...newUploads]);
 
-    // Upload each file
     await Promise.all(
       Array.from(files).map(async (file, i) => {
         const tempId = newUploads[i].id;
@@ -151,21 +146,31 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
   const activeUploads = uploading.filter((u) => u.progress !== "done");
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="mb-2 font-serif text-3xl font-bold">העלאת תמונות</h1>
-      <p className="mb-8 text-muted-foreground">
-        העלו תמונות מתקופות שונות בחיים — לפחות 10, עד 40. ניתן לגרור
-        ולסדר מחדש לאחר ההעלאה.
-      </p>
+    <div className="mx-auto max-w-3xl px-4 py-8 sm:py-10">
 
-      {/* Upload area */}
+      {/* Header */}
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl font-semibold sm:text-3xl">העלאת תמונות</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
+          העלו תמונות מתקופות שונות בחיים — לפחות 10, עד 40.
+          אנחנו נמיין ונשלב אותן בסיפור.
+        </p>
+      </div>
+
+      {/* Upload zone */}
       <div
-        className="mb-6 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-muted-foreground/30 px-8 py-12 text-center transition-colors hover:border-primary/50 hover:bg-muted/30"
+        className="mb-6 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-primary/25 bg-primary/4 px-6 py-10 text-center transition-all hover:border-primary/50 hover:bg-primary/8 sm:px-8 sm:py-12"
         onClick={() => inputRef.current?.click()}
       >
-        <div className="text-4xl text-muted-foreground">+</div>
-        <p className="text-base font-medium">גררו תמונות לכאן או לחצו להוספה</p>
-        <p className="text-sm text-muted-foreground">PNG, JPG, WEBP עד 20MB לתמונה</p>
+        <div className="flex h-14 w-14 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-2xl text-primary">
+          +
+        </div>
+        <div>
+          <p className="text-sm font-medium sm:text-base">גררו תמונות לכאן או לחצו להוספה</p>
+          <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+            PNG, JPG, WEBP · עד 20MB לתמונה
+          </p>
+        </div>
         <input
           ref={inputRef}
           type="file"
@@ -176,21 +181,21 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
         />
       </div>
 
-      {/* Uploading in progress */}
+      {/* Upload progress rows */}
       {activeUploads.length > 0 && (
         <div className="mb-6 space-y-2">
           {activeUploads.map((u) => (
             <div
               key={u.id}
-              className="flex items-center gap-3 rounded-md bg-muted px-3 py-2 text-sm"
+              className="flex items-center gap-3 rounded-xl border border-border/50 bg-card px-3 py-2.5 text-sm shadow-sm"
             >
               <img
                 src={u.preview}
                 alt=""
-                className="h-10 w-10 rounded object-cover"
+                className="h-10 w-10 rounded-lg object-cover"
               />
-              <span className="flex-1 truncate">{u.name}</span>
-              <span className="text-muted-foreground">
+              <span className="flex-1 truncate text-sm">{u.name}</span>
+              <span className={`text-xs ${u.progress === "error" ? "text-destructive" : "text-muted-foreground"}`}>
                 {u.progress === "uploading" ? "מעלה..." : "שגיאה"}
               </span>
             </div>
@@ -200,17 +205,17 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
 
       {/* Photo grid */}
       {photos.length > 0 && (
-        <div className="mb-8 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+        <div className="mb-8 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5">
           {photos.map((photo) => (
             <div key={photo.id} className="group relative aspect-square">
               {photo.display_url ? (
                 <img
                   src={photo.display_url}
                   alt={photo.original_filename}
-                  className="h-full w-full rounded-md object-cover"
+                  className="h-full w-full rounded-xl object-cover shadow-sm"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
+                <div className="flex h-full w-full items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
                   {photo.original_filename}
                 </div>
               )}
@@ -224,7 +229,7 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
               )}
               <button
                 onClick={() => handleDelete(photo.id)}
-                className="absolute end-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs group-hover:flex"
+                className="absolute end-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-foreground/70 text-background text-xs opacity-70 transition-opacity hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                 aria-label="מחק תמונה"
               >
                 ✕
@@ -235,18 +240,28 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
       )}
 
       {photos.length === 0 && activeUploads.length === 0 && (
-        <div className="mb-8 rounded-md bg-muted px-4 py-8 text-center text-muted-foreground">
+        <div className="mb-8 rounded-xl border border-border/50 bg-muted/40 px-4 py-10 text-center text-sm text-muted-foreground">
           עדיין לא הועלו תמונות
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
-          {photos.length} תמונות הועלו
-        </span>
+      {/* Footer bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/50 bg-card px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-foreground">{photos.length}</span>
+          <span className="text-sm text-muted-foreground">
+            {photos.length === 1 ? "תמונה הועלתה" : "תמונות הועלו"}
+          </span>
+          {photos.length > 0 && photos.length < 10 && (
+            <span className="text-xs text-muted-foreground/70">
+              (מינימום 10)
+            </span>
+          )}
+        </div>
         <Button
           onClick={handleComplete}
           disabled={completing || photos.length === 0}
+          className="w-full rounded-full sm:w-auto sm:px-8"
         >
           {completing ? "שומר..." : "סיימתי להעלות"}
         </Button>

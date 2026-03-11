@@ -70,11 +70,11 @@ export function StepCareer({ defaultValues, onSubmit, onBack }: Props) {
         />
       </div>
 
-      <div className="flex justify-between pt-2">
-        <Button type="button" variant="outline" onClick={onBack}>
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-between">
+        <Button type="button" variant="outline" onClick={onBack} className="w-full sm:w-auto">
           חזרה
         </Button>
-        <Button type="submit">הבא</Button>
+        <Button type="submit" className="w-full sm:w-auto">הבא</Button>
       </div>
     </form>
   );

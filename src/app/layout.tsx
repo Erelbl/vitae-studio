@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
-import { Frank_Ruhl_Libre, Heebo } from "next/font/google";
+import { Assistant } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-const frankRuhl = Frank_Ruhl_Libre({
-  variable: "--font-frank-ruhl",
+const assistant = Assistant({
+  variable: "--font-assistant",
   subsets: ["hebrew", "latin"],
-  weight: ["400", "700"],
-});
-
-const heebo = Heebo({
-  variable: "--font-heebo",
-  subsets: ["hebrew", "latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -26,9 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl">
-      <body
-        className={`${heebo.variable} ${frankRuhl.variable} font-sans antialiased`}
-      >
+      <body className={`${assistant.variable} font-sans antialiased`}>
         {children}
         <Toaster />
       </body>
