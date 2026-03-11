@@ -136,6 +136,11 @@ export default async function AdminOrderDetailPage({
             צפייה בטיוטה הפנימית
           </Button>
         </Link>
+        <Link href={`/admin/orders/${orderId}/draft-text`}>
+          <Button variant="ghost" size="sm">
+            צפייה בטקסט שנוצר
+          </Button>
+        </Link>
         {canPublish && (
           <PublishButton orderId={orderId} />
         )}

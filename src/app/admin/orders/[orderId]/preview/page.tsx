@@ -41,14 +41,22 @@ export default async function AdminOrderPreviewPage({
   return (
     <div className="max-w-3xl mx-auto py-10 px-4 space-y-6">
       {/* Back + status bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <Link
           href={`/admin/orders/${orderId}`}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           ← חזרה לפרטי הזמנה
         </Link>
-        <Badge variant="secondary">{STATUS_LABELS[currentStatus] || currentStatus}</Badge>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/admin/orders/${orderId}/draft-text`}
+            className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2"
+          >
+            צפייה בטקסט שנוצר
+          </Link>
+          <Badge variant="secondary">{STATUS_LABELS[currentStatus] || currentStatus}</Badge>
+        </div>
       </div>
 
       {/* Internal notice */}

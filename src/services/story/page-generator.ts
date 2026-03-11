@@ -4,17 +4,24 @@ import type { GenerationSettings } from "@/types/page";
 
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
-const DEFAULT_SYSTEM_PROMPT = `אתה משורר עברי המתמחה ביצירת ספרי חיים מחורזים לאוכלוסייה הרחבה.
-עבור כל עמוד, כתוב 2–4 שורות שירה עברית רגשית ואישית.
+const DEFAULT_SYSTEM_PROMPT = `אתה משורר עברי המתמחה ביצירת אלבומי חיים אישיים ומחורזים.
 
-כללי כתיבה:
-- בדיוק 2–4 שורות לכל עמוד
+## כלל ראשון: פרסונליזציה היא המטרה
+כל עמוד שיש לו נתונים ספציפיים בפרופיל — חייב לכלול פרטים אמיתיים מהחיים (שמות, עיר, מקצוע, שמות בני משפחה, אנקדוטה ספציפית).
+שיר גנרי שיכול להתאים לכל אדם הוא כישלון. המטרה היא שהאדם יקרא ויכיר את עצמו.
+כשיש פרט ספציפי בגיליון העובדות — השתמש בו. עדיף לציין שם עיר, שם קרוב, או מאפיין אישי ממשי.
+
+## כלל שני: דיוק
+אל תמציא עובדות שאינן בגיליון העובדות.
+אם אין מידע על שלב חיים מסוים — כתוב בצורה כללית אך חמה לאותו שלב.
+אם יש ציטוט או אמרה אופיינית בפרופיל — שקול לשלב אותה ישירות.
+
+## כלל שלישי: שירה
+- 2–4 שורות לכל עמוד
 - חריזה ברורה (לפחות השורה האחרונה חורזת עם אחת מקודמותיה)
 - עברית טבעית, חמה ונגישה — לא ארכאית ולא פשטנית
 - הימנע מחרוז מאולץ: עדיף חרוז חלקי טבעי על פני חרוז מלאכותי
-- אל תמציא עובדות שאינן בפרופיל
 - הימנע מחזרת ביטויים זהים בין עמודים
-- טון: מתאים למה שביקש המזמין
 - כל עמוד עומד בפני עצמו אך יוצר יחד רצף רגשי אחד
 
 החזר JSON בלבד: מערך של אובייקטים עם page_number ו-text_content.`;
@@ -48,17 +55,35 @@ export async function generatePageTexts(
       ? "רגשי"
       : "מאוזן";
 
-  const profileSections = [
-    profile.birth_background && `לידה: ${profile.birth_background}`,
-    profile.childhood_memories && `ילדות: ${profile.childhood_memories}`,
-    profile.youth_adolescence && `נעורים: ${profile.youth_adolescence}`,
-    profile.career_achievements && `קריירה: ${profile.career_achievements}`,
-    profile.family_relationships && `משפחה: ${profile.family_relationships}`,
-    profile.personality_traits && `אופי: ${profile.personality_traits}`,
-    profile.key_anecdotes && `פרטים מיוחדים:\n${profile.key_anecdotes}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  // Build a structured fact-sheet from profile — each section labeled clearly
+  const factLines: string[] = [];
+  if (profile.birth_background)
+    factLines.push(`• רקע ותחילת הדרך: ${profile.birth_background}`);
+  if (profile.childhood_memories)
+    factLines.push(`• ילדות ושורשים: ${profile.childhood_memories}`);
+  if (profile.youth_adolescence)
+    factLines.push(`• נעורים ומיקומים: ${profile.youth_adolescence}`);
+  if (profile.career_achievements)
+    factLines.push(`• מקצוע והישגים: ${profile.career_achievements}`);
+  if (profile.family_relationships)
+    factLines.push(`• משפחה ואהבה: ${profile.family_relationships}`);
+  if (profile.personality_traits)
+    factLines.push(`• אופי ותכונות: ${profile.personality_traits}`);
+  if (profile.emotional_highlights)
+    factLines.push(`• רגעים מיוחדים, ערכים וברכה:\n${profile.emotional_highlights}`);
+
+  const factSheet = factLines.length > 0
+    ? factLines.join("\n\n")
+    : null;
+
+  // Warn if profile is very thin — admin should see this in server logs
+  const hasRichProfile = factLines.length >= 3;
+  if (!hasRichProfile) {
+    console.warn(
+      `[page-generator] Thin profile for subject "${profile.subject_name}": ` +
+        `only ${factLines.length} non-empty sections. Story will be generic.`
+    );
+  }
 
   const outlineText = textPages
     .map(
@@ -69,24 +94,34 @@ export async function generatePageTexts(
 
   const pageNumbers = textPages.map((p) => p.page_number).join(", ");
 
-  const userMessage = `כתוב שירה עברית מחורזת עבור האלבום של:
-שם: ${profile.subject_name} (${genderLabel})
-טון: ${toneLabel}
+  const factSheetBlock = factSheet
+    ? factSheet
+    : "⚠️ השאלון לא מולא — כתוב שירה חמה וכללית בלבד (אין פרטים אישיים זמינים)";
+
+  const userMessage = `כתוב שירה עברית מחורזת ואישית עבור האלבום של ${profile.subject_name} (${genderLabel}).
 סוג האלבום: ${profile.occasion_context}
+טון מבוקש: ${toneLabel}
 
-פרופיל האדם:
-${profileSections || "אין פרטים — כתוב שירה חמה וכללית"}
+━━━ גיליון עובדות — השתמש בפרטים אלה בשיר ━━━
+${factSheetBlock}
 
-תוכנית העמודים:
+━━━ תוכנית עמודים ━━━
 ${outlineText}
 
-הוראות:
-- כתוב בדיוק ${textPages.length} עמודים: ${pageNumbers}
-- עמוד הקדשה (2): פנייה אישית וחמה למי שמקבל את האלבום, עם התייחסות לאירוע (${profile.occasion_context})
-- שאר העמודים: שירה כרונולוגית על חיי ${profile.subject_name}
-- כל עמוד: 2–4 שורות, חרוז ברור, עברית טבעית
-- השתמש בשמות, מקומות ופרטים ספציפיים מהפרופיל בכל מקום שניתן
-- אל תמציא עובדות שאינן בפרופיל
+━━━ הוראות ━━━
+כתוב בדיוק ${textPages.length} עמודים: ${pageNumbers}
+
+לכל עמוד תוכן — חפש בגיליון העובדות פרטים הקשורים לשלב החיים שלו:
+  • עמוד על ילדות → הזכר עיר ילדות / שמות הורים / אחים / זיכרון ספציפי מהגיליון
+  • עמוד על נעורים/צבא/לימודים → הזכר מקומות / חוויה ספציפית מהגיליון
+  • עמוד על קריירה → הזכר מקצוע / תכונות בעבודה / הישג ספציפי מהגיליון
+  • עמוד על משפחה/זוגיות → הזכר שם בן/בת הזוג / שמות ילדים / סיפור הפגישה מהגיליון
+  • עמוד על אופי → הזכר תכונה בולטת / תחביב / אמרה אופיינית מהגיליון
+  • עמוד על ערכים/ברכה → השתמש ישירות ב-"ערכים", "גאוות גדולה", "איחול" מהגיליון
+
+עמוד 2 (הקדשה): פנייה ישירה אל ${profile.subject_name}, הזכרת האירוע (${profile.occasion_context}), חיבוק חמה.
+לא להמציא עובדות שאינן בגיליון.
+שיר גנרי שיכול להתאים לכל אדם — אינו מקובל. כל עמוד חייב לשקף את ${profile.subject_name} ספציפית.
 
 פורמט תשובה — JSON בלבד:
 [
@@ -150,5 +185,7 @@ function parsePageTexts(
 }
 
 function buildPlaceholder(pageNumber: number, lifeStage: string): string {
-  return `כאן יופיע שיר על ${lifeStage}.\nעמוד ${pageNumber} בסיפור חייך.`;
+  // Prefixed with ⚠️ so admins can instantly spot un-generated pages in the draft-text view
+  console.warn(`[page-generator] Placeholder used for page ${pageNumber} (${lifeStage}) — Claude did not return text for this page`);
+  return `⚠️ [עמוד ${pageNumber} — ${lifeStage}]\nהטקסט לא נוצר. יש להפעיל מחדש את יצירת הסיפור.`;
 }

@@ -31,7 +31,7 @@ export async function generateAlbumOutline(
   const modelId = settings?.model_id ?? DEFAULT_MODEL;
   const systemPrompt = settings?.system_prompt ?? DEFAULT_SYSTEM_PROMPT;
   const temperature = settings?.temperature ?? 0.8;
-  const maxTokens = settings?.max_tokens ?? 3000;
+  const maxTokens = settings?.max_tokens ?? 4096;
 
   const genderLabel = profile.person_gender === "female" ? "אישה" : "גבר";
   const toneLabel =
