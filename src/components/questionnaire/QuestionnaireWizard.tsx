@@ -4,14 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { WizardProgress } from "./WizardProgress";
-import { StepAbout } from "./steps/StepAbout";
-import { StepChildhood } from "./steps/StepChildhood";
-import { StepYouth } from "./steps/StepYouth";
-import { StepCareer } from "./steps/StepCareer";
-import { StepFamily } from "./steps/StepFamily";
-import { StepCharacter } from "./steps/StepCharacter";
-import { StepSpecial } from "./steps/StepSpecial";
-import { StepBuyer } from "./steps/StepBuyer";
+import { Step1Introduction } from "./steps/Step1Introduction";
+import { Step2ChildhoodRoots } from "./steps/Step2ChildhoodRoots";
+import { Step3Milestones } from "./steps/Step3Milestones";
+import { Step4FamilyLove } from "./steps/Step4FamilyLove";
+import { Step5Personality } from "./steps/Step5Personality";
+import { Step6SpecialMoments } from "./steps/Step6SpecialMoments";
+import { Step7Legacy } from "./steps/Step7Legacy";
+import { Step8Blessing } from "./steps/Step8Blessing";
+import { Step9BuyerDetails } from "./steps/Step9BuyerDetails";
 
 interface Props {
   orderId: string;
@@ -19,7 +20,7 @@ interface Props {
   initialData?: Record<string, unknown>;
 }
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
 
 export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props) {
   const router = useRouter();
@@ -68,8 +69,6 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
     setCurrentStep((s) => s - 1);
   }
 
-  // Each step receives the accumulated data as defaultValues so navigating
-  // back shows previously entered values.
   const stepProps = {
     defaultValues: allData,
     onSubmit: handleStepSubmit,
@@ -78,6 +77,15 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
 
   return (
     <div className="mx-auto max-w-xl px-4 py-8 sm:py-10">
+      {/* Intro notice – visible on first step */}
+      {currentStep === 0 && (
+        <div className="mb-5 rounded-xl border border-border/50 bg-muted/40 px-4 py-3 text-sm text-muted-foreground leading-relaxed">
+          השאלון כולל מספר שאלות חובה וכמה שאלות רשות.
+          <br />
+          ככל שתשתפו יותר פרטים – כך נוכל ליצור סיפור אישי ומרגש יותר.
+        </div>
+      )}
+
       <WizardProgress currentStep={currentStep} />
 
       {/* Form card */}
@@ -86,19 +94,20 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
         className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-8"
       >
         {currentStep === 0 && (
-          <StepAbout
+          <Step1Introduction
             defaultValues={allData}
             onSubmit={handleStepSubmit}
           />
         )}
-        {currentStep === 1 && <StepChildhood {...stepProps} />}
-        {currentStep === 2 && <StepYouth {...stepProps} />}
-        {currentStep === 3 && <StepCareer {...stepProps} />}
-        {currentStep === 4 && <StepFamily {...stepProps} />}
-        {currentStep === 5 && <StepCharacter {...stepProps} />}
-        {currentStep === 6 && <StepSpecial {...stepProps} />}
-        {currentStep === 7 && (
-          <StepBuyer
+        {currentStep === 1 && <Step2ChildhoodRoots {...stepProps} />}
+        {currentStep === 2 && <Step3Milestones {...stepProps} />}
+        {currentStep === 3 && <Step4FamilyLove {...stepProps} />}
+        {currentStep === 4 && <Step5Personality {...stepProps} />}
+        {currentStep === 5 && <Step6SpecialMoments {...stepProps} />}
+        {currentStep === 6 && <Step7Legacy {...stepProps} />}
+        {currentStep === 7 && <Step8Blessing {...stepProps} />}
+        {currentStep === 8 && (
+          <Step9BuyerDetails
             defaultValues={allData}
             onSubmit={handleStepSubmit}
             onBack={handleBack}

@@ -3,6 +3,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { assertTransition } from "@/lib/state-machine";
 import type { OrderStatus } from "@/types/order";
 
+/** Map new album_type values to legacy occasion enum values stored on orders */
+function albumTypeToOccasion(albumType: string | undefined): string | null {
+  if (!albumType) return null;
+  const map: Record<string, string> = {
+    life_story_birthday: "birthday",
+    wedding: "anniversary",
+    anniversary: "anniversary",
+    retirement: "retirement",
+    memorial: "memorial",
+    other: "other",
+  };
+  return map[albumType] ?? "other";
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }
@@ -33,7 +47,7 @@ export async function POST(
     );
   }
 
-  // If complete, transition order status
+  // If complete, transition order status and update denormalised fields
   if (isComplete) {
     const { data: order } = await supabase
       .from("orders")
@@ -51,12 +65,13 @@ export async function POST(
             buyer_name: responses.buyer_name || "",
             buyer_email: responses.buyer_email || "",
             buyer_phone: responses.buyer_phone || "",
-            occasion: responses.occasion || null,
-            person_birth_date: responses.person_birth_date || null,
+            occasion: albumTypeToOccasion(responses.album_type),
+            person_name: responses.person_name || undefined,
+            person_gender: responses.person_gender || undefined,
           })
           .eq("id", orderId);
-      } catch (e) {
-        // Status transition not valid, that's OK for re-saves
+      } catch {
+        // Status transition not valid – already completed, silently skip
       }
     }
   }
