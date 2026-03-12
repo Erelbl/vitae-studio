@@ -36,6 +36,7 @@ export interface QuestionnaireResponses {
   album_type: AlbumType;
   one_sentence_description: string;
   person_gender: "male" | "female";
+  person_birth_date: string;
   nickname: string;
   first_impression: string;
 
@@ -87,6 +88,7 @@ export interface QuestionnaireResponses {
   buyer_name: string;
   relationship_to_buyer: string;
   buyer_phone: string;
+  buyer_email: string;
   additional_notes: string;
 }
 

@@ -131,6 +131,19 @@ export function Step1Introduction({ defaultValues, onSubmit }: Props) {
         )}
       </div>
 
+      {/* person_birth_date – optional */}
+      <div className="space-y-1.5">
+        <Label htmlFor="person_birth_date">
+          תאריך לידה של בעל/ת השמחה <OptionalBadge />
+        </Label>
+        <Input
+          id="person_birth_date"
+          type="date"
+          dir="ltr"
+          {...register("person_birth_date")}
+        />
+      </div>
+
       {/* nickname – optional */}
       <div className="space-y-1.5">
         <Label htmlFor="nickname">

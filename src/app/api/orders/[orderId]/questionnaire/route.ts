@@ -68,7 +68,14 @@ export async function POST(
             occasion: albumTypeToOccasion(responses.album_type),
             person_name: responses.person_name || undefined,
             person_gender: responses.person_gender || undefined,
+            person_birth_date: responses.person_birth_date || null,
           })
+          .eq("id", orderId);
+
+        // Skip the follow-up step entirely — advance directly to enrichment_complete
+        await supabase
+          .from("orders")
+          .update({ status: "enrichment_complete" })
           .eq("id", orderId);
       } catch {
         // Status transition not valid – already completed, silently skip

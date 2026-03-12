@@ -85,6 +85,23 @@ export function Step9BuyerDetails({
         )}
       </div>
 
+      {/* buyer_email – optional */}
+      <div className="space-y-1.5">
+        <Label htmlFor="buyer_email">
+          אימייל <OptionalBadge />
+        </Label>
+        <Input
+          id="buyer_email"
+          type="email"
+          placeholder="למשל: dana@example.com"
+          dir="ltr"
+          {...register("buyer_email")}
+        />
+        {errors.buyer_email && (
+          <p className="text-sm text-destructive">{errors.buyer_email.message}</p>
+        )}
+      </div>
+
       {/* additional_notes – optional */}
       <div className="space-y-1.5">
         <Label htmlFor="additional_notes">

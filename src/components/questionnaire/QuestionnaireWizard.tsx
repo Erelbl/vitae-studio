@@ -54,7 +54,7 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
     try {
       await saveStep(stepData, isLast);
       if (isLast) {
-        router.push(`/order/${orderId}/followup?token=${token}`);
+        router.push(`/order/${orderId}/photos?token=${token}`);
       } else {
         setCurrentStep((s) => s + 1);
       }

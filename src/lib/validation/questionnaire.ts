@@ -15,6 +15,7 @@ export const introductionSchema = z.object({
   album_type: z.enum(ALBUM_TYPES, { error: "יש לבחור סוג אלבום" }),
   one_sentence_description: z.string().min(5, "נדרשים לפחות 5 תווים"),
   person_gender: z.enum(["male", "female"], { error: "יש לבחור מגדר" }),
+  person_birth_date: z.string().optional().default(""),
   nickname: z.string().optional().default(""),
   first_impression: z.string().optional().default(""),
 });
@@ -82,6 +83,7 @@ export const buyerDetailsSchema = z.object({
   buyer_name: z.string().min(2, "נדרשים לפחות 2 תווים"),
   relationship_to_buyer: z.string().min(2, "נדרשים לפחות 2 תווים"),
   buyer_phone: z.string().min(9, "מספר טלפון לא תקין"),
+  buyer_email: z.string().email("כתובת אימייל לא תקינה").optional().or(z.literal("")).default(""),
   additional_notes: z.string().optional().default(""),
 });
 
