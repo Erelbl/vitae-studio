@@ -730,6 +730,55 @@ Story and illustration quality depend entirely on prompts and model settings. To
 
 ---
 
+## 21. Illustration-to-Page Mapping
+
+### Purpose
+After illustrations are generated for uploaded photos, the admin manually assigns each illustration to a specific album page. This is intentional — automated mapping cannot reliably match a photo to the right page in the story without human judgment.
+
+### Data Model
+- `photos.illustration_storage_path` — path in the `illustrations` Supabase bucket
+- `photos.illustration_status` — `'completed'` when the Gemini watercolor pass has finished
+- `pages.photo_id` — FK to the assigned `photos` row (nullable)
+- `pages.illustration_storage_path` — denormalized copy of the assigned illustration path; read by the preview loader
+
+### Assignment Flow
+1. Admin generates illustrations in `AdminPhotosGallery` (triggers Gemini API for selected photos)
+2. Admin opens the album preview page: `/admin/orders/[orderId]/preview`
+3. `IllustrationPageMapper` component shows all `illustration_and_text` pages on the left and completed illustration thumbnails on the right
+4. Admin clicks a page, then clicks a photo thumbnail → calls `PUT /api/admin/orders/[orderId]/pages/[pageId]/assign-illustration` with `{ photoId }`
+5. API route verifies `photos.illustration_status === 'completed'`, then sets `pages.photo_id` and `pages.illustration_storage_path`
+6. `router.refresh()` triggers Server Component re-render — preview updates immediately
+
+### Clearing an Assignment
+Pass `{ photoId: null }` to the same route. Both `pages.photo_id` and `pages.illustration_storage_path` are set to null.
+
+### Preview Rendering
+`loadPreviewData()` (`src/lib/preview/loader.ts`) reads `pages.illustration_storage_path` and generates a 1-hour Supabase signed URL. Content pages show the illustration filling the full square page, with text overlaid using a bottom gradient.
+
+---
+
+## 22. Album Preview Architecture
+
+### Design Goal
+The browser preview must feel like an open 25×25 cm square photo book — not a web list of cards.
+
+### Page Layout
+Every page type (cover, dedication, content, text-only, back cover) uses `aspect-square w-full` so pages are perfectly square, regardless of viewport width.
+
+### Two-Page Spread
+`AlbumPreview` groups pages into pairs. In RTL context, the first page of each pair sits on the right (as in Hebrew books). A subtle center spine shadow (3 px gradient strip) simulates the book binding.
+
+### Content Page Rendering (`illustration_and_text`)
+- Illustration: `position: absolute; inset: 0; object-fit: cover` — fills the entire page
+- No illustration: soft gradient placeholder with ✦ symbol
+- Text: `position: absolute; bottom: 0` with `bg-gradient-to-t from-black/72` — ensures readability without opaque boxes
+- Font: `YardenAlbum` serif at 15px with `text-shadow` for contrast
+
+### Navigation
+Prev/next buttons + dot indicators (one dot per spread). Animation: `albumSpreadIn` fade + 4px slide on spread change.
+
+---
+
 ## Verification Plan
 
 After implementation, test end-to-end:

@@ -48,25 +48,42 @@ export function AlbumPreview({ data }: AlbumPreviewProps) {
       )}
 
       {/*
-        Two-page spread.
-        In RTL context the grid flows right → left, so col-1 is the right panel
-        and col-2 is the left panel — matching a Hebrew book where odd/lower-numbered
-        pages sit on the right side.
+        Open-album spread.
+        Outer wrapper has a warm shadow and a subtle center-spine divider,
+        mimicking a real 25×25 cm square photo-book opened flat.
+        In RTL context col-1 is the right panel (lower/odd page number) and
+        col-2 is the left panel — matching how Hebrew books are opened.
       */}
       <div
-        key={animKey}
-        className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"
-        style={{ animation: "albumSpreadIn 0.22s ease-out" }}
+        className="relative"
+        style={{ filter: "drop-shadow(0 6px 32px rgba(0,0,0,0.18))" }}
       >
-        {/* Right page (first in spread) */}
-        <AlbumPageView page={rightPage} personName={personName} />
-
-        {/* Left page (second in spread) */}
-        {leftPage ? (
-          <AlbumPageView page={leftPage} personName={personName} />
-        ) : (
-          <div className="hidden sm:block" />
+        {/* Center spine shadow — visible only on two-page view */}
+        {leftPage && (
+          <div
+            className="hidden sm:block absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] z-10 pointer-events-none"
+            style={{
+              background:
+                "linear-gradient(to right, rgba(0,0,0,0.13), rgba(0,0,0,0.06), rgba(0,0,0,0.13))",
+            }}
+          />
         )}
+
+        <div
+          key={animKey}
+          className="grid grid-cols-1 sm:grid-cols-2 rounded-sm overflow-hidden"
+          style={{ animation: "albumSpreadIn 0.22s ease-out" }}
+        >
+          {/* Right page (first in RTL spread) */}
+          <AlbumPageView page={rightPage} personName={personName} />
+
+          {/* Left page (second in RTL spread) */}
+          {leftPage ? (
+            <AlbumPageView page={leftPage} personName={personName} />
+          ) : (
+            <div className="hidden sm:block aspect-square bg-secondary/40" />
+          )}
+        </div>
       </div>
 
       {/* Navigation row */}
@@ -104,7 +121,7 @@ export function AlbumPreview({ data }: AlbumPreviewProps) {
 
       <style>{`
         @keyframes albumSpreadIn {
-          from { opacity: 0; transform: translateY(5px); }
+          from { opacity: 0; transform: translateY(4px); }
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>

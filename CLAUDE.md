@@ -1,7 +1,7 @@
 # Vitae Studio - Claude Code Context
 
 ## What This Project Is
-Premium web app for creating personalized "life story in rhymes" illustrated albums. Hebrew-first. Customers fill questionnaire → AI asks follow-up questions → customer uploads photos → AI generates rhyming story + watercolor illustrations → admin reviews (with version history) → PDF exported.
+Premium web app for creating personalized "life story in rhymes" illustrated albums. Hebrew-first. Customers fill questionnaire → AI asks follow-up questions → customer uploads photos → AI generates rhyming story + watercolor illustrations → admin assigns illustrations to pages → admin reviews (with version history) → PDF exported.
 
 ## Tech Stack
 - Next.js 16 (App Router), TypeScript, Tailwind v4, shadcn/ui
@@ -59,6 +59,20 @@ Premium web app for creating personalized "life story in rhymes" illustrated alb
 - Types: `src/types/`
 - i18n messages: `src/messages/{locale}.json`
 - Database migrations: `supabase/migrations/`
+
+## Illustration-to-Page Mapping
+- Illustrations live in the `photos` table (`illustration_storage_path`, `illustration_status = 'completed'`)
+- Assigning an illustration to a page: `PUT /api/admin/orders/[orderId]/pages/[pageId]/assign-illustration` with `{ photoId }` — copies `photos.illustration_storage_path` → `pages.illustration_storage_path` and sets `pages.photo_id`
+- The preview loader (`src/lib/preview/loader.ts`) reads `pages.illustration_storage_path` directly, so the assignment is immediately visible in the preview after refresh
+- UI: `IllustrationPageMapper` component in admin preview page (`/admin/orders/[id]/preview`) — master/detail: click a page on the left, pick an illustration on the right
+- Clearing an assignment: pass `{ photoId: null }` — sets both `pages.photo_id` and `pages.illustration_storage_path` to null
+
+## Album Preview Architecture
+- `AlbumPreview` component (`src/components/album/AlbumPreview.tsx`): groups pages into 2-page spreads, adds open-book spine shadow, handles navigation
+- `AlbumPageView` component (`src/components/album/AlbumPageView.tsx`): renders individual pages. All page types use `aspect-square` (simulates 25×25 cm album)
+- `ContentPage` (illustration_and_text): illustration fills full page, text overlaid at bottom with gradient for readability. No opaque background boxes
+- `CoverPage`, `DedicationPage`, `TextOnlyPage`, `BackCoverPage`: square containers with centered typographic layouts
+- Mock data fallback: if no pages exist yet, `loadPreviewData` returns `isMock: true` with 40-page sample
 
 ## Common Tasks
 - **Add new questionnaire step**: Edit `src/components/questionnaire/`, update Zod schema in `src/lib/validation/questionnaire.ts`, add translations in `src/messages/he.json`

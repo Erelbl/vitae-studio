@@ -2,7 +2,7 @@
 
 Premium web application for creating personalized "life story in rhymes" illustrated albums. Hebrew-first.
 
-Customers fill a questionnaire about a person's life → AI asks targeted follow-up questions → customer uploads real photos → system generates Hebrew rhyming story + watercolor illustrations → admin reviews with version history → printable PDF exported.
+Customers fill a questionnaire about a person's life → AI asks targeted follow-up questions → customer uploads real photos → system generates Hebrew rhyming story + watercolor illustrations → admin assigns illustrations to pages → admin reviews and approves → customer sees album preview → printable PDF exported.
 
 ## Tech Stack
 
@@ -54,6 +54,8 @@ npm run dev
 src/
 ├── app/          # Pages and API routes
 ├── components/   # React components by domain
+│   ├── admin/    # Admin-only components (IllustrationPageMapper, AdminPhotosGallery, …)
+│   └── album/    # Album preview components (AlbumPreview, AlbumPageView)
 ├── services/     # AI provider services (story, illustration, followup, pdf, email)
 ├── lib/          # Shared utilities (supabase, validation, state machine, access tokens)
 ├── hooks/        # React hooks
@@ -66,6 +68,19 @@ supabase/
 docs/             # Architecture documentation
 ```
 
+## Admin Workflow Summary
+
+1. **Order arrives** → admin sees it in `/admin`
+2. **Generate story** → Claude produces 40-page Hebrew rhyming text
+3. **Generate illustrations** → select photos in `AdminPhotosGallery`, trigger Gemini watercolor stylization
+4. **Assign illustrations to pages** → in `/admin/orders/[id]/preview`, use the `IllustrationPageMapper` to assign each completed illustration to its page
+5. **Review album** → two-page spread preview simulates 25×25 cm album
+6. **Publish** → makes album visible to customer at `/order/[id]/preview?token=...`
+
+## Album Preview
+
+Pages are rendered as square tiles (25×25 cm equivalent) in a two-page open-book spread. Content pages show the illustration filling the full page with text overlaid using a bottom gradient. Cover, dedication, text-only, and back-cover pages use centered typographic layouts.
+
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md) for the full technical architecture document, including:
@@ -74,6 +89,7 @@ See [docs/architecture.md](docs/architecture.md) for the full technical architec
 - Privacy model for customer preview links
 - Service abstraction design for AI providers
 - Background job strategy
+- Illustration-to-page mapping flow
 
 ## License
 

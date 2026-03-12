@@ -21,6 +21,25 @@ export function AlbumPageView({ page, personName }: AlbumPageViewProps) {
   }
 }
 
+// ─── Shared page shell ────────────────────────────────────────────────────────
+
+/** Every album page is a perfect square — mirrors a real 25×25 cm album page. */
+function PageShell({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`relative aspect-square w-full overflow-hidden shadow-md ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 // ─── Cover ───────────────────────────────────────────────────────────────────
 
 function CoverPage({
@@ -31,34 +50,38 @@ function CoverPage({
   personName: string;
 }) {
   return (
-    <div className="relative min-h-[500px] sm:min-h-[580px] rounded-2xl overflow-hidden bg-secondary flex flex-col items-center justify-center text-center p-8 shadow-md">
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/14 pointer-events-none" />
+    <PageShell className="bg-secondary">
+      {/* Background gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/18" />
 
-      {/* Ornamental inner border */}
-      <div className="relative z-10 border-2 border-primary/20 rounded-xl p-8 sm:p-12 w-full max-w-xs">
-        <Ornament className="mb-6" size="lg" />
+      {/* Centered content */}
+      <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8">
+        <div className="border-2 border-primary/20 rounded-xl p-6 w-full max-w-[80%]">
+          <Ornament className="mb-5" size="lg" />
 
-        <p className="text-[0.65rem] uppercase tracking-[0.22em] text-primary/60 mb-5 font-semibold">
-          סיפור חיים בחרוזים
-        </p>
-
-        <h1 className="text-4xl sm:text-5xl font-semibold text-foreground leading-tight">
-          {personName}
-        </h1>
-
-        {page.text_content && (
-          <p
-            className="mt-5 text-sm text-muted-foreground italic leading-relaxed"
-            style={{ fontFamily: "YardenAlbum, serif" }}
-          >
-            {page.text_content}
+          <p className="text-[0.6rem] uppercase tracking-[0.22em] text-primary/60 mb-4 font-semibold">
+            סיפור חיים בחרוזים
           </p>
-        )}
 
-        <Ornament className="mt-6" />
+          <h1 className="text-3xl font-semibold text-foreground leading-tight">
+            {personName}
+          </h1>
+
+          {page.text_content && (
+            <p
+              className="mt-4 text-xs text-muted-foreground italic leading-relaxed"
+              style={{ fontFamily: "YardenAlbum, serif" }}
+            >
+              {page.text_content}
+            </p>
+          )}
+
+          <Ornament className="mt-5" />
+        </div>
       </div>
-    </div>
+
+      <PageNumber number={page.page_number} light />
+    </PageShell>
   );
 }
 
@@ -66,62 +89,67 @@ function CoverPage({
 
 function DedicationPage({ page }: { page: PreviewPage }) {
   return (
-    <div className="min-h-[380px] rounded-2xl bg-secondary/50 border border-border/40 flex flex-col items-center justify-center text-center p-10 sm:p-14 shadow-sm">
-      <Ornament className="mb-7" />
+    <PageShell className="bg-secondary/50 border border-border/40">
+      <div className="flex h-full flex-col items-center justify-center text-center p-10">
+        <Ornament className="mb-6" />
 
-      {page.text_content ? (
-        <p
-          className="leading-loose text-muted-foreground italic whitespace-pre-line max-w-[260px]"
-          style={{ fontFamily: "YardenAlbum, serif", fontSize: "22px" }}
-        >
-          {page.text_content}
-        </p>
-      ) : (
-        <PlaceholderText label="ההקדשה תופיע כאן" />
-      )}
+        {page.text_content ? (
+          <p
+            className="leading-loose text-muted-foreground italic whitespace-pre-line max-w-[260px]"
+            style={{ fontFamily: "YardenAlbum, serif", fontSize: "18px" }}
+          >
+            {page.text_content}
+          </p>
+        ) : (
+          <PlaceholderText label="ההקדשה תופיע כאן" />
+        )}
 
-      <Ornament className="mt-7" />
-    </div>
+        <Ornament className="mt-6" />
+      </div>
+
+      <PageNumber number={page.page_number} />
+    </PageShell>
   );
 }
 
-// ─── Content (illustration + text) ───────────────────────────────────────────
+// ─── Content (illustration + text overlay) ───────────────────────────────────
 
 function ContentPage({ page }: { page: PreviewPage }) {
-  const position = page.text_position ?? "top";
-
   return (
-    <div className="rounded-2xl bg-card border border-border/60 overflow-hidden shadow-sm">
-      {position === "overlay" ? (
-        <OverlayLayout page={page} />
+    <PageShell className="bg-secondary">
+      {/* Illustration fills the full page */}
+      {page.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={page.image_url}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       ) : (
-        <>
-          <IllustrationArea imageUrl={page.image_url} />
-          <div className="px-7 pt-6 pb-4 sm:px-9 sm:pt-7">
-            <AlbumText content={page.text_content} />
-          </div>
-        </>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-secondary via-secondary/80 to-primary/10">
+          <span className="text-primary/25 text-3xl select-none">✦</span>
+          <p className="text-xs text-muted-foreground/40">האיור יווצר בקרוב</p>
+        </div>
       )}
-      <PageNumber number={page.page_number} />
-    </div>
-  );
-}
 
-function OverlayLayout({ page }: { page: PreviewPage }) {
-  return (
-    <div className="relative">
-      <IllustrationArea imageUrl={page.image_url} />
+      {/* Text overlay — gradient fade from bottom */}
       {page.text_content && (
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-6 pb-6 pt-10">
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/72 via-black/40 to-transparent px-5 pb-6 pt-16">
           <p
-            className="text-white text-center leading-loose whitespace-pre-line"
-            style={{ fontFamily: "YardenAlbum, serif", fontSize: "22px" }}
+            className="text-white text-center leading-relaxed whitespace-pre-line"
+            style={{
+              fontFamily: "YardenAlbum, serif",
+              fontSize: "15px",
+              textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+            }}
           >
             {page.text_content}
           </p>
         </div>
       )}
-    </div>
+
+      <PageNumber number={page.page_number} light />
+    </PageShell>
   );
 }
 
@@ -129,23 +157,26 @@ function OverlayLayout({ page }: { page: PreviewPage }) {
 
 function TextOnlyPage({ page }: { page: PreviewPage }) {
   return (
-    <div className="min-h-[380px] rounded-2xl bg-card border border-border/60 flex flex-col items-center justify-center p-10 sm:p-14 shadow-sm">
-      <Ornament className="mb-8" />
+    <PageShell className="bg-card border border-border/60">
+      <div className="flex h-full flex-col items-center justify-center p-10">
+        <Ornament className="mb-7" />
 
-      {page.text_content ? (
-        <p
-          className="leading-loose text-foreground text-center whitespace-pre-line"
-          style={{ fontFamily: "YardenAlbum, serif", fontSize: "22px" }}
-        >
-          {page.text_content}
-        </p>
-      ) : (
-        <PlaceholderText label="הטקסט יווצר בקרוב" />
-      )}
+        {page.text_content ? (
+          <p
+            className="leading-loose text-foreground text-center whitespace-pre-line"
+            style={{ fontFamily: "YardenAlbum, serif", fontSize: "18px" }}
+          >
+            {page.text_content}
+          </p>
+        ) : (
+          <PlaceholderText label="הטקסט יווצר בקרוב" />
+        )}
 
-      <Ornament className="mt-8" />
+        <Ornament className="mt-7" />
+      </div>
+
       <PageNumber number={page.page_number} />
-    </div>
+    </PageShell>
   );
 }
 
@@ -153,73 +184,51 @@ function TextOnlyPage({ page }: { page: PreviewPage }) {
 
 function BackCoverPage({ page }: { page: PreviewPage }) {
   return (
-    <div className="relative min-h-[400px] sm:min-h-[480px] rounded-2xl overflow-hidden bg-secondary flex flex-col items-center justify-center text-center p-8 shadow-md">
-      <div className="absolute inset-0 bg-gradient-to-tl from-primary/8 via-transparent to-primary/14 pointer-events-none" />
+    <PageShell className="bg-secondary">
+      <div className="absolute inset-0 bg-gradient-to-tl from-primary/10 via-transparent to-primary/16" />
 
-      <div className="relative z-10 flex flex-col items-center gap-5">
+      <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8 gap-5">
         <Ornament size="lg" />
 
         {page.text_content && (
           <p
             className="leading-loose text-muted-foreground italic max-w-[240px] whitespace-pre-line"
-            style={{ fontFamily: "YardenAlbum, serif", fontSize: "22px" }}
+            style={{ fontFamily: "YardenAlbum, serif", fontSize: "18px" }}
           >
             {page.text_content}
           </p>
         )}
 
-        <div className="mt-3 pt-5 border-t border-primary/20 w-28 flex flex-col items-center gap-1">
+        <div className="mt-2 pt-4 border-t border-primary/20 w-24 flex flex-col items-center gap-1">
           <span className="text-sm font-semibold text-primary tracking-wide">
             Vitae Studio
           </span>
-          <span className="text-[0.65rem] text-muted-foreground">
+          <span className="text-[0.6rem] text-muted-foreground">
             סיפור חיים בחרוזים
           </span>
         </div>
       </div>
-    </div>
+
+      <PageNumber number={page.page_number} light />
+    </PageShell>
   );
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function AlbumText({ content }: { content: string | null }) {
-  if (!content) return <PlaceholderText label="הטקסט יווצר בקרוב" />;
+function PageNumber({
+  number,
+  light,
+}: {
+  number: number;
+  light?: boolean;
+}) {
   return (
-    <p
-      className="text-center leading-loose whitespace-pre-line text-foreground"
-      style={{ fontFamily: "YardenAlbum, serif", fontSize: "22px" }}
+    <div
+      className={`absolute bottom-2 start-3 text-[10px] select-none ${
+        light ? "text-white/40" : "text-muted-foreground/35"
+      }`}
     >
-      {content}
-    </p>
-  );
-}
-
-function IllustrationArea({ imageUrl }: { imageUrl: string | null }) {
-  if (imageUrl) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <div className="aspect-[4/3] overflow-hidden">
-        <img
-          src={imageUrl}
-          alt=""
-          className="w-full h-full object-cover"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="aspect-[4/3] bg-gradient-to-br from-secondary via-secondary/80 to-primary/10 flex flex-col items-center justify-center gap-2">
-      <span className="text-primary/25 text-4xl select-none">✦</span>
-      <p className="text-xs text-muted-foreground/40">האיור יווצר בקרוב</p>
-    </div>
-  );
-}
-
-function PageNumber({ number }: { number: number }) {
-  return (
-    <div className="py-3 text-center text-xs text-muted-foreground/40 border-t border-border/25 select-none">
       {number}
     </div>
   );
@@ -242,7 +251,5 @@ function Ornament({
 }
 
 function PlaceholderText({ label }: { label: string }) {
-  return (
-    <p className="text-sm text-muted-foreground/40 italic">{label}</p>
-  );
+  return <p className="text-sm text-muted-foreground/40 italic">{label}</p>;
 }
