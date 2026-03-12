@@ -11,6 +11,17 @@ import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
 import { DraftStatusPoller } from "@/components/admin/DraftStatusPoller";
 
+function fmtDate(ts: string) {
+  return new Date(ts).toLocaleString("he-IL", {
+    timeZone: "Asia/Jerusalem",
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 const ALBUM_TYPE_LABELS: Record<string, string> = {
   life_story_birthday: "סיפור חיים / יום הולדת",
   wedding: "חתונה / סיפור זוגי",
@@ -156,12 +167,40 @@ export default async function AdminOrderDetailPage({
     }
   }
 
-  // ── Fetch current page count and text version ──
+  // ── Fetch current pages (count, version, IDs for history lookup) ──
   const { data: pageStats } = await adminClient
     .from("pages")
-    .select("page_number, text_version")
+    .select("id, page_number, text_version")
     .eq("order_id", orderId)
     .order("page_number");
+
+  // ── Fetch text version history from page_versions ──
+  // Group distinct version_numbers from page_versions for this order's pages.
+  // Each version_number corresponds to one generation run (see run-generation-pipeline.ts).
+  const pageIds = (pageStats ?? []).map((p) => p.id as string);
+  const { data: pvRaw } =
+    pageIds.length > 0
+      ? await adminClient
+          .from("page_versions")
+          .select("version_number, created_at")
+          .eq("version_type", "text")
+          .in("page_id", pageIds)
+      : { data: [] as { version_number: number; created_at: string }[] };
+
+  // Aggregate: per version_number → earliest created_at + page count
+  const versionAgg = new Map<number, { created_at: string; count: number }>();
+  for (const pv of pvRaw ?? []) {
+    const vn = pv.version_number as number;
+    const d = pv.created_at as string;
+    const cur = versionAgg.get(vn);
+    versionAgg.set(vn, {
+      created_at: !cur || d < cur.created_at ? d : cur.created_at,
+      count: (cur?.count ?? 0) + 1,
+    });
+  }
+  const textVersions = Array.from(versionAgg.entries())
+    .map(([version_number, data]) => ({ version_number, ...data }))
+    .sort((a, b) => b.version_number - a.version_number); // newest first
 
   const pageCount = pageStats?.length ?? 0;
   const maxTextVersion =
@@ -286,6 +325,40 @@ export default async function AdminOrderDetailPage({
           </p>
         )}
 
+        {/* Text version history */}
+        {textVersions.length > 0 && (
+          <div className="border-t border-border/60 pt-4 space-y-1">
+            <p className="text-xs font-medium text-muted-foreground mb-2">
+              גרסאות טקסט
+            </p>
+            {textVersions.map((v) => (
+              <div
+                key={v.version_number}
+                className="flex items-center gap-3 text-xs py-1"
+              >
+                <span className="text-muted-foreground shrink-0">
+                  {fmtDate(v.created_at)}
+                </span>
+                <span className="font-medium shrink-0">
+                  גרסה {v.version_number}
+                  {v.version_number === maxTextVersion && (
+                    <span className="ms-1 text-muted-foreground font-normal">(עדכנית)</span>
+                  )}
+                </span>
+                <span className="text-muted-foreground shrink-0">
+                  {v.count} עמודים
+                </span>
+                <Link
+                  href={`/admin/orders/${orderId}/text-version/${v.version_number}`}
+                  className="text-primary hover:underline shrink-0"
+                >
+                  צפייה בטקסט ←
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Generation history from processing_jobs */}
         {genJobs && genJobs.length > 0 && (
           <div className="border-t border-border/60 pt-4 space-y-1">
@@ -301,7 +374,6 @@ export default async function AdminOrderDetailPage({
                 pages_saved?: number;
                 review_issues?: number;
               } | null;
-              const jobDate = new Date(job.created_at as string);
 
               return (
                 <div
@@ -319,13 +391,7 @@ export default async function AdminOrderDetailPage({
                     }`}
                   />
                   <span className="text-muted-foreground shrink-0">
-                    {jobDate.toLocaleString("he-IL", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {fmtDate(job.created_at as string)}
                   </span>
                   <span
                     className={
@@ -362,7 +428,7 @@ export default async function AdminOrderDetailPage({
           <Field label="מזהה הזמנה" value={orderId} mono />
           <Field
             label="נוצרה"
-            value={new Date(order.created_at as string).toLocaleString("he-IL")}
+            value={fmtDate(order.created_at as string)}
           />
           <Field label="שם" value={order.person_name || "—"} />
           <Field label="תאריך לידה" value={order.person_birth_date || "—"} />

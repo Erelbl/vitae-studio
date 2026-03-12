@@ -61,7 +61,7 @@ export default async function AdminOrdersPage() {
                       href={`/admin/orders/${order.id}`}
                       className="text-primary hover:underline"
                     >
-                      {new Date(order.created_at).toLocaleDateString("he-IL")}
+                      {new Date(order.created_at).toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" })}
                     </Link>
                   </TableCell>
                   <TableCell className="font-medium">
