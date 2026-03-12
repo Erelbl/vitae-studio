@@ -39,15 +39,14 @@ const LIFE_STAGE_LABELS: Record<string, string> = {
   other: "אחר",
 };
 
-// Statuses from which admin can publish to customer
+// Statuses where "פרסם ללקוח" is enabled
 const PUBLISHABLE_STATUSES: OrderStatus[] = ["preview_ready", "admin_review"];
 
-// Statuses from which admin can (re-)trigger story generation
-const GENERATABLE_STATUSES: OrderStatus[] = [
-  "enrichment_complete",
-  "photos_uploaded",
-  "revision_requested",
-  "error_generation",
+// Statuses where generation is actively running — disable the generate button to avoid double-trigger
+const GENERATING_IN_PROGRESS_STATUSES: OrderStatus[] = [
+  "generating_text",
+  "text_ready",
+  "generating_illustrations",
 ];
 
 export default async function AdminOrderDetailPage({
@@ -115,7 +114,8 @@ export default async function AdminOrderDetailPage({
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
   const followups = (questionnaireRow?.followup_questions ?? []) as FollowUpQA[];
   const canPublish = PUBLISHABLE_STATUSES.includes(currentStatus);
-  const canGenerate = GENERATABLE_STATUSES.includes(currentStatus);
+  const generateDisabled = GENERATING_IN_PROGRESS_STATUSES.includes(currentStatus)
+    || currentStatus === "delivered";
   const hasDrafts = (storyDrafts?.length ?? 0) > 0;
   const latestDraftId = storyDrafts?.[0]?.id as string | undefined;
 
@@ -160,12 +160,8 @@ export default async function AdminOrderDetailPage({
             צפייה בטקסט שנוצר
           </Button>
         </Link>
-        {canGenerate && (
-          <GenerateStoryButton orderId={orderId} hasDrafts={hasDrafts} />
-        )}
-        {canPublish && (
-          <PublishButton orderId={orderId} />
-        )}
+        <GenerateStoryButton orderId={orderId} disabled={generateDisabled} />
+        <PublishButton orderId={orderId} disabled={!canPublish} />
         {currentStatus === "approved" && (
           <span className="self-center text-sm text-green-700 font-medium">
             ✓ פורסם ללקוח

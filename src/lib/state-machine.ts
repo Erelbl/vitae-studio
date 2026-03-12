@@ -14,8 +14,9 @@ const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   generating_illustrations: ["preview_ready", "error_generation"],
   // Admin can publish directly from preview_ready (skipping explicit review step)
   // or after marking as admin_review first.
-  preview_ready: ["admin_review", "approved"],
-  admin_review: ["approved", "revision_requested"],
+  // Admin can also trigger a new story generation directly from either state.
+  preview_ready: ["admin_review", "approved", "generating_text"],
+  admin_review: ["approved", "revision_requested", "generating_text"],
   revision_requested: [
     "generating_text",
     "generating_illustrations",

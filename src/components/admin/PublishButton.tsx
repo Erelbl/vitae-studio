@@ -4,7 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
-export function PublishButton({ orderId }: { orderId: string }) {
+export function PublishButton({
+  orderId,
+  disabled = false,
+}: {
+  orderId: string;
+  disabled?: boolean;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +38,12 @@ export function PublishButton({ orderId }: { orderId: string }) {
 
   return (
     <div className="flex items-center gap-3">
-      <Button size="sm" onClick={handlePublish} disabled={loading}>
+      <Button
+        size="sm"
+        variant={disabled ? "ghost" : "default"}
+        onClick={handlePublish}
+        disabled={disabled || loading}
+      >
         {loading ? "מפרסם..." : "פרסם ללקוח"}
       </Button>
       {error && <span className="text-sm text-destructive">{error}</span>}

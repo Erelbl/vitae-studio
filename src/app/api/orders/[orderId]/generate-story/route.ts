@@ -42,12 +42,14 @@ export async function POST(
 
   const currentStatus = auth.order.status as OrderStatus;
 
-  // ── Accept enrichment_complete, photos_uploaded, revision_requested, error_generation ──
+  // ── Accept all statuses from which regeneration makes sense ──
   const ALLOWED_START: OrderStatus[] = [
     "enrichment_complete",
     "photos_uploaded",
     "revision_requested",
     "error_generation",
+    "preview_ready",  // admin regenerates from preview
+    "admin_review",   // admin regenerates during review
   ];
 
   if (!ALLOWED_START.includes(currentStatus)) {
