@@ -66,6 +66,6 @@ export interface AlbumOutlineItem {
 
 export interface AlbumPageText {
   page_number: number;
-  text_content: string;
+  text_content: string | null;
   page_type: AlbumPageType;
 }

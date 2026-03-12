@@ -41,11 +41,12 @@ export async function reviewAndFixStory(
     if (pageIndex === -1) continue;
 
     const page = fixedPages[pageIndex];
+    if (page.text_content == null) continue;
 
     // Provide 2 pages of context before the problem page
     const context = fixedPages
       .slice(Math.max(0, pageIndex - 2), pageIndex)
-      .map((p) => p.text_content)
+      .map((p) => p.text_content ?? "")
       .join("\n---\n");
 
     try {
@@ -59,7 +60,7 @@ export async function reviewAndFixStory(
         messages: [
           {
             role: "user",
-            content: `הקשר (עמודים קודמים):\n${context || "אין"}\n\nעמוד לתיקון:\n${page.text_content}\n\nכתוב גרסה משופרת:`,
+            content: `הקשר (עמודים קודמים):\n${context || "אין"}\n\nעמוד לתיקון:\n${page.text_content ?? ""}\n\nכתוב גרסה משופרת:`,
           },
         ],
       });
@@ -92,6 +93,9 @@ function detectIssues(pages: AlbumPageText[]): PageIssue[] {
   const phraseToPage = new Map<string, number>();
 
   for (const page of pages) {
+    // Illustration-only pages have no text — skip quality checks
+    if (page.text_content == null) continue;
+
     const lines = page.text_content
       .split("\n")
       .map((l) => l.trim())

@@ -4,19 +4,21 @@ import type {
   StoryGenerationOutput,
 } from "./types";
 import { buildStoryProfile } from "./story-profile-builder";
-import { generateAlbumOutline } from "./outline-generator";
-import { generatePageTexts } from "./page-generator";
+import { generateFullStory, splitStoryIntoPages } from "./full-story-generator";
 import { reviewAndFixStory } from "./story-review";
+
+const DEFAULT_TOTAL_PAGES = 40;
 
 /**
  * Claude implementation of StoryGenerationProvider.
- * Orchestrates the full modular pipeline:
- *   buildStoryProfile → generateAlbumOutline → generatePageTexts → reviewAndFixStory
+ * Pipeline: buildStoryProfile → generateFullStory → splitStoryIntoPages → reviewAndFixStory
  */
 export class ClaudeStoryProvider implements StoryGenerationProvider {
   async generateFullStory(
     input: StoryGenerationInput
   ): Promise<StoryGenerationOutput> {
+    const totalPages = input.totalPages ?? DEFAULT_TOTAL_PAGES;
+
     const profile = buildStoryProfile(
       input.questionnaire as Record<string, string>,
       [],
@@ -24,14 +26,14 @@ export class ClaudeStoryProvider implements StoryGenerationProvider {
       input.personGender
     );
 
-    const outline = await generateAlbumOutline(profile, null);
-    const pages = await generatePageTexts(profile, outline, null);
-    const { pages: reviewed } = await reviewAndFixStory(pages, null);
+    const fullStory = await generateFullStory(profile, totalPages - 2, null);
+    const rawPages = await splitStoryIntoPages(fullStory, profile, totalPages, null);
+    const { pages: reviewed } = await reviewAndFixStory(rawPages, null);
 
     return {
       pages: reviewed.map((p) => ({
         pageNumber: p.page_number,
-        text: p.text_content,
+        text: p.text_content ?? "",
       })),
       modelUsed: "claude-sonnet-4-6",
       tokensUsed: 0,
@@ -55,8 +57,9 @@ export class ClaudeStoryProvider implements StoryGenerationProvider {
       model: "claude-sonnet-4-6",
       max_tokens: 300,
       temperature: 0.9,
-      system:
-        "אתה משורר עברי. כתוב 2–4 שורות שירה חמה ומחורזת לעמוד האלבום המבוקש. החזר רק את הטקסט.",
+      system: `אתה משורר עברי. כתוב 2–4 שורות שירה חמה ומחורזת לעמוד האלבום המבוקש.
+לפני כתיבת השורות — בחר תחילה משפחת חרוז ובנה את המשפטים סביבה.
+החזר רק את הטקסט.`,
       messages: [
         {
           role: "user",

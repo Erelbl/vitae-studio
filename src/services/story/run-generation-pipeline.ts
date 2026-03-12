@@ -1,8 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { assertTransition } from "@/lib/state-machine";
 import { buildStoryProfile } from "@/services/story/story-profile-builder";
-import { generateAlbumOutline } from "@/services/story/outline-generator";
-import { generatePageTexts } from "@/services/story/page-generator";
+import { generateFullStory, splitStoryIntoPages } from "@/services/story/full-story-generator";
 import { reviewAndFixStory } from "@/services/story/story-review";
 import type { OrderStatus } from "@/types/order";
 import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
@@ -70,27 +69,42 @@ export async function runGenerationPipeline(
     );
     console.log(`[pipeline] existing pages for order: ${existingByNum.size}`);
 
-    // 3. Generate album outline
-    const outline = await generateAlbumOutline(profile, generationSettings);
-    console.log(`[pipeline] outline: ${outline.length} pages`);
+    // 3. Fetch total_pages for this order (default 40)
+    const { data: orderRow } = await supabase
+      .from("orders")
+      .select("total_pages")
+      .eq("id", orderId)
+      .single();
+    const totalPages: number = (orderRow?.total_pages as number | null) ?? 40;
+    console.log(`[pipeline] totalPages=${totalPages}`);
 
-    // 4. Generate page texts
-    const rawPages = await generatePageTexts(
+    // 4. Generate full continuous story (Step 2)
+    const contentPageCount = totalPages - 2; // exclude cover + back-cover
+    const fullStory = await generateFullStory(
       profile,
-      outline,
+      contentPageCount,
+      generationSettings
+    );
+    console.log(`[pipeline] fullStory: ${fullStory.length} chars`);
+
+    // 5. Split story into pages (Step 3)
+    const rawPages = await splitStoryIntoPages(
+      fullStory,
+      profile,
+      totalPages,
       generationSettings
     );
     console.log(`[pipeline] rawPages: ${rawPages.length} pages`);
 
-    // 5. Review pass
+    // 6. Review pass (skip illustration-only pages automatically)
     const { pages: finalPages, review } = await reviewAndFixStory(
       rawPages,
       generationSettings
     );
 
-    // 6. Build full 40-page list (cover + text pages + back_cover)
-    const coverItem = outline.find((o) => o.page_type === "cover");
-    const backCoverItem = outline.find((o) => o.page_type === "back_cover");
+    // 7. Build full page list (cover + content pages + back_cover)
+    const coverPageNumber = 1;
+    const backCoverPageNumber = totalPages;
 
     interface PageData {
       page_number: number;
@@ -101,7 +115,7 @@ export async function runGenerationPipeline(
 
     const allPages: PageData[] = [
       {
-        page_number: coverItem?.page_number ?? 1,
+        page_number: coverPageNumber,
         page_type: "cover",
         text_content: null,
         text_generation_model: null,
@@ -114,14 +128,14 @@ export async function runGenerationPipeline(
           generationSettings?.model_id ?? "claude-sonnet-4-6",
       })),
       {
-        page_number: backCoverItem?.page_number ?? 40,
+        page_number: backCoverPageNumber,
         page_type: "back_cover",
         text_content: null,
         text_generation_model: null,
       },
     ];
 
-    // 7. Persist pages:
+    // 8. Persist pages:
     //    - INSERT rows that don't exist yet (first generation)
     //    - UPDATE rows that already exist (regeneration) — preserves page IDs
     //      and therefore preserves old page_versions history (FK is CASCADE)
@@ -225,7 +239,7 @@ export async function runGenerationPipeline(
 
     console.log(`[pipeline] saved ${savedPages.length} pages (${toInsert.length} inserted, ${toUpdate.length} updated)`);
 
-    // 8. Insert page_versions for every text page
+    // 9. Insert page_versions for every text page
     //    version_number matches the new text_version on the pages row.
     //    Unique constraint: (page_id, version_type, version_number) — safe because
     //    new_version is always existingVersion+1 for updates, 1 for inserts.
@@ -263,7 +277,7 @@ export async function runGenerationPipeline(
       }
     }
 
-    // 9. Chain status transitions:
+    // 10. Chain status transitions:
     //    generating_text → text_ready → generating_illustrations → preview_ready
     const transitions: [OrderStatus, OrderStatus][] = [
       ["generating_text", "text_ready"],
@@ -284,7 +298,7 @@ export async function runGenerationPipeline(
       }
     }
 
-    // 10. Mark processing job complete
+    // 11. Mark processing job complete
     if (jobId) {
       await supabase
         .from("processing_jobs")
