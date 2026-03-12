@@ -9,6 +9,7 @@ import type { OrderStatus } from "@/types/order";
 import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
+import { DraftStatusPoller } from "@/components/admin/DraftStatusPoller";
 
 const ALBUM_TYPE_LABELS: Record<string, string> = {
   life_story_birthday: "סיפור חיים / יום הולדת",
@@ -106,7 +107,7 @@ export default async function AdminOrderDetailPage({
   // Fetch story drafts (version history)
   const { data: storyDrafts } = await adminClient
     .from("story_drafts")
-    .select("id, version_number, created_at")
+    .select("id, version_number, created_at, status, error_message")
     .eq("order_id", orderId)
     .order("version_number", { ascending: false });
 
@@ -118,9 +119,11 @@ export default async function AdminOrderDetailPage({
     || currentStatus === "delivered";
   const hasDrafts = (storyDrafts?.length ?? 0) > 0;
   const latestDraftId = storyDrafts?.[0]?.id as string | undefined;
+  const hasGeneratingDraft = storyDrafts?.some((d) => d.status === "generating") ?? false;
 
   return (
     <div className="space-y-6 max-w-4xl">
+      <DraftStatusPoller active={hasGeneratingDraft} />
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -317,35 +320,55 @@ export default async function AdminOrderDetailPage({
       {storyDrafts && storyDrafts.length > 0 && (
         <Section title={`גרסאות סיפור (${storyDrafts.length})`}>
           <div className="space-y-2">
-            {storyDrafts.map((draft) => (
-              <div
-                key={draft.id as string}
-                className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/30 px-3 py-2"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium">
-                    גרסה {draft.version_number as number}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(draft.created_at as string).toLocaleString("he-IL")}
-                  </span>
+            {storyDrafts.map((draft) => {
+              const draftStatus = draft.status as string;
+              const isGenerating = draftStatus === "generating";
+              const isFailed = draftStatus === "failed";
+              return (
+                <div
+                  key={draft.id as string}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/30 px-3 py-2"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-sm font-medium shrink-0">
+                      גרסה {draft.version_number as number}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {new Date(draft.created_at as string).toLocaleString("he-IL")}
+                    </span>
+                    {isGenerating && (
+                      <span className="rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5 font-medium shrink-0">
+                        יוצר...
+                      </span>
+                    )}
+                    {isFailed && (
+                      <span
+                        className="rounded-full bg-red-100 text-red-700 text-xs px-2 py-0.5 font-medium shrink-0"
+                        title={draft.error_message as string ?? undefined}
+                      >
+                        נכשל
+                      </span>
+                    )}
+                  </div>
+                  {!isGenerating && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link
+                        href={`/admin/orders/${orderId}/draft-text?draftId=${draft.id}`}
+                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                      >
+                        טקסט
+                      </Link>
+                      <Link
+                        href={`/admin/orders/${orderId}/preview?draftId=${draft.id}`}
+                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                      >
+                        תצוגה
+                      </Link>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/admin/orders/${orderId}/draft-text?draftId=${draft.id}`}
-                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                  >
-                    טקסט
-                  </Link>
-                  <Link
-                    href={`/admin/orders/${orderId}/preview?draftId=${draft.id}`}
-                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                  >
-                    תצוגה
-                  </Link>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Section>
       )}
