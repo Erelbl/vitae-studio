@@ -66,8 +66,9 @@ export function AdminPhotosGallery({
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [zipping, setZipping] = useState(false);
 
   // Poll while any photo is generating
   const anyGenerating = photos.some((p) => p.illustration_status === "generating");
@@ -99,8 +100,8 @@ export function AdminPhotosGallery({
 
   async function handleGenerate() {
     if (selected.size === 0) return;
-    setLoading(true);
-    setError(null);
+    setGenerating(true);
+    setGenerateError(null);
 
     const res = await fetch(
       `/api/admin/orders/${orderId}/generate-illustrations`,
@@ -114,15 +115,48 @@ export function AdminPhotosGallery({
     const body = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      setError(body.error ?? "שגיאה ביצירת האיורים");
-      setLoading(false);
+      setGenerateError(body.error ?? "שגיאה ביצירת האיורים");
+      setGenerating(false);
       return;
     }
 
-    // Clear selection and refresh to show "generating" badges
     setSelected(new Set());
-    setLoading(false);
+    setGenerating(false);
     router.refresh();
+  }
+
+  // Trigger a ZIP download by POSTing to the route and saving the blob
+  async function handleDownloadZip(photoIds?: string[]) {
+    setZipping(true);
+    try {
+      const body = photoIds ? { photoIds } : {};
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/illustrations/download-zip`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "שגיאה בהורדת הקבצים");
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `illustrations-${orderId.slice(0, 8)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setZipping(false);
+    }
   }
 
   if (photos.length === 0) {
@@ -133,29 +167,57 @@ export function AdminPhotosGallery({
 
   const allSelected = selected.size === photos.length;
   const someSelected = selected.size > 0;
+  const completedPhotos = photos.filter((p) => p.illustration_status === "completed");
+  const selectedCompleted = photos.filter(
+    (p) => selected.has(p.id) && p.illustration_status === "completed"
+  );
 
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <Button variant="ghost" size="sm" onClick={toggleAll} className="text-xs">
           {allSelected ? "בטל הכל" : "בחר הכל"}
         </Button>
         {someSelected && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground shrink-0">
             {selected.size} נבחרו
           </span>
         )}
-        <Button
-          size="sm"
-          onClick={handleGenerate}
-          disabled={!someSelected || loading}
-          className="ms-auto"
-        >
-          {loading ? "שולח..." : "צור איורי מים"}
-        </Button>
-        {error && (
-          <span className="text-xs text-destructive">{error}</span>
+
+        <div className="flex items-center gap-2 ms-auto flex-wrap">
+          {/* Download selected completed illustrations as ZIP */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleDownloadZip(selectedCompleted.map((p) => p.id))}
+            disabled={selectedCompleted.length === 0 || zipping}
+          >
+            {zipping ? "מכין..." : "הורד נבחרות"}
+          </Button>
+
+          {/* Download all completed illustrations as ZIP */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleDownloadZip()}
+            disabled={completedPhotos.length === 0 || zipping}
+          >
+            {zipping ? "מכין..." : `הורד הכל (${completedPhotos.length})`}
+          </Button>
+
+          {/* Generate watercolor illustrations */}
+          <Button
+            size="sm"
+            onClick={handleGenerate}
+            disabled={!someSelected || generating}
+          >
+            {generating ? "שולח..." : "צור איורי מים"}
+          </Button>
+        </div>
+
+        {generateError && (
+          <span className="text-xs text-destructive w-full">{generateError}</span>
         )}
       </div>
 
@@ -245,6 +307,18 @@ export function AdminPhotosGallery({
                 )}
                 <IllustrationStatusBadge status={photo.illustration_status} />
               </div>
+
+              {/* Single-file download — stop propagation so click doesn't toggle selection */}
+              {isDone && (
+                <a
+                  href={`/api/admin/orders/${orderId}/illustrations/${photo.id}/download`}
+                  download
+                  onClick={(e) => e.stopPropagation()}
+                  className="block w-full text-center text-xs text-primary hover:underline py-0.5"
+                >
+                  הורד איור
+                </a>
+              )}
             </div>
           );
         })}
