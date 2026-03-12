@@ -28,6 +28,8 @@ export async function POST(
   const { orderId } = await params;
   const token = request.nextUrl.searchParams.get("token");
 
+  console.log(`[DIAG][generate-story] ▶ orderId=${orderId} token=${token ? token.slice(0, 8) + "…" : "null"}`);
+
   const supabase = createAdminClient();
   const auth = await authorizeOrderRequest(supabase, orderId, token);
 
@@ -139,6 +141,9 @@ export async function POST(
     (qData?.responses as Partial<QuestionnaireResponses>) ?? {};
   const followupQA = (qData?.followup_questions as FollowUpQA[]) ?? [];
 
+  const responseKeys = Object.keys(responses).filter((k) => !!(responses as Record<string, unknown>)[k]);
+  console.log(`[DIAG][generate-story] questionnaire: qData=${qData ? "loaded" : "NULL"} responseKeys(${responseKeys.length})=${JSON.stringify(responseKeys)} followups=${followupQA.length}`);
+
   // Fetch person details not included in the minimal AuthorizedOrder
   const { data: orderDetails } = await supabase
     .from("orders")
@@ -160,8 +165,16 @@ export async function POST(
       personGender
     );
 
+    const nonEmptySections = (Object.entries(profile) as [string, string][])
+      .filter(([, v]) => typeof v === "string" && v.trim().length > 0)
+      .map(([k]) => k);
+    console.log(`[DIAG][generate-story] profile: subject=${profile.subject_name} gender=${profile.person_gender} nonEmptySections=${JSON.stringify(nonEmptySections)}`);
+    console.log(`[DIAG][generate-story] profile.emotional_highlights(${profile.emotional_highlights?.length ?? 0} chars): ${profile.emotional_highlights?.slice(0, 120) ?? "EMPTY"}`);
+
     // 2. Generate album outline
     const outline = await generateAlbumOutline(profile, generationSettings);
+
+    console.log(`[DIAG][generate-story] outline: ${outline.length} pages generated`);
 
     // 3. Generate page texts
     const rawPages = await generatePageTexts(
@@ -169,6 +182,11 @@ export async function POST(
       outline,
       generationSettings
     );
+
+    console.log(`[DIAG][generate-story] rawPages: ${rawPages.length} pages from Claude`);
+    console.log(`[DIAG][generate-story] rawPages sample(p2): ${JSON.stringify(rawPages.find((p) => p.page_number === 2)?.text_content?.slice(0, 80) ?? "not found")}`);
+    const placeholderCount = rawPages.filter((p) => p.text_content?.startsWith("⚠️")).length;
+    if (placeholderCount > 0) console.warn(`[DIAG][generate-story] ⚠ ${placeholderCount} pages have placeholder text`);
 
     // 4. Review pass
     const { pages: finalPages, review } = await reviewAndFixStory(
@@ -217,10 +235,14 @@ export async function POST(
       },
     ];
 
+    console.log(`[DIAG][generate-story] pageRows to insert: ${pageRows.length} (cover + ${finalPages.length} text + back_cover)`);
+
     const { data: insertedPages, error: pagesError } = await supabase
       .from("pages")
       .insert(pageRows)
       .select("id, page_number, text_content");
+
+    console.log(`[DIAG][generate-story] DB insert: inserted=${insertedPages?.length ?? "null"} error=${pagesError ? pagesError.message : "none"}`);
 
     if (pagesError) {
       throw new Error(`Failed to save pages: ${pagesError.message}`);

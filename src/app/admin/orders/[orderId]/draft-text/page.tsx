@@ -38,11 +38,13 @@ export default async function DraftTextPage({
 
   if (!order) notFound();
 
-  const { data: pages } = await adminClient
+  const { data: pages, error: pagesQueryError } = await adminClient
     .from("pages")
     .select("page_number, page_type, text_content")
     .eq("order_id", orderId)
     .order("page_number");
+
+  console.log(`[DIAG][draft-text] orderId=${orderId} pages=${pages?.length ?? "null"} queryError=${pagesQueryError ? pagesQueryError.message : "none"}`);
 
   const personName = (order.person_name as string | null) || "ללא שם";
   const currentStatus = order.status as OrderStatus;

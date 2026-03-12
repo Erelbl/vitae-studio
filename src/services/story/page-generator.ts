@@ -132,6 +132,8 @@ ${outlineText}
   ...
 ]`;
 
+  console.log(`[DIAG][page-generator] sending to Claude: model=${modelId} temp=${temperature} userMessage=${userMessage.length} chars factSheet=${factSheetBlock.slice(0, 120)}`);
+
   const message = await client.messages.create({
     model: modelId,
     max_tokens: 8000,
@@ -143,7 +145,10 @@ ${outlineText}
   const rawText =
     message.content[0]?.type === "text" ? message.content[0].text : "";
 
+  console.log(`[DIAG][page-generator] Claude response: stop_reason=${message.stop_reason} rawText=${rawText.length} chars rawTextStart=${rawText.slice(0, 80)}`);
+
   const parsedPages = parsePageTexts(rawText);
+  console.log(`[DIAG][page-generator] parsedPages: ${parsedPages.length} pages parsed from Claude response`);
 
   // Merge with outline: every text page must have an entry
   return textPages.map((item) => {

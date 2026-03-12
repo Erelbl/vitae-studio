@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { OrderStatus } from "@/types/order";
 import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
+import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
 
 const ALBUM_TYPE_LABELS: Record<string, string> = {
   life_story_birthday: "סיפור חיים / יום הולדת",
@@ -40,6 +41,14 @@ const LIFE_STAGE_LABELS: Record<string, string> = {
 
 // Statuses from which admin can publish to customer
 const PUBLISHABLE_STATUSES: OrderStatus[] = ["preview_ready", "admin_review"];
+
+// Statuses from which admin can (re-)trigger story generation
+const GENERATABLE_STATUSES: OrderStatus[] = [
+  "enrichment_complete",
+  "photos_uploaded",
+  "revision_requested",
+  "error_generation",
+];
 
 export default async function AdminOrderDetailPage({
   params,
@@ -99,6 +108,7 @@ export default async function AdminOrderDetailPage({
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
   const followups = (questionnaireRow?.followup_questions ?? []) as FollowUpQA[];
   const canPublish = PUBLISHABLE_STATUSES.includes(currentStatus);
+  const canGenerate = GENERATABLE_STATUSES.includes(currentStatus);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -141,6 +151,9 @@ export default async function AdminOrderDetailPage({
             צפייה בטקסט שנוצר
           </Button>
         </Link>
+        {canGenerate && (
+          <GenerateStoryButton orderId={orderId} />
+        )}
         {canPublish && (
           <PublishButton orderId={orderId} />
         )}

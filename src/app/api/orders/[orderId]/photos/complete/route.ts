@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeOrderRequest } from "@/lib/order-auth";
 import { assertTransition } from "@/lib/state-machine";
@@ -61,6 +61,27 @@ export async function POST(
   if (updateError) {
     return NextResponse.json({ error: "Failed to update order status" }, { status: 500 });
   }
+
+  // Fire story generation in the background after responding to the client
+  const accessToken = auth.order.access_token;
+  const baseUrl = new URL(request.url).origin;
+  after(async () => {
+    try {
+      console.log(`[photos/complete] Triggering generate-story for order ${orderId}`);
+      const res = await fetch(
+        `${baseUrl}/api/orders/${orderId}/generate-story?token=${accessToken}`,
+        { method: "POST" }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error(`[photos/complete] generate-story returned ${res.status}:`, body);
+      } else {
+        console.log(`[photos/complete] generate-story started: pages_saved=${body.pages_saved}`);
+      }
+    } catch (err) {
+      console.error("[photos/complete] Failed to trigger story generation:", err);
+    }
+  });
 
   return NextResponse.json({ status: "photos_uploaded" });
 }
