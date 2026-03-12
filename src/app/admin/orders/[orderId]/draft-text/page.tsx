@@ -13,12 +13,13 @@ const PAGE_TYPE_LABELS: Record<PageType, string> = {
   back_cover: "כריכה אחורית",
 };
 
+// Displays the current text content of all pages for an order.
+// Uses the real schema: pages table (one row per page per order, queried by order_id).
+// No story_drafts, no draftId params.
 export default async function DraftTextPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ orderId: string }>;
-  searchParams: Promise<{ draftId?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -30,7 +31,6 @@ export default async function DraftTextPage({
   }
 
   const { orderId } = await params;
-  const { draftId } = await searchParams;
   const adminClient = createAdminClient();
 
   const { data: order } = await adminClient
@@ -41,35 +41,30 @@ export default async function DraftTextPage({
 
   if (!order) notFound();
 
-  // Fetch all drafts for version selector
-  const { data: drafts } = await adminClient
-    .from("story_drafts")
-    .select("id, version_number, created_at")
-    .eq("order_id", orderId)
-    .order("version_number", { ascending: false });
-
-  // Resolve active draft (latest if none specified)
-  const activeDraftId = draftId ?? (drafts?.[0]?.id as string | undefined) ?? null;
-  const activeDraft = drafts?.find((d) => d.id === activeDraftId);
-
-  // Query pages filtered by draft, or fall back to order-wide for legacy data
-  let pagesQuery = adminClient
+  // Load all current pages for this order — always by order_id
+  const { data: pages, error: pagesError } = await adminClient
     .from("pages")
-    .select("page_number, page_type, text_content");
+    .select("page_number, page_type, text_content, text_version")
+    .eq("order_id", orderId)
+    .order("page_number");
 
-  if (activeDraftId) {
-    pagesQuery = pagesQuery.eq("story_draft_id", activeDraftId);
-  } else {
-    pagesQuery = pagesQuery.eq("order_id", orderId);
-  }
-
-  const { data: pages, error: pagesQueryError } = await pagesQuery.order("page_number");
-
-  console.log(`[DIAG][draft-text] orderId=${orderId} draftId=${activeDraftId ?? "none"} pages=${pages?.length ?? "null"} queryError=${pagesQueryError ? pagesQueryError.message : "none"}`);
+  console.log(
+    `[draft-text] orderId=${orderId} pages=${pages?.length ?? "null"} error=${pagesError?.message ?? "none"}`
+  );
 
   const personName = (order.person_name as string | null) || "ללא שם";
   const currentStatus = order.status as OrderStatus;
   const hasPages = pages && pages.length > 0;
+
+  // Current text version = max text_version across all pages (indicates generation round)
+  const maxTextVersion = hasPages
+    ? Math.max(
+        0,
+        ...pages
+          .map((p) => p.text_version as number | null)
+          .filter((v): v is number => v != null)
+      )
+    : 0;
 
   return (
     <div className="max-w-2xl mx-auto py-10 px-4 space-y-6">
@@ -82,7 +77,7 @@ export default async function DraftTextPage({
           ← חזרה לפרטי הזמנה
         </Link>
         <Link
-          href={`/admin/orders/${orderId}/preview${activeDraftId ? `?draftId=${activeDraftId}` : ""}`}
+          href={`/admin/orders/${orderId}/preview`}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           צפייה בתצוגת האלבום ←
@@ -92,43 +87,17 @@ export default async function DraftTextPage({
       <div>
         <h1 className="text-xl font-bold mb-1">
           טיוטת טקסט — {personName}
-          {activeDraft && (
+          {maxTextVersion > 0 && (
             <span className="ms-2 text-sm font-normal text-muted-foreground">
-              גרסה {activeDraft.version_number as number}
+              גרסת טקסט {maxTextVersion}
             </span>
           )}
         </h1>
         <p className="text-sm text-muted-foreground">
           סטטוס: {currentStatus}
-          {hasPages ? ` · ${pages.length} עמודים נוצרו` : " · אין עמודים עדיין"}
+          {hasPages ? ` · ${pages.length} עמודים` : " · אין עמודים עדיין"}
         </p>
       </div>
-
-      {/* Version selector */}
-      {drafts && drafts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-3">
-          <span className="text-xs text-muted-foreground font-medium me-1">גרסה:</span>
-          {drafts.map((draft) => {
-            const isActive = draft.id === activeDraftId;
-            return (
-              <Link
-                key={draft.id as string}
-                href={`/admin/orders/${orderId}/draft-text?draftId=${draft.id}`}
-                className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                גרסה {draft.version_number as number}
-                <span className="ms-1.5 opacity-60">
-                  {new Date(draft.created_at as string).toLocaleDateString("he-IL")}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      )}
 
       {!hasPages && (
         <div className="rounded-xl border border-amber-200/70 bg-amber-50/80 px-4 py-5 text-sm text-amber-800">
@@ -149,6 +118,12 @@ export default async function DraftTextPage({
               <span className="text-xs text-muted-foreground">
                 {PAGE_TYPE_LABELS[page.page_type as PageType] ?? page.page_type}
               </span>
+              {(page.text_version as number | null) != null &&
+                (page.text_version as number) > 0 && (
+                  <span className="text-xs text-muted-foreground opacity-60">
+                    v{page.text_version}
+                  </span>
+                )}
             </div>
 
             {page.text_content ? (
@@ -157,7 +132,8 @@ export default async function DraftTextPage({
               </p>
             ) : (
               <p className="text-sm text-muted-foreground italic">
-                אין טקסט (עמוד {PAGE_TYPE_LABELS[page.page_type as PageType] ?? page.page_type})
+                אין טקסט (עמוד{" "}
+                {PAGE_TYPE_LABELS[page.page_type as PageType] ?? page.page_type})
               </p>
             )}
           </div>

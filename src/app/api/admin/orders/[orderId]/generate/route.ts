@@ -13,13 +13,15 @@ export const maxDuration = 300;
 
 // POST /api/admin/orders/[orderId]/generate
 //
-// Admin-only endpoint that starts story generation.
-// Does all setup synchronously (fast), then uses after() to run the heavy
-// Claude pipeline in the background so the browser request returns immediately.
+// Admin-only endpoint. Does all setup synchronously (fast), then uses after()
+// to run the heavy Claude pipeline in the background so the HTTP response
+// returns immediately to the admin browser.
 //
-// Using after() here (in a real browser request context) rather than inside
-// generate-story (server-to-server) is critical — Vercel's waitUntil context
+// Uses after() here — in the real admin browser-request context — rather than
+// inside generate-story (server-to-server), because Vercel's waitUntil context
 // that backs after() is only reliable for real client requests.
+//
+// Schema: operates on pages + page_versions. No story_drafts table.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }
@@ -37,7 +39,7 @@ export async function POST(
   const { orderId } = await params;
   const adminClient = createAdminClient();
 
-  // ── Fetch order status ──
+  // ── Fetch order status + person details ──
   const { data: order } = await adminClient
     .from("orders")
     .select("status, person_name, person_gender")
@@ -102,51 +104,6 @@ export async function POST(
 
   const jobId: string | null = jobError ? null : (job?.id as string);
 
-  // ── Determine next version number and create story_draft immediately ──
-  const { data: maxDraftRow } = await adminClient
-    .from("story_drafts")
-    .select("version_number")
-    .eq("order_id", orderId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .single();
-
-  const nextVersionNumber =
-    ((maxDraftRow?.version_number as number | null) ?? 0) + 1;
-
-  const { data: newDraft, error: draftError } = await adminClient
-    .from("story_drafts")
-    .insert({
-      order_id: orderId,
-      version_number: nextVersionNumber,
-      generation_settings_id: generationSettings?.id ?? null,
-      status: "generating",
-    })
-    .select("id")
-    .single();
-
-  if (draftError || !newDraft) {
-    if (jobId) {
-      await adminClient
-        .from("processing_jobs")
-        .update({
-          status: "failed",
-          completed_at: new Date().toISOString(),
-          error_message: `Failed to create story draft: ${draftError?.message ?? "unknown"}`,
-        })
-        .eq("id", jobId);
-    }
-    return NextResponse.json(
-      { error: "Failed to create story draft" },
-      { status: 500 }
-    );
-  }
-
-  const draftId = newDraft.id as string;
-  console.log(
-    `[admin/generate] created story_draft id=${draftId} version=${nextVersionNumber}`
-  );
-
   // ── Load questionnaire + follow-up data ──
   const { data: qData } = await adminClient
     .from("questionnaire_responses")
@@ -175,13 +132,13 @@ export async function POST(
       if (jobId) {
         await adminClient
           .from("processing_jobs")
-          .update({ status: "failed", completed_at: new Date().toISOString(), error_message: String(err) })
+          .update({
+            status: "failed",
+            completed_at: new Date().toISOString(),
+            error_message: String(err),
+          })
           .eq("id", jobId);
       }
-      await adminClient
-        .from("story_drafts")
-        .update({ status: "failed", error_message: String(err) })
-        .eq("id", draftId);
       return NextResponse.json(
         { error: "Failed to advance order state" },
         { status: 500 }
@@ -204,26 +161,29 @@ export async function POST(
     if (jobId) {
       await adminClient
         .from("processing_jobs")
-        .update({ status: "failed", completed_at: new Date().toISOString(), error_message: String(err) })
+        .update({
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          error_message: String(err),
+        })
         .eq("id", jobId);
     }
-    await adminClient
-      .from("story_drafts")
-      .update({ status: "failed", error_message: String(err) })
-      .eq("id", draftId);
     return NextResponse.json(
       { error: "Failed to start text generation", detail: String(err) },
       { status: 500 }
     );
   }
 
-  // ── Fire off the Claude pipeline after the response is sent ──
-  // after() is called here (real browser request context) so Vercel's
-  // waitUntil correctly keeps this function alive until the pipeline finishes.
+  console.log(
+    `[admin/generate] orderId=${orderId} jobId=${jobId ?? "null"} transitioning to generating_text`
+  );
+
+  // ── Fire off the Claude pipeline after the HTTP response is sent ──
+  // after() is called here — in the real admin browser-request context —
+  // so Vercel's waitUntil correctly keeps this function alive until done.
   after(async () => {
     await runGenerationPipeline({
       orderId,
-      draftId,
       responses,
       followupQA,
       personName,
@@ -233,13 +193,11 @@ export async function POST(
     });
   });
 
-  // Return immediately — the admin UI will poll for completion
   return NextResponse.json(
     {
       status: "generating",
-      story_draft_id: draftId,
-      story_version: nextVersionNumber,
       order_status: "generating_text",
+      job_id: jobId,
     },
     { status: 202 }
   );

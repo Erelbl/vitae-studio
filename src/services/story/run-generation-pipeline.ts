@@ -10,7 +10,6 @@ import type { GenerationSettings } from "@/types/page";
 
 export interface GenerationPipelineParams {
   orderId: string;
-  draftId: string;
   responses: Partial<QuestionnaireResponses>;
   followupQA: FollowUpQA[];
   personName: string;
@@ -20,14 +19,21 @@ export interface GenerationPipelineParams {
 }
 
 // Runs the full story generation pipeline asynchronously.
-// Called via after() in the generate-story route so it runs after the HTTP
-// response is sent. Manages its own Supabase client instance.
+// Operates on the real schema: pages (one row per page per order) +
+// page_versions (per-page version history). No story_drafts table.
+//
+// Regeneration strategy:
+//   - Fetch existing pages for the order before Claude calls.
+//   - After generation: UPDATE existing pages (incrementing text_version),
+//     INSERT new pages where they don't exist yet.
+//   - INSERT page_versions rows for every text page saved.
+//   - This preserves old page_versions (ON DELETE CASCADE from pages means
+//     we must never DELETE page rows during regeneration).
 export async function runGenerationPipeline(
   params: GenerationPipelineParams
 ): Promise<void> {
   const {
     orderId,
-    draftId,
     responses,
     followupQA,
     personName,
@@ -39,7 +45,7 @@ export async function runGenerationPipeline(
   const supabase = createAdminClient();
 
   try {
-    console.log(`[pipeline] ▶ orderId=${orderId} draftId=${draftId}`);
+    console.log(`[pipeline] ▶ orderId=${orderId}`);
 
     // 1. Build story profile
     const profile = buildStoryProfile(
@@ -49,108 +55,215 @@ export async function runGenerationPipeline(
       personGender
     );
 
-    // 2. Generate album outline
+    // 2. Snapshot existing pages so we know which to INSERT vs UPDATE
+    //    and what the current text_version is for each.
+    const { data: existingPagesRaw } = await supabase
+      .from("pages")
+      .select("id, page_number, text_version")
+      .eq("order_id", orderId);
+
+    const existingByNum = new Map(
+      (existingPagesRaw ?? []).map((p) => [
+        p.page_number as number,
+        { id: p.id as string, textVersion: (p.text_version as number) ?? 0 },
+      ])
+    );
+    console.log(`[pipeline] existing pages for order: ${existingByNum.size}`);
+
+    // 3. Generate album outline
     const outline = await generateAlbumOutline(profile, generationSettings);
     console.log(`[pipeline] outline: ${outline.length} pages`);
 
-    // 3. Generate page texts
-    const rawPages = await generatePageTexts(profile, outline, generationSettings);
+    // 4. Generate page texts
+    const rawPages = await generatePageTexts(
+      profile,
+      outline,
+      generationSettings
+    );
     console.log(`[pipeline] rawPages: ${rawPages.length} pages`);
 
-    // 4. Review pass
+    // 5. Review pass
     const { pages: finalPages, review } = await reviewAndFixStory(
       rawPages,
       generationSettings
     );
 
-    // 5. Build page rows
+    // 6. Build full 40-page list (cover + text pages + back_cover)
     const coverItem = outline.find((o) => o.page_type === "cover");
     const backCoverItem = outline.find((o) => o.page_type === "back_cover");
 
-    const pageRows = [
+    interface PageData {
+      page_number: number;
+      page_type: string;
+      text_content: string | null;
+      text_generation_model: string | null;
+    }
+
+    const allPages: PageData[] = [
       {
-        order_id: orderId,
         page_number: coverItem?.page_number ?? 1,
-        page_type: "cover" as const,
-        text_content: null as string | null,
-        text_status: "ready" as const,
-        text_version: 1,
-        text_generation_model: null as string | null,
-        story_draft_id: draftId,
+        page_type: "cover",
+        text_content: null,
+        text_generation_model: null,
       },
       ...finalPages.map((p) => ({
-        order_id: orderId,
         page_number: p.page_number,
         page_type: p.page_type,
         text_content: p.text_content,
-        text_status: "ready" as const,
-        text_version: 1,
         text_generation_model:
           generationSettings?.model_id ?? "claude-sonnet-4-6",
-        story_draft_id: draftId,
       })),
       {
-        order_id: orderId,
         page_number: backCoverItem?.page_number ?? 40,
-        page_type: "back_cover" as const,
-        text_content: null as string | null,
-        text_status: "ready" as const,
-        text_version: 1,
-        text_generation_model: null as string | null,
-        story_draft_id: draftId,
+        page_type: "back_cover",
+        text_content: null,
+        text_generation_model: null,
       },
     ];
 
-    // 6. Insert pages
-    const { data: insertedPages, error: pagesError } = await supabase
-      .from("pages")
-      .insert(pageRows)
-      .select("id, page_number, text_content");
-
-    if (pagesError) {
-      throw new Error(`Failed to save pages: ${pagesError.message}`);
+    // 7. Persist pages:
+    //    - INSERT rows that don't exist yet (first generation)
+    //    - UPDATE rows that already exist (regeneration) — preserves page IDs
+    //      and therefore preserves old page_versions history (FK is CASCADE)
+    interface SavedPage {
+      id: string;
+      page_number: number;
+      text_content: string | null;
+      new_version: number;
     }
+    const savedPages: SavedPage[] = [];
 
-    console.log(`[pipeline] inserted ${insertedPages?.length ?? 0} pages`);
+    const toInsert: Array<{
+      order_id: string;
+      page_number: number;
+      page_type: string;
+      text_content: string | null;
+      text_status: string;
+      text_version: number;
+      text_generation_model: string | null;
+    }> = [];
 
-    // 7. Insert page_versions
-    if (insertedPages && insertedPages.length > 0) {
-      const versionRows = insertedPages
-        .filter((p) => p.text_content != null)
-        .map((p) => ({
-          page_id: p.id as string,
-          version_type: "text" as const,
-          version_number: 1,
-          content: p.text_content as string,
-          generation_settings_id: generationSettings?.id ?? null,
-          input_snapshot: {
-            order_id: orderId,
-            page_number: p.page_number,
-          },
-          output_metadata: {
-            review_issues: review.issues.filter(
-              (i) => i.page_number === p.page_number
-            ),
-          },
-          created_by: "generation" as const,
-        }));
+    const toUpdate: Array<{
+      id: string;
+      page_number: number;
+      text_content: string | null;
+      new_version: number;
+      text_generation_model: string | null;
+    }> = [];
 
-      if (versionRows.length > 0) {
-        const { error: versionsError } = await supabase
-          .from("page_versions")
-          .insert(versionRows);
-
-        if (versionsError) {
-          console.error(
-            "[pipeline] Failed to save page_versions:",
-            versionsError.message
-          );
-          // Non-fatal — pages are saved; versions are audit log
-        }
+    for (const p of allPages) {
+      const existing = existingByNum.get(p.page_number);
+      if (existing) {
+        toUpdate.push({
+          id: existing.id,
+          page_number: p.page_number,
+          text_content: p.text_content,
+          new_version: existing.textVersion + 1,
+          text_generation_model: p.text_generation_model,
+        });
+      } else {
+        toInsert.push({
+          order_id: orderId,
+          page_number: p.page_number,
+          page_type: p.page_type,
+          text_content: p.text_content,
+          text_status: "ready",
+          text_version: 1,
+          text_generation_model: p.text_generation_model,
+        });
       }
     }
 
-    // 8. Chain status transitions:
+    // Batch-insert new pages
+    if (toInsert.length > 0) {
+      const { data: inserted, error: insertError } = await supabase
+        .from("pages")
+        .insert(toInsert)
+        .select("id, page_number, text_content");
+
+      if (insertError) {
+        throw new Error(`Failed to insert pages: ${insertError.message}`);
+      }
+
+      for (const p of inserted ?? []) {
+        savedPages.push({
+          id: p.id as string,
+          page_number: p.page_number as number,
+          text_content: p.text_content as string | null,
+          new_version: 1,
+        });
+      }
+    }
+
+    // Update existing pages one-by-one (need different text_version per row)
+    for (const p of toUpdate) {
+      const { error: updateError } = await supabase
+        .from("pages")
+        .update({
+          text_content: p.text_content,
+          text_status: "ready",
+          text_version: p.new_version,
+          text_generation_model: p.text_generation_model,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", p.id);
+
+      if (updateError) {
+        console.error(
+          `[pipeline] Failed to update page ${p.page_number}:`,
+          updateError.message
+        );
+      } else {
+        savedPages.push({
+          id: p.id,
+          page_number: p.page_number,
+          text_content: p.text_content,
+          new_version: p.new_version,
+        });
+      }
+    }
+
+    console.log(`[pipeline] saved ${savedPages.length} pages (${toInsert.length} inserted, ${toUpdate.length} updated)`);
+
+    // 8. Insert page_versions for every text page
+    //    version_number matches the new text_version on the pages row.
+    //    Unique constraint: (page_id, version_type, version_number) — safe because
+    //    new_version is always existingVersion+1 for updates, 1 for inserts.
+    const versionRows = savedPages
+      .filter((p) => p.text_content != null)
+      .map((p) => ({
+        page_id: p.id,
+        version_type: "text" as const,
+        version_number: p.new_version,
+        content: p.text_content as string,
+        generation_settings_id: generationSettings?.id ?? null,
+        input_snapshot: {
+          order_id: orderId,
+          page_number: p.page_number,
+        },
+        output_metadata: {
+          review_issues: review.issues.filter(
+            (i) => i.page_number === p.page_number
+          ),
+        },
+        created_by: "generation" as const,
+      }));
+
+    if (versionRows.length > 0) {
+      const { error: versionsError } = await supabase
+        .from("page_versions")
+        .insert(versionRows);
+
+      if (versionsError) {
+        console.error(
+          "[pipeline] Failed to save page_versions:",
+          versionsError.message
+        );
+        // Non-fatal — pages are saved; versions are audit log
+      }
+    }
+
+    // 9. Chain status transitions:
     //    generating_text → text_ready → generating_illustrations → preview_ready
     const transitions: [OrderStatus, OrderStatus][] = [
       ["generating_text", "text_ready"],
@@ -171,37 +284,27 @@ export async function runGenerationPipeline(
       }
     }
 
-    // 9. Mark draft completed
-    await supabase
-      .from("story_drafts")
-      .update({ status: "completed" })
-      .eq("id", draftId);
-
     // 10. Mark processing job complete
-    await supabase
-      .from("processing_jobs")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        output_data: {
-          pages_saved: insertedPages?.length ?? 0,
-          review_issues: review.issues.length,
-          regenerated_count: review.regenerated_count,
-        },
-      })
-      .eq("id", jobId ?? "");
+    if (jobId) {
+      await supabase
+        .from("processing_jobs")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          output_data: {
+            pages_saved: savedPages.length,
+            review_issues: review.issues.length,
+            regenerated_count: review.regenerated_count,
+          },
+        })
+        .eq("id", jobId);
+    }
 
     console.log(
-      `[pipeline] ✓ DONE orderId=${orderId} draftId=${draftId} pages=${insertedPages?.length ?? 0}`
+      `[pipeline] ✓ DONE orderId=${orderId} pages=${savedPages.length}`
     );
   } catch (err) {
     console.error("[pipeline] ✗ FAILED:", err);
-
-    // Mark draft failed
-    await supabase
-      .from("story_drafts")
-      .update({ status: "failed", error_message: String(err) })
-      .eq("id", draftId);
 
     // Best-effort: transition order to error state
     try {
