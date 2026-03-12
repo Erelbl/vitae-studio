@@ -105,11 +105,61 @@ export default async function AdminOrderDetailPage({
     : [];
 
   // Fetch story drafts (version history)
-  const { data: storyDrafts } = await adminClient
+  const { data: storyDraftsRaw } = await adminClient
     .from("story_drafts")
     .select("id, version_number, created_at, status, error_message")
     .eq("order_id", orderId)
     .order("version_number", { ascending: false });
+
+  // ── Stale-draft recovery ──
+  // If any draft has been "generating" for > 10 minutes without completion,
+  // the background job likely died (e.g. Vercel timeout). Mark it failed so
+  // the UI doesn't spin forever and the admin can trigger a new run.
+  const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+  const now = Date.now();
+  const staleDraftIds: string[] = [];
+  if (storyDraftsRaw) {
+    for (const draft of storyDraftsRaw) {
+      if (
+        draft.status === "generating" &&
+        now - new Date(draft.created_at as string).getTime() > STALE_THRESHOLD_MS
+      ) {
+        staleDraftIds.push(draft.id as string);
+      }
+    }
+  }
+
+  if (staleDraftIds.length > 0) {
+    await adminClient
+      .from("story_drafts")
+      .update({ status: "failed", error_message: "Generation timed out — no completion recorded." })
+      .in("id", staleDraftIds);
+
+    // If the order is still stuck in a generating status (no active draft),
+    // reset it to error_generation so the admin can retry.
+    const orderCurrentStatus = order.status as OrderStatus;
+    if (
+      ["generating_text", "text_ready", "generating_illustrations"].includes(
+        orderCurrentStatus
+      )
+    ) {
+      await adminClient
+        .from("orders")
+        .update({ status: "error_generation" })
+        .eq("id", orderId);
+      // Reflect the reset in the in-memory order so rendering is correct
+      order.status = "error_generation";
+    }
+  }
+
+  // Re-fetch drafts after recovery so rendered data is fresh
+  const { data: storyDrafts } = staleDraftIds.length > 0
+    ? await adminClient
+        .from("story_drafts")
+        .select("id, version_number, created_at, status, error_message")
+        .eq("order_id", orderId)
+        .order("version_number", { ascending: false })
+    : { data: storyDraftsRaw };
 
   const currentStatus = order.status as OrderStatus;
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;

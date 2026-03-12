@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeOrderRequest } from "@/lib/order-auth";
 import { assertTransition } from "@/lib/state-machine";
@@ -8,20 +8,27 @@ import type { OrderStatus } from "@/types/order";
 import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
 import type { GenerationSettings } from "@/types/page";
 
-// Allow up to 300s (Vercel Pro limit) for the after() pipeline to run.
+// Allow up to 300s — pipeline runs synchronously here.
+// This route is called from photos/complete's after() which already runs in a
+// real browser-request context, so after() is not needed inside this route.
+// Admin-triggered generation goes through /api/admin/orders/[orderId]/generate
+// which manages its own after() directly.
 export const maxDuration = 300;
 
 // POST /api/orders/[orderId]/generate-story?token=...
 //
-// Version-first async story generation:
+// Synchronous story generation pipeline — called from the photos/complete
+// after() callback (where the outer after() is already in a real request context).
+//
+// Flow:
 //   1. Validate token + order state
 //   2. Create processing_job row
 //   3. Resolve generation settings
-//   4. Create story_draft row with status='generating' (visible in admin UI immediately)
+//   4. Create story_draft row with status='generating'
 //   5. Load questionnaire + person data
 //   6. Transition order to generating_text
-//   7. Return 202 immediately — draft is visible to admin, UI can poll
-//   8. after(): run the full Claude pipeline in the background
+//   7. Run full Claude pipeline synchronously
+//   8. Return result
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }
@@ -134,7 +141,7 @@ export async function POST(
 
   const draftId = newDraft.id as string;
   console.log(
-    `[generate-story] created story_draft id=${draftId} version=${nextVersionNumber} status=generating`
+    `[generate-story] created story_draft id=${draftId} version=${nextVersionNumber}`
   );
 
   // ── Load questionnaire + follow-up data ──
@@ -204,30 +211,40 @@ export async function POST(
     );
   }
 
-  // ── Fire off the heavy pipeline after the response is sent ──
-  after(async () => {
-    await runGenerationPipeline({
-      orderId,
-      draftId,
-      responses,
-      followupQA,
-      personName,
-      personGender,
-      generationSettings,
-      jobId,
-    });
+  // ── Run the generation pipeline synchronously ──
+  // (The caller — photos/complete's after() — already has a proper request
+  //  context that keeps the function alive for up to maxDuration seconds.)
+  await runGenerationPipeline({
+    orderId,
+    draftId,
+    responses,
+    followupQA,
+    personName,
+    personGender,
+    generationSettings,
+    jobId,
   });
 
-  // Return immediately — the admin UI will poll for completion
-  return NextResponse.json(
-    {
-      status: "generating",
-      story_draft_id: draftId,
-      story_version: nextVersionNumber,
-      order_status: "generating_text",
-    },
-    { status: 202 }
-  );
+  // Re-fetch order status so we can report the final state
+  const { data: finalOrder } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .single();
+
+  const { data: finalDraft } = await supabase
+    .from("story_drafts")
+    .select("status")
+    .eq("id", draftId)
+    .single();
+
+  return NextResponse.json({
+    success: finalDraft?.status === "completed",
+    order_status: finalOrder?.status ?? "unknown",
+    story_draft_id: draftId,
+    story_version: nextVersionNumber,
+    draft_status: finalDraft?.status ?? "unknown",
+  });
 }
 
 async function failJob(

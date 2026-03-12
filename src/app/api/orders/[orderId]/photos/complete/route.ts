@@ -4,6 +4,9 @@ import { authorizeOrderRequest } from "@/lib/order-auth";
 import { assertTransition } from "@/lib/state-machine";
 import type { OrderStatus } from "@/types/order";
 
+// Allow up to 300s so after() can wait for the synchronous generate-story pipeline.
+export const maxDuration = 300;
+
 // POST /api/orders/[orderId]/photos/complete?token=...
 //
 // Marks photo upload as done and transitions the order to photos_uploaded.
