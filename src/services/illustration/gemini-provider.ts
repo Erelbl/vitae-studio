@@ -16,7 +16,7 @@ Transform this photograph into a beautiful watercolor illustration with these ch
 - No text, captions, watermarks, or writing anywhere in the image
 `.trim();
 
-const MODEL_ID = "gemini-2.0-flash-preview-image-generation";
+const MODEL_ID = process.env.GEMINI_IMAGE_MODEL ?? "gemini-2.5-flash-image";
 
 export class GeminiIllustrationProvider implements IllustrationProvider {
   async stylizeImage(input: IllustrationInput): Promise<IllustrationOutput> {
@@ -25,6 +25,7 @@ export class GeminiIllustrationProvider implements IllustrationProvider {
       throw new Error("GOOGLE_AI_API_KEY is not set — cannot generate illustrations");
     }
 
+    console.log(`[gemini] model=${MODEL_ID}`);
     console.log(`[gemini] Fetching source image from URL (${input.sourceImageUrl.slice(0, 60)}…)`);
 
     // Download source image
