@@ -43,12 +43,15 @@ const LIFE_STAGE_LABELS: Record<string, string> = {
 // Statuses where "פרסם ללקוח" is enabled
 const PUBLISHABLE_STATUSES: OrderStatus[] = ["preview_ready", "admin_review"];
 
-// Statuses where generation is actively running — disable the generate button to avoid double-trigger
+// Statuses where generation is running at the order level
 const GENERATING_IN_PROGRESS_STATUSES: OrderStatus[] = [
   "generating_text",
   "text_ready",
   "generating_illustrations",
 ];
+
+// If a draft has been "generating" longer than this, it is stale
+const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
 export default async function AdminOrderDetailPage({
   params,
@@ -104,18 +107,13 @@ export default async function AdminOrderDetailPage({
       )
     : [];
 
-  // Fetch story drafts (version history)
+  // ── Fetch story drafts with stale recovery ──
   const { data: storyDraftsRaw } = await adminClient
     .from("story_drafts")
     .select("id, version_number, created_at, status, error_message")
     .eq("order_id", orderId)
     .order("version_number", { ascending: false });
 
-  // ── Stale-draft recovery ──
-  // If any draft has been "generating" for > 10 minutes without completion,
-  // the background job likely died (e.g. Vercel timeout). Mark it failed so
-  // the UI doesn't spin forever and the admin can trigger a new run.
-  const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
   const now = Date.now();
   const staleDraftIds: string[] = [];
   if (storyDraftsRaw) {
@@ -132,48 +130,74 @@ export default async function AdminOrderDetailPage({
   if (staleDraftIds.length > 0) {
     await adminClient
       .from("story_drafts")
-      .update({ status: "failed", error_message: "Generation timed out — no completion recorded." })
+      .update({
+        status: "failed",
+        error_message: "Generation timed out — no completion recorded.",
+      })
       .in("id", staleDraftIds);
 
-    // If the order is still stuck in a generating status (no active draft),
-    // reset it to error_generation so the admin can retry.
+    // If the order is still stuck in a generating status, reset to error_generation
     const orderCurrentStatus = order.status as OrderStatus;
     if (
-      ["generating_text", "text_ready", "generating_illustrations"].includes(
-        orderCurrentStatus
-      )
+      GENERATING_IN_PROGRESS_STATUSES.includes(orderCurrentStatus)
     ) {
       await adminClient
         .from("orders")
         .update({ status: "error_generation" })
         .eq("id", orderId);
-      // Reflect the reset in the in-memory order so rendering is correct
       order.status = "error_generation";
     }
   }
 
-  // Re-fetch drafts after recovery so rendered data is fresh
-  const { data: storyDrafts } = staleDraftIds.length > 0
-    ? await adminClient
-        .from("story_drafts")
-        .select("id, version_number, created_at, status, error_message")
-        .eq("order_id", orderId)
-        .order("version_number", { ascending: false })
-    : { data: storyDraftsRaw };
+  // Re-fetch drafts after recovery
+  const { data: storyDrafts } =
+    staleDraftIds.length > 0
+      ? await adminClient
+          .from("story_drafts")
+          .select("id, version_number, created_at, status, error_message")
+          .eq("order_id", orderId)
+          .order("version_number", { ascending: false })
+      : { data: storyDraftsRaw };
 
+  // ── Page counts per draft ──
+  const { data: pageRows } = await adminClient
+    .from("pages")
+    .select("story_draft_id")
+    .eq("order_id", orderId)
+    .not("story_draft_id", "is", null);
+
+  const pageCountByDraft = new Map<string, number>();
+  for (const row of pageRows ?? []) {
+    const id = row.story_draft_id as string;
+    pageCountByDraft.set(id, (pageCountByDraft.get(id) ?? 0) + 1);
+  }
+
+  // ── Derive display state ──
   const currentStatus = order.status as OrderStatus;
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
   const followups = (questionnaireRow?.followup_questions ?? []) as FollowUpQA[];
+
+  // The "active generating" draft: a recent one in generating state
+  const activeGeneratingDraft = storyDrafts?.find((d) => d.status === "generating") ?? null;
+  const hasGeneratingDraft = activeGeneratingDraft !== null;
+
+  // Latest completed draft — used for action buttons (preview / draft-text)
+  const latestCompletedDraft = storyDrafts?.find((d) => d.status === "completed") ?? null;
+  const latestCompletedDraftId = latestCompletedDraft?.id as string | undefined;
+
+  // Publish: allowed when order status is publishable
   const canPublish = PUBLISHABLE_STATUSES.includes(currentStatus);
-  const generateDisabled = GENERATING_IN_PROGRESS_STATUSES.includes(currentStatus)
-    || currentStatus === "delivered";
-  const hasDrafts = (storyDrafts?.length ?? 0) > 0;
-  const latestDraftId = storyDrafts?.[0]?.id as string | undefined;
-  const hasGeneratingDraft = storyDrafts?.some((d) => d.status === "generating") ?? false;
+
+  // Generate: disabled while a draft is actively generating OR order is mid-generation OR delivered
+  const generateDisabled =
+    hasGeneratingDraft ||
+    GENERATING_IN_PROGRESS_STATUSES.includes(currentStatus) ||
+    currentStatus === "delivered";
 
   return (
     <div className="space-y-6 max-w-4xl">
       <DraftStatusPoller active={hasGeneratingDraft} />
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -187,40 +211,172 @@ export default async function AdminOrderDetailPage({
             <span className="text-muted-foreground">/</span>
             <span className="text-sm">{order.person_name || orderId.slice(0, 8)}</span>
           </div>
-          <h1 className="text-2xl font-bold">
-            {order.person_name || "ללא שם"}
-          </h1>
+          <h1 className="text-2xl font-bold">{order.person_name || "ללא שם"}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             מזמין: {order.buyer_name || "—"} &middot; {order.buyer_phone || "—"}
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <Badge variant={currentStatus === "error_generation" ? "destructive" : "secondary"}>
+          <Badge
+            variant={currentStatus === "error_generation" ? "destructive" : "secondary"}
+          >
             {STATUS_LABELS[currentStatus] || currentStatus}
           </Badge>
         </div>
       </div>
 
-      {/* Actions row */}
-      <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
-        <Link href={`/admin/orders/${orderId}/preview${latestDraftId ? `?draftId=${latestDraftId}` : ""}`}>
-          <Button variant="outline" size="sm">
-            צפייה בטיוטה הפנימית
-          </Button>
-        </Link>
-        <Link href={`/admin/orders/${orderId}/draft-text${latestDraftId ? `?draftId=${latestDraftId}` : ""}`}>
-          <Button variant="ghost" size="sm">
-            צפייה בטקסט שנוצר
-          </Button>
-        </Link>
-        <GenerateStoryButton orderId={orderId} disabled={generateDisabled} />
-        <PublishButton orderId={orderId} disabled={!canPublish} />
-        {currentStatus === "approved" && (
-          <span className="self-center text-sm text-green-700 font-medium">
-            ✓ פורסם ללקוח
-          </span>
+      {/* ── Story versions (most important, shown near top) ── */}
+      <section className="rounded-xl border bg-card p-5 space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-base font-semibold">
+            גרסאות סיפור
+            {storyDrafts && storyDrafts.length > 0 && (
+              <span className="ms-2 text-sm font-normal text-muted-foreground">
+                ({storyDrafts.length})
+              </span>
+            )}
+          </h2>
+          <div className="flex items-center gap-2">
+            <GenerateStoryButton orderId={orderId} disabled={generateDisabled} />
+            <PublishButton orderId={orderId} disabled={!canPublish} />
+            {currentStatus === "approved" && (
+              <span className="text-sm text-green-700 font-medium">✓ פורסם</span>
+            )}
+          </div>
+        </div>
+
+        {/* Actively generating notice — tied to a specific version */}
+        {activeGeneratingDraft && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+            <span className="inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span>
+              גרסה {activeGeneratingDraft.version_number as number} בתהליך יצירה...
+              המערכת תתרענן אוטומטית עם השלמתה.
+            </span>
+          </div>
         )}
-      </div>
+
+        {/* Empty state */}
+        {(!storyDrafts || storyDrafts.length === 0) && (
+          <p className="text-sm text-muted-foreground py-2">
+            לא נוצרו גרסאות עדיין. לחץ על &ldquo;צור סיפור חדש&rdquo; כדי להתחיל.
+          </p>
+        )}
+
+        {/* Version list */}
+        {storyDrafts && storyDrafts.length > 0 && (
+          <div className="divide-y divide-border/60">
+            {storyDrafts.map((draft) => {
+              const draftId = draft.id as string;
+              const draftStatus = draft.status as "generating" | "completed" | "failed";
+              const isGenerating = draftStatus === "generating";
+              const isFailed = draftStatus === "failed";
+              const isCompleted = draftStatus === "completed";
+              const isLatestCompleted = draftId === latestCompletedDraftId;
+              const pageCount = pageCountByDraft.get(draftId) ?? 0;
+
+              return (
+                <div
+                  key={draftId}
+                  className={`flex items-center justify-between gap-4 py-3 first:pt-1 last:pb-0 ${
+                    isLatestCompleted ? "opacity-100" : "opacity-80"
+                  }`}
+                >
+                  {/* Left: meta */}
+                  <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                    <span className="text-sm font-semibold shrink-0">
+                      גרסה {draft.version_number as number}
+                    </span>
+
+                    {/* Status badge */}
+                    {isGenerating && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5 font-medium shrink-0">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        יוצר...
+                      </span>
+                    )}
+                    {isCompleted && (
+                      <span className="rounded-full bg-green-100 text-green-800 text-xs px-2 py-0.5 font-medium shrink-0">
+                        הושלם
+                      </span>
+                    )}
+                    {isFailed && (
+                      <span
+                        className="rounded-full bg-red-100 text-red-700 text-xs px-2 py-0.5 font-medium shrink-0 cursor-help"
+                        title={(draft.error_message as string | null) ?? undefined}
+                      >
+                        נכשל
+                      </span>
+                    )}
+
+                    {/* Latest completed marker */}
+                    {isLatestCompleted && (
+                      <span className="rounded-full border border-primary/30 text-primary text-xs px-2 py-0.5 font-medium shrink-0">
+                        עדכני
+                      </span>
+                    )}
+
+                    {/* Page count (only when completed and pages exist) */}
+                    {isCompleted && pageCount > 0 && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {pageCount} עמודים
+                      </span>
+                    )}
+
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {new Date(draft.created_at as string).toLocaleString("he-IL", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+
+                  {/* Right: action links */}
+                  {(isCompleted || isFailed) && (
+                    <div className="flex items-center gap-3 shrink-0">
+                      {isCompleted && (
+                        <>
+                          <Link
+                            href={`/admin/orders/${orderId}/preview?draftId=${draftId}`}
+                            className="text-xs font-medium text-primary hover:underline underline-offset-2 shrink-0"
+                          >
+                            תצוגה
+                          </Link>
+                          <Link
+                            href={`/admin/orders/${orderId}/draft-text?draftId=${draftId}`}
+                            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 shrink-0"
+                          >
+                            טקסט
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Quick-access buttons for the latest completed version */}
+        {latestCompletedDraftId && (
+          <div className="flex gap-2 pt-1 border-t border-border/60">
+            <Link href={`/admin/orders/${orderId}/preview?draftId=${latestCompletedDraftId}`}>
+              <Button variant="outline" size="sm">
+                פתח תצוגה מקדימה
+              </Button>
+            </Link>
+            <Link href={`/admin/orders/${orderId}/draft-text?draftId=${latestCompletedDraftId}`}>
+              <Button variant="ghost" size="sm">
+                צפייה בטקסט
+              </Button>
+            </Link>
+          </div>
+        )}
+      </section>
 
       {/* Order summary */}
       <Section title="פרטי הזמנה">
@@ -231,10 +387,7 @@ export default async function AdminOrderDetailPage({
             value={new Date(order.created_at as string).toLocaleString("he-IL")}
           />
           <Field label="שם" value={order.person_name || "—"} />
-          <Field
-            label="תאריך לידה"
-            value={order.person_birth_date || "—"}
-          />
+          <Field label="תאריך לידה" value={order.person_birth_date || "—"} />
           <Field label="מגדר" value={order.person_gender === "male" ? "זכר" : "נקבה"} />
           <Field
             label="אירוע"
@@ -363,63 +516,6 @@ export default async function AdminOrderDetailPage({
       {photosWithUrls.length === 0 && (
         <Section title="תמונות">
           <p className="text-sm text-muted-foreground">לא הועלו תמונות עדיין.</p>
-        </Section>
-      )}
-
-      {/* Story drafts (version history) */}
-      {storyDrafts && storyDrafts.length > 0 && (
-        <Section title={`גרסאות סיפור (${storyDrafts.length})`}>
-          <div className="space-y-2">
-            {storyDrafts.map((draft) => {
-              const draftStatus = draft.status as string;
-              const isGenerating = draftStatus === "generating";
-              const isFailed = draftStatus === "failed";
-              return (
-                <div
-                  key={draft.id as string}
-                  className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/30 px-3 py-2"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-sm font-medium shrink-0">
-                      גרסה {draft.version_number as number}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {new Date(draft.created_at as string).toLocaleString("he-IL")}
-                    </span>
-                    {isGenerating && (
-                      <span className="rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-0.5 font-medium shrink-0">
-                        יוצר...
-                      </span>
-                    )}
-                    {isFailed && (
-                      <span
-                        className="rounded-full bg-red-100 text-red-700 text-xs px-2 py-0.5 font-medium shrink-0"
-                        title={draft.error_message as string ?? undefined}
-                      >
-                        נכשל
-                      </span>
-                    )}
-                  </div>
-                  {!isGenerating && (
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Link
-                        href={`/admin/orders/${orderId}/draft-text?draftId=${draft.id}`}
-                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                      >
-                        טקסט
-                      </Link>
-                      <Link
-                        href={`/admin/orders/${orderId}/preview?draftId=${draft.id}`}
-                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                      >
-                        תצוגה
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         </Section>
       )}
     </div>
