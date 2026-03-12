@@ -10,6 +10,8 @@ import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
 import { DraftStatusPoller } from "@/components/admin/DraftStatusPoller";
+import { AdminPhotosGallery } from "@/components/admin/AdminPhotosGallery";
+import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 
 function fmtDate(ts: string) {
   return new Date(ts).toLocaleString("he-IL", {
@@ -36,18 +38,6 @@ const OCCASION_LABELS: Record<string, string> = {
   retirement: "פרישה",
   memorial: "זיכרון",
   anniversary: "יובל",
-  other: "אחר",
-};
-
-const LIFE_STAGE_LABELS: Record<string, string> = {
-  baby: "תינוקות",
-  childhood: "ילדות",
-  youth: "נעורים",
-  military: "צבא",
-  career: "קריירה",
-  wedding: "חתונה",
-  family: "משפחה",
-  recent: "לאחרונה",
   other: "אחר",
 };
 
@@ -101,19 +91,37 @@ export default async function AdminOrderDetailPage({
   // ── Fetch photos (only uploaded) ──
   const { data: photos } = await adminClient
     .from("photos")
-    .select("id, original_storage_path, original_filename, life_stage, display_order")
+    .select(
+      "id, original_storage_path, original_filename, life_stage, display_order, illustration_storage_path, illustration_status, illustration_error"
+    )
     .eq("order_id", orderId)
     .eq("is_uploaded", true)
     .order("display_order");
 
-  // Resolve signed URLs for photos
-  const photosWithUrls = photos
+  // Resolve signed URLs for original photos (originals bucket) + illustrations (illustrations bucket)
+  const photosForGallery: PhotoForGallery[] = photos
     ? await Promise.all(
         photos.map(async (photo) => {
-          const { data } = await adminClient.storage
-            .from("photos")
-            .createSignedUrl(photo.original_storage_path as string, 3600);
-          return { ...photo, signedUrl: data?.signedUrl ?? null };
+          const [originalResult, illustrationResult] = await Promise.all([
+            adminClient.storage
+              .from("originals")
+              .createSignedUrl(photo.original_storage_path as string, 3600),
+            photo.illustration_storage_path
+              ? adminClient.storage
+                  .from("illustrations")
+                  .createSignedUrl(photo.illustration_storage_path as string, 3600)
+              : Promise.resolve({ data: null }),
+          ]);
+
+          return {
+            id: photo.id as string,
+            original_filename: photo.original_filename as string,
+            life_stage: photo.life_stage as string | null,
+            originalUrl: originalResult.data?.signedUrl ?? null,
+            illustrationUrl: illustrationResult.data?.signedUrl ?? null,
+            illustration_status: photo.illustration_status as string | null,
+            illustration_error: photo.illustration_error as string | null,
+          };
         })
       )
     : [];
@@ -569,43 +577,10 @@ export default async function AdminOrderDetailPage({
         </Section>
       )}
 
-      {/* Photos */}
-      {photosWithUrls.length > 0 && (
-        <Section title={`תמונות (${photosWithUrls.length})`}>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-            {photosWithUrls.map((photo) => (
-              <div key={photo.id as string} className="space-y-1">
-                {photo.signedUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={photo.signedUrl}
-                    alt={photo.original_filename as string}
-                    className="w-full aspect-square object-cover rounded-lg border"
-                  />
-                ) : (
-                  <div className="w-full aspect-square rounded-lg border bg-muted flex items-center justify-center text-xs text-muted-foreground">
-                    N/A
-                  </div>
-                )}
-                {photo.life_stage && (
-                  <p className="text-xs text-center text-muted-foreground">
-                    {LIFE_STAGE_LABELS[photo.life_stage as string] ??
-                      photo.life_stage}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {photosWithUrls.length === 0 && (
-        <Section title="תמונות">
-          <p className="text-sm text-muted-foreground">
-            לא הועלו תמונות עדיין.
-          </p>
-        </Section>
-      )}
+      {/* Photos + Illustration generation */}
+      <Section title={`תמונות (${photosForGallery.length})`}>
+        <AdminPhotosGallery orderId={orderId} photos={photosForGallery} />
+      </Section>
     </div>
   );
 }
