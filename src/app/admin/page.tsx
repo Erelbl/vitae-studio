@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { STATUS_LABELS } from "@/lib/state-machine";
 import type { OrderStatus } from "@/types/order";
+import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 
 const STATUS_COLORS: Partial<Record<OrderStatus, string>> = {
   photos_uploaded: "bg-gray-100 text-gray-700 border-gray-300",
@@ -90,7 +91,7 @@ export default async function AdminOrdersPage() {
                 <TableHead className="px-4 py-3 font-semibold text-foreground w-[120px]">
                   תאריך יצירה
                 </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground text-end w-[120px]">
+                <TableHead className="px-4 py-3 font-semibold text-foreground text-end w-[150px]">
                   פעולות
                 </TableHead>
               </TableRow>
@@ -132,12 +133,19 @@ export default async function AdminOrdersPage() {
                     })}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-end">
-                    <Link
-                      href={`/admin/orders/${order.id}`}
-                      className="inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
-                    >
-                      פתח
-                    </Link>
+                    <div className="flex items-center justify-end gap-1">
+                      <Link
+                        href={`/admin/orders/${order.id}`}
+                        className="inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                      >
+                        פתח
+                      </Link>
+                      <DeleteOrderButton
+                        orderId={order.id}
+                        personName={order.person_name}
+                        compact
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -152,16 +160,20 @@ export default async function AdminOrdersPage() {
       {orders && orders.length > 0 && (
         <div className="md:hidden flex flex-col gap-3">
           {orders.map((order) => (
-            <Link
+            <div
               key={order.id}
-              href={`/admin/orders/${order.id}`}
-              className="block rounded-lg border bg-background p-4 hover:bg-muted/40 transition-colors"
+              className="rounded-lg border bg-background p-4"
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-medium">{order.person_name || "—"}</span>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <Link
+                  href={`/admin/orders/${order.id}`}
+                  className="font-medium hover:text-primary transition-colors"
+                >
+                  {order.person_name || "—"}
+                </Link>
                 <StatusBadge status={order.status as OrderStatus} />
               </div>
-              <div className="text-sm text-muted-foreground flex flex-col gap-0.5">
+              <div className="text-sm text-muted-foreground flex flex-col gap-0.5 mb-3">
                 <span>{order.buyer_name || "—"}</span>
                 <span>
                   {new Date(order.created_at).toLocaleDateString("he-IL", {
@@ -169,7 +181,20 @@ export default async function AdminOrdersPage() {
                   })}
                 </span>
               </div>
-            </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/admin/orders/${order.id}`}
+                  className="inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                >
+                  פתח
+                </Link>
+                <DeleteOrderButton
+                  orderId={order.id}
+                  personName={order.person_name}
+                  compact
+                />
+              </div>
+            </div>
           ))}
         </div>
       )}

@@ -98,6 +98,13 @@ Premium web app for creating personalized "life story in rhymes" illustrated alb
 - Text overlay: `bg-gradient-to-t from-black/72` with no opaque box
 - Mock fallback: if no real pages exist, `loadPreviewData` returns 40-page sample (`isMock: true`)
 
+## Admin Order Deletion
+- **Route**: `DELETE /api/admin/orders/[orderId]/delete` — admin-only, requires `role=admin` in `app_metadata`
+- **DB cascade**: Deleting the `orders` row cascades to all related records: `pages` → `page_images`, `page_versions`; also `photos`, `processing_jobs`, `generation_settings`, `questionnaire_responses`, `admin_actions`
+- **Storage cleanup**: The route collects all `original_storage_path` (originals bucket) and `illustration_storage_path` values from `photos` and `page_versions` before deletion, then removes them. Storage errors are reported in the response but do not block DB deletion
+- **UI**: `DeleteOrderButton` component (`src/components/admin/DeleteOrderButton.tsx`) — shows confirmation AlertDialog listing what will be deleted. Available on the admin dashboard (per row) and the order detail header
+- **Safety**: Always show confirmation dialog. Irreversible. No soft-delete or recycle bin in MVP
+
 ## Common Tasks
 - **Add new questionnaire step**: Edit `src/components/questionnaire/`, update Zod schema in `src/lib/validation/questionnaire.ts`, add translations in `src/messages/he.json`
 - **Modify story prompt**: Edit `src/services/story/claude-provider.ts` AND update `generation_settings` row
