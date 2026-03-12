@@ -4,19 +4,52 @@ import type { PageType, PreviewData } from "@/types/page";
 
 const ILLUSTRATIONS_BUCKET = "illustrations";
 
+/**
+ * Resolves which story_draft_id to use for this order.
+ * - If draftId is provided, use it directly.
+ * - Otherwise, use the latest draft (highest version_number).
+ * - If no drafts exist at all, returns null (caller falls back to order-wide query).
+ */
+async function resolveDraftId(
+  supabase: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  draftId?: string | null
+): Promise<string | null> {
+  if (draftId) return draftId;
+
+  const { data } = await supabase
+    .from("story_drafts")
+    .select("id")
+    .eq("order_id", orderId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .single();
+
+  return (data?.id as string | null) ?? null;
+}
+
 export async function loadPreviewData(
   orderId: string,
-  personName: string
+  personName: string,
+  draftId?: string | null
 ): Promise<PreviewData> {
   const supabase = createAdminClient();
 
-  const { data: pages, error } = await supabase
+  const resolvedDraftId = await resolveDraftId(supabase, orderId, draftId);
+
+  // Build the pages query — filter by draft if one exists, otherwise fall back
+  // to the legacy order-wide query (for orders created before draft versioning).
+  let query = supabase
     .from("pages")
-    .select(
-      "id, page_number, page_type, text_content, illustration_storage_path"
-    )
-    .eq("order_id", orderId)
-    .order("page_number");
+    .select("id, page_number, page_type, text_content, illustration_storage_path");
+
+  if (resolvedDraftId) {
+    query = query.eq("story_draft_id", resolvedDraftId);
+  } else {
+    query = query.eq("order_id", orderId);
+  }
+
+  const { data: pages, error } = await query.order("page_number");
 
   if (error || !pages || pages.length === 0) {
     return {

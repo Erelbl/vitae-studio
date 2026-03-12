@@ -104,11 +104,20 @@ export default async function AdminOrderDetailPage({
       )
     : [];
 
+  // Fetch story drafts (version history)
+  const { data: storyDrafts } = await adminClient
+    .from("story_drafts")
+    .select("id, version_number, created_at")
+    .eq("order_id", orderId)
+    .order("version_number", { ascending: false });
+
   const currentStatus = order.status as OrderStatus;
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
   const followups = (questionnaireRow?.followup_questions ?? []) as FollowUpQA[];
   const canPublish = PUBLISHABLE_STATUSES.includes(currentStatus);
   const canGenerate = GENERATABLE_STATUSES.includes(currentStatus);
+  const hasDrafts = (storyDrafts?.length ?? 0) > 0;
+  const latestDraftId = storyDrafts?.[0]?.id as string | undefined;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -141,18 +150,18 @@ export default async function AdminOrderDetailPage({
 
       {/* Actions row */}
       <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
-        <Link href={`/admin/orders/${orderId}/preview`}>
+        <Link href={`/admin/orders/${orderId}/preview${latestDraftId ? `?draftId=${latestDraftId}` : ""}`}>
           <Button variant="outline" size="sm">
             צפייה בטיוטה הפנימית
           </Button>
         </Link>
-        <Link href={`/admin/orders/${orderId}/draft-text`}>
+        <Link href={`/admin/orders/${orderId}/draft-text${latestDraftId ? `?draftId=${latestDraftId}` : ""}`}>
           <Button variant="ghost" size="sm">
             צפייה בטקסט שנוצר
           </Button>
         </Link>
         {canGenerate && (
-          <GenerateStoryButton orderId={orderId} />
+          <GenerateStoryButton orderId={orderId} hasDrafts={hasDrafts} />
         )}
         {canPublish && (
           <PublishButton orderId={orderId} />
@@ -305,6 +314,43 @@ export default async function AdminOrderDetailPage({
       {photosWithUrls.length === 0 && (
         <Section title="תמונות">
           <p className="text-sm text-muted-foreground">לא הועלו תמונות עדיין.</p>
+        </Section>
+      )}
+
+      {/* Story drafts (version history) */}
+      {storyDrafts && storyDrafts.length > 0 && (
+        <Section title={`גרסאות סיפור (${storyDrafts.length})`}>
+          <div className="space-y-2">
+            {storyDrafts.map((draft) => (
+              <div
+                key={draft.id as string}
+                className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/30 px-3 py-2"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium">
+                    גרסה {draft.version_number as number}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(draft.created_at as string).toLocaleString("he-IL")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/admin/orders/${orderId}/draft-text?draftId=${draft.id}`}
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  >
+                    טקסט
+                  </Link>
+                  <Link
+                    href={`/admin/orders/${orderId}/preview?draftId=${draft.id}`}
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  >
+                    תצוגה
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
         </Section>
       )}
     </div>

@@ -194,8 +194,33 @@ export async function POST(
       generationSettings
     );
 
-    // 5. Delete any existing pages for this order (idempotent re-generation)
-    await supabase.from("pages").delete().eq("order_id", orderId);
+    // 5. Create a new story_draft row for this generation run
+    const { data: maxDraftRow } = await supabase
+      .from("story_drafts")
+      .select("version_number")
+      .eq("order_id", orderId)
+      .order("version_number", { ascending: false })
+      .limit(1)
+      .single();
+
+    const nextVersionNumber = ((maxDraftRow?.version_number as number | null) ?? 0) + 1;
+
+    const { data: newDraft, error: draftError } = await supabase
+      .from("story_drafts")
+      .insert({
+        order_id: orderId,
+        version_number: nextVersionNumber,
+        generation_settings_id: generationSettings?.id ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (draftError || !newDraft) {
+      throw new Error(`Failed to create story draft: ${draftError?.message ?? "unknown"}`);
+    }
+
+    const draftId = newDraft.id as string;
+    console.log(`[DIAG][generate-story] created story_draft id=${draftId} version=${nextVersionNumber}`);
 
     // 6. Build all 40 page rows: structural (cover, back-cover) + text pages
     const coverItem = outline.find((o) => o.page_type === "cover");
@@ -211,6 +236,7 @@ export async function POST(
         text_status: "ready" as const,
         text_version: 1,
         text_generation_model: null as string | null,
+        story_draft_id: draftId,
       },
       // Text pages (dedication + story)
       ...finalPages.map((p) => ({
@@ -222,6 +248,7 @@ export async function POST(
         text_version: 1,
         text_generation_model:
           generationSettings?.model_id ?? "claude-sonnet-4-6",
+        story_draft_id: draftId,
       })),
       // Back cover page
       {
@@ -232,6 +259,7 @@ export async function POST(
         text_status: "ready" as const,
         text_version: 1,
         text_generation_model: null as string | null,
+        story_draft_id: draftId,
       },
     ];
 
@@ -316,6 +344,8 @@ export async function POST(
       success: true,
       order_status: "preview_ready",
       pages_saved: insertedPages?.length ?? 0,
+      story_draft_id: draftId,
+      story_version: nextVersionNumber,
       review: {
         issues_detected: review.issues.length,
         regenerated: review.regenerated_count,
