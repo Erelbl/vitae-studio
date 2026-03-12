@@ -24,6 +24,16 @@ export const PAGE_TYPES = [
 ] as const;
 export type PageType = (typeof PAGE_TYPES)[number];
 
+export const LAYOUT_TYPES = [
+  "FULL_IMAGE",
+  "TEXT_ONLY",
+  "IMAGE_TOP_TEXT_BOTTOM",
+  "TEXT_TOP_IMAGE_BOTTOM",
+  "IMAGE_LEFT_TEXT_RIGHT",
+  "TWO_IMAGES",
+] as const;
+export type LayoutType = (typeof LAYOUT_TYPES)[number];
+
 export const VERSION_TYPES = ["text", "illustration"] as const;
 export type VersionType = (typeof VERSION_TYPES)[number];
 
@@ -55,6 +65,7 @@ export interface AlbumPage {
   text_generation_model: string | null;
   admin_text_override: boolean;
   page_type: PageType;
+  layout_type: LayoutType;
   narration_audio_path: string | null;
   narration_duration_ms: number | null;
   transition_type: string;
@@ -74,6 +85,18 @@ export interface PageVersion {
   created_by: VersionCreatedBy;
 }
 
+/** One image slot assigned to a page, with crop/zoom values. */
+export interface PageImageSlot {
+  id: string;
+  slot: 1 | 2;
+  photo_id: string | null;
+  crop_x: number;  // 0-1: horizontal pan (0 = left edge, 1 = right edge)
+  crop_y: number;  // 0-1: vertical pan (0 = top edge, 1 = bottom edge)
+  scale: number;   // ≥1: zoom level (1 = fill frame, 2 = 2× zoom)
+  /** Pre-resolved signed URL. null when photo has no illustration or URL expired. */
+  image_url: string | null;
+}
+
 export const TEXT_POSITIONS = ["top", "bottom", "overlay"] as const;
 export type TextPosition = (typeof TEXT_POSITIONS)[number];
 
@@ -82,11 +105,25 @@ export interface PreviewPage {
   id: string;
   page_number: number;
   page_type: PageType;
+  /**
+   * Controls which layout template is used for illustration_and_text pages.
+   * Defaults to FULL_IMAGE for all existing pages.
+   */
+  layout_type: LayoutType;
   text_content: string | null;
-  /** Pre-resolved signed URL. null when illustration is pending or unavailable. */
+  /**
+   * Legacy: pre-resolved signed URL from pages.illustration_storage_path.
+   * Used as slot-1 fallback when page_images is empty.
+   */
   image_url: string | null;
-  /** Where the text sits relative to the illustration. Defaults to "top" if omitted. */
+  /** Where the text sits (only used by FULL_IMAGE overlay). Defaults to "overlay". */
   text_position?: TextPosition;
+  /**
+   * New slot-based image assignments from page_images table.
+   * Slot 1 = primary image, Slot 2 = secondary (TWO_IMAGES layout only).
+   * Takes priority over legacy image_url.
+   */
+  images: PageImageSlot[];
 }
 
 export interface PreviewData {

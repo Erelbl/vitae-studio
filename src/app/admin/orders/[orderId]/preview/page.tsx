@@ -4,11 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPreviewData } from "@/lib/preview/loader";
 import { AlbumPreview } from "@/components/album/AlbumPreview";
-import { IllustrationPageMapper } from "@/components/admin/IllustrationPageMapper";
-import type { PageForMapper, CompletedPhotoForMapper } from "@/components/admin/IllustrationPageMapper";
+import { AlbumPageEditor } from "@/components/admin/AlbumPageEditor";
+import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
 import { STATUS_LABELS } from "@/lib/state-machine";
 import { Badge } from "@/components/ui/badge";
 import type { OrderStatus } from "@/types/order";
+
+const BUCKET = "illustrations";
 
 export default async function AdminOrderPreviewPage({
   params,
@@ -39,24 +41,31 @@ export default async function AdminOrderPreviewPage({
   const personName = (order.person_name as string | null) || "האדם היקר";
   const currentStatus = order.status as OrderStatus;
 
-  // Load preview data (signed URLs for illustrations already on pages)
+  // ── Preview data (page_images + batch signed URLs via loader) ─────────────
   const previewData = await loadPreviewData(orderId, personName);
 
-  // Load pages with photo_id info for the mapper (only illustration_and_text pages)
-  const { data: rawPages } = await adminClient
+  // ── Editor data: content pages with text, layout, page_images ─────────────
+  const { data: editorPagesRaw } = await adminClient
     .from("pages")
-    .select("id, page_number, page_type, photo_id")
+    .select("id, page_number, page_type, layout_type, text_content, text_version")
     .eq("order_id", orderId)
     .eq("page_type", "illustration_and_text")
     .order("page_number");
 
-  const mapperPages: PageForMapper[] = (rawPages ?? []).map((p) => ({
-    id: p.id as string,
-    page_number: p.page_number as number,
-    photo_id: (p.photo_id as string | null) ?? null,
-  }));
+  const editorPageIds = (editorPagesRaw ?? []).map((p) => p.id as string);
 
-  // Load completed illustrations for the picker
+  const { data: pageImagesRaw } =
+    editorPageIds.length > 0
+      ? await adminClient
+          .from("page_images")
+          .select("page_id, slot, photo_id, crop_x, crop_y, scale")
+          .in("page_id", editorPageIds)
+      : { data: [] as {
+          page_id: unknown; slot: unknown; photo_id: unknown;
+          crop_x: unknown; crop_y: unknown; scale: unknown;
+        }[] };
+
+  // ── Completed illustrations for the picker ────────────────────────────────
   const { data: completedPhotosRaw } = await adminClient
     .from("photos")
     .select("id, illustration_storage_path, original_filename, life_stage")
@@ -64,25 +73,89 @@ export default async function AdminOrderPreviewPage({
     .eq("illustration_status", "completed")
     .order("display_order");
 
-  const completedPhotos: CompletedPhotoForMapper[] = completedPhotosRaw
-    ? await Promise.all(
-        completedPhotosRaw.map(async (photo) => {
-          let illustrationUrl: string | null = null;
-          if (photo.illustration_storage_path) {
-            const { data: urlData } = await adminClient.storage
-              .from("illustrations")
-              .createSignedUrl(photo.illustration_storage_path as string, 3600);
-            illustrationUrl = urlData?.signedUrl ?? null;
-          }
-          return {
-            id: photo.id as string,
-            illustrationUrl,
-            original_filename: photo.original_filename as string,
-            life_stage: (photo.life_stage as string | null) ?? null,
-          };
-        })
-      )
-    : [];
+  // Gather all illustration paths to sign (completed photos + page_images photos)
+  const pageImagesPhotoIds = new Set<string>();
+  for (const pi of pageImagesRaw ?? []) {
+    if (pi.photo_id) pageImagesPhotoIds.add(pi.photo_id as string);
+  }
+
+  // Fetch paths for photos referenced in page_images (may or may not be in completedPhotos)
+  const pageImagesPhotoPaths = new Map<string, string>();
+  if (pageImagesPhotoIds.size > 0) {
+    const { data: piPhotos } = await adminClient
+      .from("photos")
+      .select("id, illustration_storage_path")
+      .in("id", Array.from(pageImagesPhotoIds));
+    for (const ph of piPhotos ?? []) {
+      if (ph.illustration_storage_path) {
+        pageImagesPhotoPaths.set(ph.id as string, ph.illustration_storage_path as string);
+      }
+    }
+  }
+
+  // Collect all paths for batch signing
+  const allPaths = new Set<string>();
+  for (const ph of completedPhotosRaw ?? []) {
+    if (ph.illustration_storage_path) allPaths.add(ph.illustration_storage_path as string);
+  }
+  for (const path of pageImagesPhotoPaths.values()) {
+    allPaths.add(path);
+  }
+
+  // Batch sign all paths
+  const signedUrlMap = new Map<string, string>();
+  if (allPaths.size > 0) {
+    const { data: signedResults } = await adminClient.storage
+      .from(BUCKET)
+      .createSignedUrls(Array.from(allPaths), 3600);
+    for (const item of signedResults ?? []) {
+      if (item.signedUrl && item.path) {
+        signedUrlMap.set(item.path, item.signedUrl);
+      }
+    }
+  }
+
+  // Build completed photos for picker
+  const completedPhotos: PhotoForEditor[] = (completedPhotosRaw ?? []).map((ph) => {
+    const path = ph.illustration_storage_path as string | null;
+    return {
+      id: ph.id as string,
+      illustrationUrl: path ? (signedUrlMap.get(path) ?? null) : null,
+      original_filename: ph.original_filename as string,
+      life_stage: (ph.life_stage as string | null) ?? null,
+    };
+  });
+
+  // Build page_images grouped by page_id
+  const pageImagesMap = new Map<string, EditorPage["images"]>();
+  for (const pi of pageImagesRaw ?? []) {
+    const pid = pi.page_id as string;
+    const photoId = (pi.photo_id as string | null) ?? null;
+    const storagePath = photoId ? pageImagesPhotoPaths.get(photoId) : undefined;
+    const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
+
+    const existing = pageImagesMap.get(pid) ?? [];
+    existing.push({
+      slot: pi.slot as number,
+      photo_id: photoId,
+      crop_x: (pi.crop_x as number) ?? 0,
+      crop_y: (pi.crop_y as number) ?? 0,
+      scale: (pi.scale as number) ?? 1,
+      image_url,
+    });
+    pageImagesMap.set(pid, existing);
+  }
+
+  // Build editor pages array
+  const editorPages: EditorPage[] = (editorPagesRaw ?? []).map((p) => ({
+    id: p.id as string,
+    page_number: p.page_number as number,
+    page_type: p.page_type as string,
+    layout_type: (p.layout_type as string | null) ?? "FULL_IMAGE",
+    text_content: (p.text_content as string | null) ?? null,
+    text_version: (p.text_version as number) ?? 1,
+    images: pageImagesMap.get(p.id as string) ?? [],
+  }));
 
   return (
     <div className="max-w-5xl mx-auto py-10 px-4 space-y-8">
@@ -112,7 +185,7 @@ export default async function AdminOrderPreviewPage({
         תצוגה פנימית בלבד — הלקוח אינו יכול לראות את האלבום עד לאחר פרסום
       </div>
 
-      {/* Album preview — centered, max-w-3xl */}
+      {/* Album preview — centered */}
       <div className="max-w-3xl mx-auto">
         <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold mb-3 text-center">
           תצוגה מקדימה
@@ -123,22 +196,21 @@ export default async function AdminOrderPreviewPage({
         <AlbumPreview data={previewData} />
       </div>
 
-      {/* Illustration-to-page mapper */}
-      {mapperPages.length > 0 && (
-        <section className="rounded-xl border bg-card p-5 space-y-4">
-          <div>
-            <h2 className="text-base font-semibold">שיוך איורים לעמודים</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              שייך איור מוכן לכל עמוד תוכן. לאחר השיוך האיור יופיע בתצוגה המקדימה.
-            </p>
-          </div>
-          <IllustrationPageMapper
-            orderId={orderId}
-            pages={mapperPages}
-            completedPhotos={completedPhotos}
-          />
-        </section>
-      )}
+      {/* Album page editor */}
+      <section className="rounded-xl border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="text-base font-semibold">עריכת עמודים</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            ערוך טקסט, פריסה ואיורים לכל עמוד. טקסט נשמר עם ניהול גרסאות.
+          </p>
+        </div>
+        <AlbumPageEditor
+          orderId={orderId}
+          pages={editorPages}
+          completedPhotos={completedPhotos}
+          personName={personName}
+        />
+      </section>
     </div>
   );
 }

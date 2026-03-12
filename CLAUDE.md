@@ -60,19 +60,43 @@ Premium web app for creating personalized "life story in rhymes" illustrated alb
 - i18n messages: `src/messages/{locale}.json`
 - Database migrations: `supabase/migrations/`
 
-## Illustration-to-Page Mapping
-- Illustrations live in the `photos` table (`illustration_storage_path`, `illustration_status = 'completed'`)
-- Assigning an illustration to a page: `PUT /api/admin/orders/[orderId]/pages/[pageId]/assign-illustration` with `{ photoId }` — copies `photos.illustration_storage_path` → `pages.illustration_storage_path` and sets `pages.photo_id`
-- The preview loader (`src/lib/preview/loader.ts`) reads `pages.illustration_storage_path` directly, so the assignment is immediately visible in the preview after refresh
-- UI: `IllustrationPageMapper` component in admin preview page (`/admin/orders/[id]/preview`) — master/detail: click a page on the left, pick an illustration on the right
-- Clearing an assignment: pass `{ photoId: null }` — sets both `pages.photo_id` and `pages.illustration_storage_path` to null
+## Album Page Editor (admin)
+- Location: `/admin/orders/[id]/preview` — shown as "עריכת עמודים" section below the album preview
+- Component: `src/components/admin/AlbumPageEditor.tsx` — client component with page selector + per-page editor
+- Per-page editor: text area (auto-saves on blur or explicit save button), layout picker, image slot editors
+- Text edits: saved to `pages.text_content`; a new `page_versions` row is created (`created_by='admin_edit'`), `text_version` increments, `admin_text_override=true`
+- Layout edits: saved immediately to `pages.layout_type`
+- Image slot edits: saved to `page_images` table via `PUT /api/admin/orders/[id]/pages/[pageId]/images`
+- Crop/zoom: drag inside the mini-frame preview or use the zoom slider; saved on pointer-up via `PATCH` to images endpoint
+
+## Layout System
+- `pages.layout_type` TEXT column (default: `FULL_IMAGE`). Values: `FULL_IMAGE`, `TEXT_ONLY`, `IMAGE_TOP_TEXT_BOTTOM`, `TEXT_TOP_IMAGE_BOTTOM`, `IMAGE_LEFT_TEXT_RIGHT`, `TWO_IMAGES`
+- `FULL_IMAGE`: illustration fills page, text overlaid at bottom with gradient
+- `IMAGE_TOP_TEXT_BOTTOM` / `TEXT_TOP_IMAGE_BOTTOM`: 60/40 split between image and text
+- `IMAGE_LEFT_TEXT_RIGHT`: 55/45 split (forced `dir=ltr` for physical positioning)
+- `TWO_IMAGES`: two equal slots side by side (slot 1 = left, slot 2 = right), optional text caption
+- `TEXT_ONLY`: no image, centered text only
+
+## page_images Table
+- New table for slot-based image assignment: `page_id`, `photo_id`, `slot` (1 or 2), `crop_x`, `crop_y`, `scale`
+- Unique constraint: `(page_id, slot)` — max 1 image per slot per page
+- `crop_x`/`crop_y`: 0-1 float (0 = left/top edge, 1 = right/bottom edge) — pan within scaled image
+- `scale`: ≥1 float — zoom level (1 = fill frame exactly, 2 = 2× zoom)
+- API: `PUT /api/admin/orders/[id]/pages/[pageId]/images` — upsert/delete slot
+- API: `PATCH /api/admin/orders/[id]/pages/[pageId]/images` — update crop/zoom only
+- Legacy fallback: if `page_images` is empty, preview renders `pages.illustration_storage_path` as slot 1
+
+## Illustration Assignment (legacy + new)
+- Legacy: `PUT /api/admin/orders/[orderId]/pages/[pageId]/assign-illustration` with `{ photoId }` — copies photo path directly to `pages.illustration_storage_path`. Component: `IllustrationPageMapper`
+- New system: `page_images` table (via AlbumPageEditor). New system takes priority in rendering
+- Backward compat: existing pages with `pages.illustration_storage_path` still render as FULL_IMAGE slot 1 fallback
 
 ## Album Preview Architecture
-- `AlbumPreview` component (`src/components/album/AlbumPreview.tsx`): groups pages into 2-page spreads, adds open-book spine shadow, handles navigation
-- `AlbumPageView` component (`src/components/album/AlbumPageView.tsx`): renders individual pages. All page types use `aspect-square` (simulates 25×25 cm album)
-- `ContentPage` (illustration_and_text): illustration fills full page, text overlaid at bottom with gradient for readability. No opaque background boxes
-- `CoverPage`, `DedicationPage`, `TextOnlyPage`, `BackCoverPage`: square containers with centered typographic layouts
-- Mock data fallback: if no pages exist yet, `loadPreviewData` returns `isMock: true` with 40-page sample
+- `AlbumPreview` (`src/components/album/AlbumPreview.tsx`): groups pages into 2-page spreads, open-book spine shadow, navigation
+- `AlbumPageView` (`src/components/album/AlbumPageView.tsx`): all page types are `aspect-square` (25×25 cm). Dispatches on `page_type`, then on `layout_type` for content pages
+- `ImageFill` helper: absolute-positioned img with `width = scale*100%`, `left = -crop_x*(scale-1)*100%`, `top = -crop_y*(scale-1)*100%` — renders crop/zoom via CSS
+- Text overlay: `bg-gradient-to-t from-black/72` with no opaque box
+- Mock fallback: if no real pages exist, `loadPreviewData` returns 40-page sample (`isMock: true`)
 
 ## Common Tasks
 - **Add new questionnaire step**: Edit `src/components/questionnaire/`, update Zod schema in `src/lib/validation/questionnaire.ts`, add translations in `src/messages/he.json`

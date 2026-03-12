@@ -73,13 +73,28 @@ docs/             # Architecture documentation
 1. **Order arrives** → admin sees it in `/admin`
 2. **Generate story** → Claude produces 40-page Hebrew rhyming text
 3. **Generate illustrations** → select photos in `AdminPhotosGallery`, trigger Gemini watercolor stylization
-4. **Assign illustrations to pages** → in `/admin/orders/[id]/preview`, use the `IllustrationPageMapper` to assign each completed illustration to its page
+4. **Edit pages** → in `/admin/orders/[id]/preview`, use the Album Page Editor:
+   - Edit text per page (versioned — `page_versions` table)
+   - Choose layout type (`FULL_IMAGE`, `IMAGE_TOP_TEXT_BOTTOM`, `TWO_IMAGES`, etc.)
+   - Assign completed illustrations to image slots 1 + 2
+   - Set zoom and crop position per slot (drag mini-preview or zoom slider)
 5. **Review album** → two-page spread preview simulates 25×25 cm album
 6. **Publish** → makes album visible to customer at `/order/[id]/preview?token=...`
 
 ## Album Preview
 
-Pages are rendered as square tiles (25×25 cm equivalent) in a two-page open-book spread. Content pages show the illustration filling the full page with text overlaid using a bottom gradient. Cover, dedication, text-only, and back-cover pages use centered typographic layouts.
+Pages are rendered as square tiles (25×25 cm equivalent) in a two-page open-book spread. Content pages (`illustration_and_text`) render according to `layout_type`:
+
+| Layout | Description |
+|--------|-------------|
+| `FULL_IMAGE` | Illustration fills full page, text overlaid at bottom with gradient |
+| `TEXT_ONLY` | No image, centered text |
+| `IMAGE_TOP_TEXT_BOTTOM` | Image top 60%, text bottom 40% |
+| `TEXT_TOP_IMAGE_BOTTOM` | Text top 40%, image bottom 60% |
+| `IMAGE_LEFT_TEXT_RIGHT` | Image left 55%, text right 45% |
+| `TWO_IMAGES` | Two images side by side, optional text caption |
+
+Images are positioned using `crop_x`, `crop_y`, `scale` from the `page_images` table — enabling precise pan/zoom within each frame without distortion.
 
 ## Architecture
 

@@ -1,5 +1,8 @@
 import type { PreviewPage } from "@/types/page";
 
+/** Shared mock slot/layout defaults so TypeScript is satisfied */
+const MOCK_IMG_DEFAULTS = { layout_type: "FULL_IMAGE" as const, images: [] as PreviewPage["images"] };
+
 export const MOCK_PERSON_NAME = "מרים לוי";
 
 // 37 sample verses for content pages 3–39
@@ -57,6 +60,7 @@ export function getMockPreviewPages(personName = MOCK_PERSON_NAME): PreviewPage[
       page_type: "cover",
       text_content: null,
       image_url: null,
+      ...MOCK_IMG_DEFAULTS,
     },
     {
       id: "mock-dedication",
@@ -64,6 +68,7 @@ export function getMockPreviewPages(personName = MOCK_PERSON_NAME): PreviewPage[
       page_type: "dedication",
       text_content: "לכל אוהביה ואוהבותיה,\nשהפכו את חייה לסיפור.",
       image_url: null,
+      ...MOCK_IMG_DEFAULTS,
     },
   ];
 
@@ -77,6 +82,7 @@ export function getMockPreviewPages(personName = MOCK_PERSON_NAME): PreviewPage[
       page_type: isTextOnly ? "text_only" : "illustration_and_text",
       text_content: MOCK_CONTENT_TEXTS[i] ?? `עמוד ${pageNumber} — כאן יופיע תוכן האלבום.`,
       image_url: null,
+      ...MOCK_IMG_DEFAULTS,
     });
   }
 
@@ -86,6 +92,7 @@ export function getMockPreviewPages(personName = MOCK_PERSON_NAME): PreviewPage[
     page_type: "back_cover",
     text_content: "באהבה, ממשפחה שמחה בך.",
     image_url: null,
+    ...MOCK_IMG_DEFAULTS,
   });
 
   return pages; // 2 + 37 + 1 = 40 pages
