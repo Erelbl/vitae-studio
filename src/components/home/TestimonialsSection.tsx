@@ -3,48 +3,44 @@ import { TESTIMONIALS } from "@/content/landing-content";
 
 export function TestimonialsSection() {
   return (
-    <section className="bg-card px-4 py-20 sm:py-24">
+    <section className="bg-card px-4 py-14 sm:py-20">
       <div className="mx-auto max-w-2xl">
 
         <FadeIn>
-          <div className="mb-14 text-center">
+          <div className="mb-10 text-center">
             <h2 className="text-2xl font-semibold sm:text-3xl lg:text-4xl">{TESTIMONIALS.title}</h2>
           </div>
         </FadeIn>
 
-        {/* WhatsApp-style chat UI */}
-        <div
-          className="rounded-2xl border border-border/40 bg-[#e5ddd5]/60 px-4 py-6 shadow-inner"
-          dir="rtl"
-        >
-          {TESTIMONIALS.items.map((msg, i) => {
-            // Alternate sides: odd messages appear on the left (like a 2-way chat)
-            const isRight = i % 2 === 0;
-
-            return (
-              <FadeIn key={i} delay={i * 120}>
-                <div
-                  className={`mb-3 flex ${isRight ? "justify-end" : "justify-start"}`}
-                >
-                  {/*
-                    Bubble shape — rounded except for the corner with the tail.
-                    Right bubble: tail at bottom-right → rounded-br-sm
-                    Left bubble:  tail at bottom-left → rounded-bl-sm
-                  */}
-                  <div
-                    className={`relative max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${
-                      isRight
-                        ? "rounded-br-sm bg-[#dcf8c6] text-gray-800"
-                        : "rounded-bl-sm bg-white text-gray-800"
-                    }`}
-                  >
-                    <p className="text-sm leading-relaxed sm:text-base">{msg.text}</p>
-                    <p className="mt-1 text-end text-[10px] text-gray-400">{msg.time}</p>
-                  </div>
+        {/* 3 separate WhatsApp-style conversation cards */}
+        <div className="flex flex-col gap-5">
+          {TESTIMONIALS.conversations.map((messages, ci) => (
+            <FadeIn key={ci} delay={ci * 120}>
+              <div className="overflow-hidden rounded-2xl border border-border/30 shadow-sm" dir="rtl">
+                {/* WhatsApp-style header bar */}
+                <div className="flex items-center gap-3 bg-primary/75 px-4 py-2.5">
+                  <div className="h-8 w-8 rounded-full bg-white/25" />
+                  <div className="h-2 w-24 rounded-full bg-white/35" />
                 </div>
-              </FadeIn>
-            );
-          })}
+
+                {/* Chat bubble area */}
+                <div className="bg-[#e5ddd5]/60 px-4 py-4 space-y-2">
+                  {messages.map((msg, mi) => (
+                    <div key={mi} className="flex justify-end">
+                      {/*
+                        Green = sent (customer's message to us).
+                        rounded-br-sm creates the WhatsApp tail effect on the bottom-right.
+                      */}
+                      <div className="max-w-[88%] rounded-2xl rounded-br-sm bg-[#dcf8c6] px-4 py-2.5 shadow-sm">
+                        <p className="text-base leading-relaxed text-gray-800 sm:text-lg">{msg.text}</p>
+                        <p className="mt-0.5 text-end text-xs text-gray-400">{msg.time}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </FadeIn>
+          ))}
         </div>
 
       </div>

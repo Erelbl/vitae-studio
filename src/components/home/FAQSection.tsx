@@ -9,11 +9,11 @@ export function FAQSection() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section className="bg-secondary/30 px-4 py-20 sm:py-24">
+    <section className="bg-secondary/30 px-4 py-14 sm:py-20">
       <div className="mx-auto max-w-3xl">
 
         <FadeIn>
-          <div className="mb-14 text-center">
+          <div className="mb-10 text-center">
             <h2 className="text-2xl font-semibold sm:text-3xl lg:text-4xl">{FAQ.title}</h2>
           </div>
         </FadeIn>
@@ -29,7 +29,7 @@ export function FAQSection() {
                     onClick={() => setOpenIndex(isOpen ? null : i)}
                     aria-expanded={isOpen}
                   >
-                    <span className="font-medium leading-snug sm:text-lg">{item.q}</span>
+                    <span className="text-base font-medium leading-snug sm:text-lg">{item.q}</span>
                     <ChevronDown
                       className={`h-5 w-5 shrink-0 text-primary/70 transition-transform duration-300 ${
                         isOpen ? "rotate-180" : ""

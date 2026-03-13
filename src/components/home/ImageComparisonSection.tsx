@@ -6,9 +6,13 @@ import { FadeIn } from "@/components/home/FadeIn";
 import { IMAGE_COMPARISON } from "@/content/landing-content";
 
 export function ImageComparisonSection() {
-  const [position, setPosition] = useState(50); // percent revealed for "after" (right side)
+  const [position, setPosition] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
+
+  // Track load errors so we can show a graceful fallback
+  const [beforeError, setBeforeError] = useState(false);
+  const [afterError, setAfterError] = useState(false);
 
   const updatePosition = useCallback((clientX: number) => {
     if (!containerRef.current) return;
@@ -32,19 +36,21 @@ export function ImageComparisonSection() {
     };
   }, [updatePosition]);
 
+  const showFallback = beforeError && afterError;
+
   return (
-    <section className="bg-secondary/20 px-4 py-20 sm:py-24">
+    <section className="bg-secondary/20 px-4 py-14 sm:py-20">
       <div className="mx-auto max-w-4xl">
 
         <FadeIn>
-          <div className="mb-14 text-center">
+          <div className="mb-10 text-center">
             <span className="mb-3 inline-block text-sm font-medium text-primary">
               {IMAGE_COMPARISON.sectionLabel}
             </span>
             <h2 className="text-2xl font-semibold sm:text-3xl lg:text-4xl">
               {IMAGE_COMPARISON.title}
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground sm:text-base lg:text-lg">
+            <p className="mt-2 text-base text-muted-foreground sm:text-lg">
               {IMAGE_COMPARISON.subtitle}
             </p>
           </div>
@@ -52,79 +58,83 @@ export function ImageComparisonSection() {
 
         <FadeIn>
           {/*
-            The comparison slider uses physical left/right positioning (dir=ltr)
-            since it's a visual tool — original photo on left, illustration on right.
+            Images must be committed to git so Vercel can serve them.
+            Place files at:
+              public/examples/original.jpg     ← original photo
+              public/examples/illustrated.jpg  ← watercolor illustration
+
+            The component uses physical LTR positioning (dir=ltr) since
+            this is a visual before/after tool — original always on the left.
           */}
-          <div
-            ref={containerRef}
-            dir="ltr"
-            className="relative aspect-[4/3] w-full cursor-col-resize select-none overflow-hidden rounded-2xl border border-border/30 shadow-xl"
-            onMouseDown={() => {
-              isDragging.current = true;
-            }}
-            onTouchMove={(e) => updatePosition(e.touches[0].clientX)}
-          >
-            {/* Before — original photo (full width underneath) */}
-            <div className="absolute inset-0">
-              <Image
-                src={IMAGE_COMPARISON.beforeImage.src}
-                alt={IMAGE_COMPARISON.beforeImage.alt}
-                fill
-                sizes="(max-width: 768px) 100vw, 896px"
-                className="object-cover"
-                /* If file doesn't exist yet, Next.js will show a broken image.
-                   Replace /public/examples/original.jpg when ready. */
-              />
-            </div>
-
-            {/* After — watercolor illustration (clipped to right of divider) */}
-            <div
-              className="absolute inset-0 overflow-hidden"
-              style={{ clipPath: `inset(0 0 0 ${position}%)` }}
-            >
-              <Image
-                src={IMAGE_COMPARISON.afterImage.src}
-                alt={IMAGE_COMPARISON.afterImage.alt}
-                fill
-                sizes="(max-width: 768px) 100vw, 896px"
-                className="object-cover"
-                /* Replace /public/examples/illustrated.jpg when ready. */
-              />
-            </div>
-
-            {/* Vertical divider line */}
-            <div
-              className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/90 shadow-[0_0_8px_rgba(0,0,0,0.3)]"
-              style={{ left: `${position}%` }}
-            >
-              {/* Circular drag handle */}
-              <div className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-xl ring-2 ring-white/60 pointer-events-auto">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  className="text-gray-500"
-                >
-                  <path
-                    d="M6 8L3 10L6 12M14 8L17 10L14 12"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+          {showFallback ? (
+            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-2xl border border-dashed border-border bg-secondary/30 text-center text-muted-foreground">
+              <div>
+                <p className="mb-1 text-base font-medium">תמונות לדוגמה לא נמצאו</p>
+                <p className="text-sm">הוסיפו תמונות לתיקייה <code className="rounded bg-border/50 px-1">public/examples/</code></p>
               </div>
             </div>
+          ) : (
+            <div
+              ref={containerRef}
+              dir="ltr"
+              className="relative aspect-[4/3] w-full cursor-col-resize select-none overflow-hidden rounded-2xl border border-border/30 shadow-xl"
+              onMouseDown={() => { isDragging.current = true; }}
+              onTouchMove={(e) => updatePosition(e.touches[0].clientX)}
+            >
+              {/* Before — original photo (full width, underneath) */}
+              <div className="absolute inset-0">
+                <Image
+                  src={IMAGE_COMPARISON.beforeImage.src}
+                  alt={IMAGE_COMPARISON.beforeImage.alt}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 896px"
+                  className="object-cover"
+                  onError={() => setBeforeError(true)}
+                />
+              </div>
 
-            {/* Labels */}
-            <div className="absolute bottom-3 left-3 rounded-full bg-black/50 px-3 py-1 text-xs text-white backdrop-blur-sm">
-              {IMAGE_COMPARISON.beforeLabel}
+              {/* After — illustration (clipped to the right of the divider) */}
+              <div
+                className="absolute inset-0 overflow-hidden"
+                style={{ clipPath: `inset(0 0 0 ${position}%)` }}
+              >
+                <Image
+                  src={IMAGE_COMPARISON.afterImage.src}
+                  alt={IMAGE_COMPARISON.afterImage.alt}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 896px"
+                  className="object-cover"
+                  onError={() => setAfterError(true)}
+                />
+              </div>
+
+              {/* Vertical divider + handle */}
+              <div
+                className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/90 shadow-[0_0_8px_rgba(0,0,0,0.3)]"
+                style={{ left: `${position}%` }}
+              >
+                <div className="pointer-events-auto absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-xl ring-2 ring-white/60">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-gray-500">
+                    <path
+                      d="M6 8L3 10L6 12M14 8L17 10L14 12"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Labels */}
+              <div className="absolute bottom-3 left-3 rounded-full bg-black/50 px-3 py-1 text-sm text-white backdrop-blur-sm">
+                {IMAGE_COMPARISON.beforeLabel}
+              </div>
+              <div className="absolute bottom-3 right-3 rounded-full bg-black/50 px-3 py-1 text-sm text-white backdrop-blur-sm">
+                {IMAGE_COMPARISON.afterLabel}
+              </div>
             </div>
-            <div className="absolute bottom-3 right-3 rounded-full bg-black/50 px-3 py-1 text-xs text-white backdrop-blur-sm">
-              {IMAGE_COMPARISON.afterLabel}
-            </div>
-          </div>
+          )}
         </FadeIn>
 
       </div>

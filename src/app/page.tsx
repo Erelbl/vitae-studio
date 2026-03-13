@@ -46,7 +46,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-50 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           {/* Logo — replace /assets/Logo.png with your final logo file. */}
-          <div className="relative h-10 w-36 shrink-0">
+          <div className="relative h-12 w-44 shrink-0">
             <Image
               src="/assets/Logo.png"
               alt="Vitae Studio"
@@ -94,8 +94,17 @@ export default function LandingPage() {
       </main>
 
       {/* ── Footer ───────────────────────────────────────────── */}
-      <footer className="border-t border-border/50 bg-background px-4 py-6 text-center text-xs text-muted-foreground/60">
-        <p>
+      <footer className="border-t border-border/50 bg-background px-4 py-8 text-center">
+        {/* Logo in footer for brand presence */}
+        <div className="mx-auto mb-4 relative h-10 w-40">
+          <Image
+            src="/assets/Logo.png"
+            alt="Vitae Studio"
+            fill
+            className="object-contain"
+          />
+        </div>
+        <p className="text-sm text-muted-foreground/60">
           Vitae Studio &copy; {new Date().getFullYear()} · {FOOTER.tagline}
         </p>
       </footer>
