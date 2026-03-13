@@ -7,8 +7,11 @@ import { Button } from "@/components/ui/button";
 import { HeroSection } from "@/components/home/HeroSection";
 import { HowItWorks } from "@/components/home/HowItWorks";
 import { UseCases } from "@/components/home/UseCases";
-import { Gallery } from "@/components/home/Gallery";
+import { ImageComparisonSection } from "@/components/home/ImageComparisonSection";
 import { PremiumValue } from "@/components/home/PremiumValue";
+import { PackagesSection } from "@/components/home/PackagesSection";
+import { TestimonialsSection } from "@/components/home/TestimonialsSection";
+import { FAQSection } from "@/components/home/FAQSection";
 import { FounderSection } from "@/components/home/FounderSection";
 import { FinalCta } from "@/components/home/FinalCta";
 import { ContactSection } from "@/components/home/ContactSection";
@@ -42,8 +45,7 @@ export default function LandingPage() {
       {/* ── Sticky nav with logo ──────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          {/* Logo — replace /assets/Logo.png with your final logo file.
-              Explicit container prevents flex shrink collapsing the logo on desktop. */}
+          {/* Logo — replace /assets/Logo.png with your final logo file. */}
           <div className="relative h-10 w-36 shrink-0">
             <Image
               src="/assets/Logo.png"
@@ -65,6 +67,7 @@ export default function LandingPage() {
       </header>
 
       <main>
+        {/* Hero with embedded gallery carousel */}
         <HeroSection onStartOrder={handleStartOrder} loading={loading} />
 
         <SectionDivider />
@@ -73,9 +76,15 @@ export default function LandingPage() {
 
         <UseCases />
 
-        <Gallery />
+        <ImageComparisonSection />
 
         <PremiumValue />
+
+        <PackagesSection />
+
+        <TestimonialsSection />
+
+        <FAQSection />
 
         <FounderSection />
 
