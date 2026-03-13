@@ -38,9 +38,20 @@ export function Step3Milestones({ defaultValues, onNavigate, onBack }: Props) {
 
   return (
     <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
+      {/* military_service – moved before profession */}
+      <div className="space-y-1.5">
+        <Label htmlFor="military_service">
+          שירות צבאי <OptionalBadge />
+        </Label>
+        <Input
+          id="military_service"
+          {...register("military_service")}
+        />
+      </div>
+
       {/* profession */}
       <div className="space-y-1.5">
-        <Label htmlFor="profession">מה היה העיסוק המרכזי בחיים *</Label>
+        <Label htmlFor="profession">עיסוק מרכזי בחיים *</Label>
         <Input
           id="profession"
           placeholder="למשל: מורה, קבלן, אחות, עצמאי"
@@ -70,18 +81,6 @@ export function Step3Milestones({ defaultValues, onNavigate, onBack }: Props) {
             {errors.work_characteristics.message}
           </p>
         )}
-      </div>
-
-      {/* military_service – optional */}
-      <div className="space-y-1.5">
-        <Label htmlFor="military_service">
-          שירות צבאי <OptionalBadge />
-        </Label>
-        <Input
-          id="military_service"
-          placeholder="למשל: חיל האוויר, גולני, שירות לאומי"
-          {...register("military_service")}
-        />
       </div>
 
       {/* cities_over_years – optional */}

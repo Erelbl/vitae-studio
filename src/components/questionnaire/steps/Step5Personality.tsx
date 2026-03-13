@@ -35,6 +35,7 @@ export function Step5Personality({ defaultValues, onNavigate, onBack }: Props) {
 
   const traits = watch("personality_traits") ?? "";
   const knownFor = watch("known_for") ?? "";
+  const descValue = watch("one_sentence_description") ?? "";
   const funnyDetail = watch("funny_detail") ?? "";
 
   return (
@@ -71,6 +72,39 @@ export function Step5Personality({ defaultValues, onNavigate, onBack }: Props) {
         {errors.known_for && (
           <p className="text-sm text-destructive">{errors.known_for.message}</p>
         )}
+      </div>
+
+      {/* one_sentence_description – moved from Step1 */}
+      <div className="space-y-1.5">
+        <Label htmlFor="one_sentence_description">
+          איך היית מתאר/ת אותו/ה במשפט אחד? *
+        </Label>
+        <Textarea
+          id="one_sentence_description"
+          placeholder="למשל: אדם חם, מצחיק ומלא אהבה"
+          rows={2}
+          {...register("one_sentence_description")}
+        />
+        <p className="text-xs text-muted-foreground text-end">
+          {descValue.length} / 200
+        </p>
+        {errors.one_sentence_description && (
+          <p className="text-sm text-destructive">
+            {errors.one_sentence_description.message}
+          </p>
+        )}
+      </div>
+
+      {/* first_impression – moved from Step1 */}
+      <div className="space-y-1.5">
+        <Label htmlFor="first_impression">
+          מה הדבר הראשון שאנשים שמים לב אליו? <OptionalBadge />
+        </Label>
+        <Input
+          id="first_impression"
+          placeholder="למשל: החיוך, ההומור, השקט, הנוכחות"
+          {...register("first_impression")}
+        />
       </div>
 
       {/* favorite_sayings – optional */}

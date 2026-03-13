@@ -51,6 +51,17 @@ export function Step2ChildhoodRoots({ defaultValues, onNavigate, onBack }: Props
         )}
       </div>
 
+      {/* parent_names – moved here, after birth city */}
+      <div className="space-y-1.5">
+        <Label htmlFor="parent_names">
+          שמות ההורים <OptionalBadge />
+        </Label>
+        <Input
+          id="parent_names"
+          {...register("parent_names")}
+        />
+      </div>
+
       {/* childhood_city */}
       <div className="space-y-1.5">
         <Label htmlFor="childhood_city">איפה גדל/ה *</Label>
@@ -92,18 +103,6 @@ export function Step2ChildhoodRoots({ defaultValues, onNavigate, onBack }: Props
         {errors.childhood_memories && (
           <p className="text-sm text-destructive">{errors.childhood_memories.message}</p>
         )}
-      </div>
-
-      {/* parent_names – optional */}
-      <div className="space-y-1.5">
-        <Label htmlFor="parent_names">
-          שמות ההורים <OptionalBadge />
-        </Label>
-        <Input
-          id="parent_names"
-          placeholder="למשל: מרים ויצחק"
-          {...register("parent_names")}
-        />
       </div>
 
       {/* childhood_special_memory – optional */}

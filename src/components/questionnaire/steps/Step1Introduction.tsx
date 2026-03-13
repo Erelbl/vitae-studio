@@ -6,7 +6,6 @@ import { z } from "zod/v4";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -42,16 +41,14 @@ export function Step1Introduction({ defaultValues, onNavigate }: Props) {
 
   const albumType = watch("album_type");
   const gender = watch("person_gender");
-  const descValue = watch("one_sentence_description") ?? "";
 
   return (
     <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
       {/* person_name */}
       <div className="space-y-1.5">
-        <Label htmlFor="person_name">שם בעל/ת השמחה *</Label>
+        <Label htmlFor="person_name">שם הגיבור/ה *</Label>
         <Input
           id="person_name"
-          placeholder="למשל: רחל כהן"
           {...register("person_name")}
         />
         {errors.person_name && (
@@ -111,31 +108,10 @@ export function Step1Introduction({ defaultValues, onNavigate }: Props) {
         )}
       </div>
 
-      {/* one_sentence_description */}
-      <div className="space-y-1.5">
-        <Label htmlFor="one_sentence_description">
-          איך היית מתאר/ת אותו/ה במשפט אחד? *
-        </Label>
-        <Textarea
-          id="one_sentence_description"
-          placeholder="למשל: אדם חם, מצחיק ומלא אהבה"
-          rows={2}
-          {...register("one_sentence_description")}
-        />
-        <p className="text-xs text-muted-foreground text-end">
-          {descValue.length} / 200
-        </p>
-        {errors.one_sentence_description && (
-          <p className="text-sm text-destructive">
-            {errors.one_sentence_description.message}
-          </p>
-        )}
-      </div>
-
       {/* person_birth_date – optional */}
       <div className="space-y-1.5">
         <Label htmlFor="person_birth_date">
-          תאריך לידה של בעל/ת השמחה <OptionalBadge />
+          תאריך לידה <OptionalBadge />
         </Label>
         <Input
           id="person_birth_date"
@@ -152,20 +128,7 @@ export function Step1Introduction({ defaultValues, onNavigate }: Props) {
         </Label>
         <Input
           id="nickname"
-          placeholder="למשל: רחל׳ה, סבא יוסי, מומו"
           {...register("nickname")}
-        />
-      </div>
-
-      {/* first_impression – optional */}
-      <div className="space-y-1.5">
-        <Label htmlFor="first_impression">
-          מה הדבר הראשון שאנשים שמים לב אליו? <OptionalBadge />
-        </Label>
-        <Input
-          id="first_impression"
-          placeholder="למשל: החיוך, ההומור, השקט, הנוכחות"
-          {...register("first_impression")}
         />
       </div>
 

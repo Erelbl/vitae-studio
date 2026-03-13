@@ -47,7 +47,6 @@ export function Step9BuyerDetails({
         <Label htmlFor="buyer_name">שם המזמין/ה *</Label>
         <Input
           id="buyer_name"
-          placeholder="למשל: דנה לוי"
           {...register("buyer_name")}
         />
         {errors.buyer_name && (
@@ -57,7 +56,7 @@ export function Step9BuyerDetails({
 
       {/* relationship_to_buyer */}
       <div className="space-y-1.5">
-        <Label htmlFor="relationship_to_buyer">הקשר לבעל/ת השמחה *</Label>
+        <Label htmlFor="relationship_to_buyer">קשר לגיבור/ה שלנו *</Label>
         <Input
           id="relationship_to_buyer"
           placeholder="למשל: בת, בן זוג, נכדה, חבר קרוב"
@@ -100,6 +99,51 @@ export function Step9BuyerDetails({
         {errors.buyer_email && (
           <p className="text-sm text-destructive">{errors.buyer_email.message}</p>
         )}
+      </div>
+
+      {/* Shipping details */}
+      <div className="space-y-4 rounded-xl border border-border/50 bg-muted/30 px-4 py-4">
+        <p className="text-sm font-medium text-foreground">פרטי משלוח <OptionalBadge /></p>
+
+        {/* shipping_address */}
+        <div className="space-y-1.5">
+          <Label htmlFor="shipping_address">כתובת מלאה</Label>
+          <Input
+            id="shipping_address"
+            placeholder="למשל: רחוב הרצל 12"
+            {...register("shipping_address")}
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          {/* shipping_house_number */}
+          <div className="space-y-1.5">
+            <Label htmlFor="shipping_house_number">מספר בית</Label>
+            <Input
+              id="shipping_house_number"
+              {...register("shipping_house_number")}
+            />
+          </div>
+
+          {/* shipping_floor */}
+          <div className="space-y-1.5">
+            <Label htmlFor="shipping_floor">קומה</Label>
+            <Input
+              id="shipping_floor"
+              {...register("shipping_floor")}
+            />
+          </div>
+
+          {/* shipping_zip */}
+          <div className="space-y-1.5">
+            <Label htmlFor="shipping_zip">מיקוד</Label>
+            <Input
+              id="shipping_zip"
+              dir="ltr"
+              {...register("shipping_zip")}
+            />
+          </div>
+        </div>
       </div>
 
       {/* additional_notes – optional */}

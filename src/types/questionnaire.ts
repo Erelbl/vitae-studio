@@ -31,14 +31,12 @@ export const OCCASIONS = [
 export type Occasion = (typeof OCCASIONS)[number];
 
 export interface QuestionnaireResponses {
-  // Step 1: בואו נכיר
+  // Step 1: ספרו לנו
   person_name: string;
   album_type: AlbumType;
-  one_sentence_description: string;
   person_gender: "male" | "female";
   person_birth_date: string;
   nickname: string;
-  first_impression: string;
 
   // Step 2: ילדות ושורשים
   person_birth_city: string;
@@ -66,6 +64,8 @@ export interface QuestionnaireResponses {
   // Step 5: האדם שמאחורי הסיפור
   personality_traits: string;
   known_for: string;
+  one_sentence_description: string;
+  first_impression: string;
   favorite_sayings: string;
   hobbies: string;
   funny_detail: string;
@@ -90,6 +90,10 @@ export interface QuestionnaireResponses {
   buyer_phone: string;
   buyer_email: string;
   additional_notes: string;
+  shipping_address: string;
+  shipping_house_number: string;
+  shipping_floor: string;
+  shipping_zip: string;
 }
 
 export interface FollowUpQA {
@@ -125,13 +129,13 @@ export interface Photo {
 }
 
 export const QUESTIONNAIRE_STEPS = [
-  { key: "introduction", label: "בואו נכיר" },
+  { key: "introduction", label: "ספרו לנו" },
   { key: "childhood_roots", label: "ילדות ושורשים" },
   { key: "milestones", label: "תחנות משמעותיות" },
   { key: "family_love", label: "אהבה ומשפחה" },
   { key: "personality", label: "האדם שמאחורי הסיפור" },
   { key: "special_moments", label: "רגעים מיוחדים" },
   { key: "legacy", label: "מורשת וערכים" },
-  { key: "blessing", label: "ברכה" },
+  { key: "blessing", label: "הקדשה" },
   { key: "buyer_details", label: "פרטי המזמין" },
 ] as const;

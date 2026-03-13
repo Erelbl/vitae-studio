@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export default function OrderLayout({
   children,
 }: {
@@ -5,12 +7,17 @@ export default function OrderLayout({
 }) {
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border/60 bg-card px-4 py-3.5 sm:px-6">
-        <div className="mx-auto flex max-w-2xl items-center gap-2.5">
-          <span className="text-base font-semibold tracking-wide text-primary sm:text-lg">
-            Vitae Studio
-          </span>
-          <span className="text-border/80 select-none">|</span>
+      <header className="border-b border-border/60 bg-card px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-2xl items-center justify-between sm:max-w-3xl">
+          <div className="relative h-10 w-36">
+            <Image
+              src="/assets/Logo.png"
+              alt="Vitae Studio"
+              fill
+              priority
+              className="object-contain object-start"
+            />
+          </div>
           <span className="text-xs text-muted-foreground">סיפור חיים בחרוזים</span>
         </div>
       </header>

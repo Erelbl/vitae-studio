@@ -39,7 +39,7 @@ export function Step8Blessing({ defaultValues, onNavigate, onBack }: Props) {
     <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
       {/* blessing_wish */}
       <div className="space-y-1.5">
-        <Label htmlFor="blessing_wish">מה תרצו לאחל לו/לה *</Label>
+        <Label htmlFor="blessing_wish">איזו הקדשה תרצו להוסיף לספר? *</Label>
         <Textarea
           id="blessing_wish"
           placeholder="למשל: בריאות, שמחה, אהבה ונחת מכל המשפחה"
@@ -57,7 +57,7 @@ export function Step8Blessing({ defaultValues, onNavigate, onBack }: Props) {
       {/* extra_description – optional */}
       <div className="space-y-1.5">
         <Label htmlFor="extra_description">
-          משפט נוסף שמתאר אותו/ה <OptionalBadge />
+          דברים נוספים שחשוב לכם שנדע ונכתוב על הגיבור/ה שלנו? <OptionalBadge />
         </Label>
         <Textarea
           id="extra_description"

@@ -9,15 +9,13 @@ export const ALBUM_TYPES = [
   "other",
 ] as const;
 
-// Step 1: בואו נכיר
+// Step 1: ספרו לנו
 export const introductionSchema = z.object({
   person_name: z.string().min(2, "נדרשים לפחות 2 תווים"),
   album_type: z.enum(ALBUM_TYPES, { error: "יש לבחור סוג אלבום" }),
-  one_sentence_description: z.string().min(5, "נדרשים לפחות 5 תווים"),
   person_gender: z.enum(["male", "female"], { error: "יש לבחור מגדר" }),
   person_birth_date: z.string().optional().default(""),
   nickname: z.string().optional().default(""),
-  first_impression: z.string().optional().default(""),
 });
 
 // Step 2: ילדות ושורשים
@@ -53,6 +51,8 @@ export const familyLoveSchema = z.object({
 export const personalitySchema = z.object({
   personality_traits: z.string().min(5, "נדרשים לפחות 5 תווים"),
   known_for: z.string().min(5, "נדרשים לפחות 5 תווים"),
+  one_sentence_description: z.string().min(5, "נדרשים לפחות 5 תווים"),
+  first_impression: z.string().optional().default(""),
   favorite_sayings: z.string().optional().default(""),
   hobbies: z.string().optional().default(""),
   funny_detail: z.string().optional().default(""),
@@ -72,7 +72,7 @@ export const legacySchema = z.object({
   taught_children: z.string().optional().default(""),
 });
 
-// Step 8: ברכה
+// Step 8: הקדשה
 export const blessingSchema = z.object({
   blessing_wish: z.string().min(5, "נדרשים לפחות 5 תווים"),
   extra_description: z.string().optional().default(""),
@@ -85,6 +85,10 @@ export const buyerDetailsSchema = z.object({
   buyer_phone: z.string().min(9, "מספר טלפון לא תקין"),
   buyer_email: z.string().email("כתובת אימייל לא תקינה").optional().or(z.literal("")).default(""),
   additional_notes: z.string().optional().default(""),
+  shipping_address: z.string().optional().default(""),
+  shipping_house_number: z.string().optional().default(""),
+  shipping_floor: z.string().optional().default(""),
+  shipping_zip: z.string().optional().default(""),
 });
 
 export const STEP_SCHEMAS = [

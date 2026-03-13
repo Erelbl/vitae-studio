@@ -99,13 +99,11 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
   };
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-8 sm:py-10">
+    <div className="mx-auto max-w-xl px-4 py-8 sm:max-w-2xl sm:px-8 sm:py-10">
       {/* Intro notice – visible on first step */}
       {currentStep === 0 && (
-        <div className="mb-5 rounded-xl border border-border/50 bg-muted/40 px-4 py-3 text-sm text-muted-foreground leading-relaxed">
-          השאלון כולל מספר שאלות חובה וכמה שאלות רשות.
-          <br />
-          ניתן לנוע בין השלבים בחופשיות – השאלות עם * חובה למילוי לפני סיום השאלון.
+        <div className="mb-5 rounded-xl border border-border/50 bg-muted/40 px-4 py-3 text-sm text-muted-foreground leading-relaxed sm:text-base">
+          ניתן לנוע בין השלבים בחופשיות, ככל שתספרו לנו יותר פרטים, אנחנו נוכל לכתוב את הסיפור שלכם כך שיהיה אישי ומרגש
         </div>
       )}
 
@@ -118,7 +116,7 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
       {/* Form card */}
       <div
         key={currentStep}
-        className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-8"
+        className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-10 sm:text-lg"
       >
         {currentStep === 0 && (
           <Step1Introduction
