@@ -4,7 +4,7 @@ import { HOW_IT_WORKS } from "@/content/landing-content";
 export function HowItWorks() {
   return (
     <section className="bg-card px-4 py-20 sm:py-24">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-5xl">
 
         <FadeIn>
           <div className="mb-14 text-center">
@@ -24,7 +24,7 @@ export function HowItWorks() {
                   <span className="text-base font-bold text-primary">{step.num}</span>
                 </div>
                 <h3 className="mb-2 text-lg font-semibold">{step.title}</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">{step.desc}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">{step.desc}</p>
               </div>
             </FadeIn>
           ))}

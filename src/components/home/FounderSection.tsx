@@ -5,7 +5,7 @@ import { FOUNDER } from "@/content/landing-content";
 export function FounderSection() {
   return (
     <section className="bg-secondary/20 px-4 py-20 sm:py-24">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-5xl">
 
         <FadeIn>
           <div className="flex flex-col items-center gap-10 lg:flex-row lg:items-start lg:gap-16">

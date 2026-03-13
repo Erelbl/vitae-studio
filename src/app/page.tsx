@@ -11,6 +11,7 @@ import { Gallery } from "@/components/home/Gallery";
 import { PremiumValue } from "@/components/home/PremiumValue";
 import { FounderSection } from "@/components/home/FounderSection";
 import { FinalCta } from "@/components/home/FinalCta";
+import { ContactSection } from "@/components/home/ContactSection";
 import { FOOTER } from "@/content/landing-content";
 
 export default function LandingPage() {
@@ -40,7 +41,7 @@ export default function LandingPage() {
 
       {/* ── Sticky nav with logo ──────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b border-border/40 bg-background/90 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           {/* Logo — replace /assets/Logo.png with your final logo file.
               Explicit container prevents flex shrink collapsing the logo on desktop. */}
           <div className="relative h-10 w-36 shrink-0">
@@ -77,6 +78,8 @@ export default function LandingPage() {
         <PremiumValue />
 
         <FounderSection />
+
+        <ContactSection />
 
         <FinalCta onStartOrder={handleStartOrder} loading={loading} />
       </main>

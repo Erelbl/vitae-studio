@@ -149,6 +149,13 @@ export const FINAL_CTA = {
   trustNote: "✦ ללא התחייבות מראש · מתחילים תוך דקות",
 };
 
+export const CONTACT = {
+  name: "דור אלירז",
+  email: "doreliraz@gmail.com",
+  whatsapp: "https://wa.me/972507824664",
+  message: "לשאלות והתייעצות אישית ניתן לפנות אליי",
+};
+
 export const FOOTER = {
   tagline: "מתנה שלא נשכחת",
 };

@@ -4,7 +4,7 @@ import { PREMIUM_VALUE } from "@/content/landing-content";
 export function PremiumValue() {
   return (
     <section className="bg-card px-4 py-20 sm:py-24">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
 
         <FadeIn>
           <div className="mb-14 text-center">
@@ -18,16 +18,13 @@ export function PremiumValue() {
           </div>
         </FadeIn>
 
-        {/* Editorial layout — olive border-start accent, no boxed cards */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-x-14 sm:gap-y-8">
+        {/* Editorial layout — olive border-start accent, no emojis, no boxed cards */}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-16 sm:gap-y-10">
           {PREMIUM_VALUE.points.map((point, i) => (
             <FadeIn key={i} delay={i * 80}>
               <div className="border-s-2 border-primary/25 ps-5">
-                <div className="mb-1.5 flex items-center gap-2.5">
-                  <span className="text-base leading-none">{point.icon}</span>
-                  <h3 className="font-semibold leading-snug">{point.title}</h3>
-                </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">{point.desc}</p>
+                <h3 className="mb-2 font-semibold leading-snug">{point.title}</h3>
+                <p className="text-base leading-relaxed text-muted-foreground">{point.desc}</p>
               </div>
             </FadeIn>
           ))}

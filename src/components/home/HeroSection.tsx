@@ -16,7 +16,7 @@ export function HeroSection({ onStartOrder, loading }: Props) {
       <div className="pointer-events-none absolute -end-32 -top-32 h-[30rem] w-[30rem] rounded-full bg-primary/8 blur-3xl" />
       <div className="pointer-events-none absolute -start-24 bottom-0 h-80 w-80 rounded-full bg-secondary blur-2xl" />
 
-      <div className="relative z-10 mx-auto max-w-5xl">
+      <div className="relative z-10 mx-auto max-w-6xl">
         <div className="flex flex-col items-center gap-12 lg:flex-row lg:items-center lg:gap-16">
 
           {/* Text — start side (right in RTL). Staggered load animation via CSS. */}
