@@ -138,11 +138,11 @@ export const FOUNDER = {
   // Replace with the actual founder name
   name: "שם המייסד/ת",
   // Replace with the actual title
-  title: "מייסדת Vitae Studio",
+  title: "דור אלירז",
   // Replace /assets/founder.jpg with the real founder photo
   image: {
-    src: "/assets/founder.jpg",
-    alt: "מייסדת Vitae Studio",
+    src: "/assets/founder.jepg",
+    alt: "דור אלירז",
   },
   // Replace with an actual quote
   quote:
