@@ -33,7 +33,7 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
   const stepCompletion = STEP_SCHEMAS.map((schema) => schema.safeParse(allData).success);
 
   async function persist(merged: Record<string, unknown>, isComplete: boolean) {
-    const res = await fetch(`/api/orders/${orderId}/questionnaire`, {
+    const res = await fetch(`/api/orders/${orderId}/questionnaire?token=${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ responses: merged, isComplete }),

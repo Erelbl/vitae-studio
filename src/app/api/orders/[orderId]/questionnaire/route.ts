@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { assertTransition } from "@/lib/state-machine";
+import { authorizeOrderRequest } from "@/lib/order-auth";
 import type { OrderStatus } from "@/types/order";
 
 /** Map new album_type values to legacy occasion enum values stored on orders */
@@ -22,10 +23,16 @@ export async function POST(
   { params }: { params: Promise<{ orderId: string }> }
 ) {
   const { orderId } = await params;
+  const token = request.nextUrl.searchParams.get("token");
   const body = await request.json();
   const { responses, isComplete } = body;
 
   const supabase = createAdminClient();
+
+  const auth = await authorizeOrderRequest(supabase, orderId, token);
+  if (!auth.ok) {
+    return NextResponse.json({ error: "Forbidden" }, { status: auth.status });
+  }
 
   // Upsert questionnaire responses
   const { error: qError } = await supabase
