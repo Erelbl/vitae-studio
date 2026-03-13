@@ -44,12 +44,12 @@ export default async function AdminOrderPreviewPage({
   // ── Preview data (page_images + batch signed URLs via loader) ─────────────
   const previewData = await loadPreviewData(orderId, personName);
 
-  // ── Editor data: content pages with text, layout, page_images ─────────────
+  // ── Editor data: all pages with text, layout, page_images ────────────────
+  // Include all page types so admins can upload images to cover/dedication/etc.
   const { data: editorPagesRaw } = await adminClient
     .from("pages")
     .select("id, page_number, page_type, layout_type, text_content, text_version")
     .eq("order_id", orderId)
-    .eq("page_type", "illustration_and_text")
     .order("page_number");
 
   const editorPageIds = (editorPagesRaw ?? []).map((p) => p.id as string);
@@ -58,11 +58,11 @@ export default async function AdminOrderPreviewPage({
     editorPageIds.length > 0
       ? await adminClient
           .from("page_images")
-          .select("page_id, slot, photo_id, crop_x, crop_y, scale")
+          .select("page_id, slot, photo_id, crop_x, crop_y, scale, manual_image_path")
           .in("page_id", editorPageIds)
       : { data: [] as {
           page_id: unknown; slot: unknown; photo_id: unknown;
-          crop_x: unknown; crop_y: unknown; scale: unknown;
+          crop_x: unknown; crop_y: unknown; scale: unknown; manual_image_path: unknown;
         }[] };
 
   // ── Completed illustrations for the picker ────────────────────────────────
@@ -101,6 +101,10 @@ export default async function AdminOrderPreviewPage({
   for (const path of pageImagesPhotoPaths.values()) {
     allPaths.add(path);
   }
+  // Also include manual_image_path values
+  for (const pi of pageImagesRaw ?? []) {
+    if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
+  }
 
   // Batch sign all paths
   const signedUrlMap = new Map<string, string>();
@@ -130,8 +134,10 @@ export default async function AdminOrderPreviewPage({
   const pageImagesMap = new Map<string, EditorPage["images"]>();
   for (const pi of pageImagesRaw ?? []) {
     const pid = pi.page_id as string;
+    const manualPath = (pi.manual_image_path as string | null) ?? null;
     const photoId = (pi.photo_id as string | null) ?? null;
-    const storagePath = photoId ? pageImagesPhotoPaths.get(photoId) : undefined;
+    // manual_image_path takes priority over photo-based illustration path
+    const storagePath = manualPath ?? (photoId ? pageImagesPhotoPaths.get(photoId) : undefined);
     const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
 
     const existing = pageImagesMap.get(pid) ?? [];

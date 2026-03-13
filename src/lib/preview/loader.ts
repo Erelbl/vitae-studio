@@ -33,7 +33,7 @@ export async function loadPreviewData(
   // Load page_images for all pages in one query
   const { data: pageImagesRaw } = await supabase
     .from("page_images")
-    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale")
+    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale, manual_image_path")
     .in("page_id", pageIds);
 
   // Collect all photo_ids referenced by page_images to resolve their paths
@@ -68,6 +68,10 @@ export async function loadPreviewData(
   for (const path of photoStoragePaths.values()) {
     allPaths.add(path);
   }
+  // Also include manual_image_path values from page_images
+  for (const pi of pageImagesRaw ?? []) {
+    if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
+  }
 
   // Batch-sign all paths in a single Supabase Storage call
   const signedUrlMap = new Map<string, string>();
@@ -86,8 +90,10 @@ export async function loadPreviewData(
   const pageImagesMap = new Map<string, PageImageSlot[]>();
   for (const pi of pageImagesRaw ?? []) {
     const pid = pi.page_id as string;
+    const manualPath = (pi.manual_image_path as string | null) ?? null;
     const photoId = (pi.photo_id as string | null) ?? null;
-    const storagePath = photoId ? photoStoragePaths.get(photoId) : undefined;
+    // manual_image_path takes priority over photo-based illustration path
+    const storagePath = manualPath ?? (photoId ? photoStoragePaths.get(photoId) : undefined);
     const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
 
     const slot: PageImageSlot = {

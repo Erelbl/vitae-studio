@@ -80,21 +80,24 @@ function CoverPage({
   page: PreviewPage;
   personName: string;
 }) {
+  const slot1 = resolveSlot(page, 1);
   return (
     <PageShell className="bg-secondary">
+      {/* Optional manually-uploaded background image */}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} />}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/18" />
       <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8">
-        <div className="border-2 border-primary/20 rounded-xl p-6 w-full max-w-[80%]">
+        <div className={`border-2 border-primary/20 rounded-xl p-6 w-full max-w-[80%] ${slot1.url ? "bg-black/40 backdrop-blur-sm" : ""}`}>
           <Ornament className="mb-5" size="lg" />
-          <p className="text-[0.6rem] uppercase tracking-[0.22em] text-primary/60 mb-4 font-semibold">
+          <p className={`text-[0.6rem] uppercase tracking-[0.22em] mb-4 font-semibold ${slot1.url ? "text-white/70" : "text-primary/60"}`}>
             סיפור חיים בחרוזים
           </p>
-          <h1 className="text-3xl font-semibold text-foreground leading-tight">
+          <h1 className={`text-3xl font-semibold leading-tight ${slot1.url ? "text-white" : "text-foreground"}`}>
             {personName}
           </h1>
           {page.text_content && (
             <p
-              className="mt-4 text-xs text-muted-foreground italic leading-relaxed"
+              className={`mt-4 text-xs italic leading-relaxed ${slot1.url ? "text-white/80" : "text-muted-foreground"}`}
               style={{ fontFamily: "YardenAlbum, serif" }}
             >
               {page.text_content}
@@ -111,14 +114,17 @@ function CoverPage({
 // ─── Dedication ───────────────────────────────────────────────────────────────
 
 function DedicationPage({ page }: { page: PreviewPage }) {
+  const slot1 = resolveSlot(page, 1);
   return (
     <PageShell className="bg-secondary/50 border border-border/40">
-      <div className="flex h-full flex-col items-center justify-center text-center p-10">
+      {/* Optional manually-uploaded background image */}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} />}
+      <div className={`flex h-full flex-col items-center justify-center text-center p-10 relative z-10`}>
         <Ornament className="mb-6" />
         {page.text_content ? (
           <p
-            className="leading-loose text-muted-foreground italic whitespace-pre-line max-w-[260px]"
-            style={{ fontFamily: "YardenAlbum, serif", fontSize: "18px" }}
+            className={`leading-loose italic whitespace-pre-line max-w-[260px] ${slot1.url ? "text-white" : "text-muted-foreground"}`}
+            style={{ fontFamily: "YardenAlbum, serif", fontSize: "18px", textShadow: slot1.url ? "0 1px 3px rgba(0,0,0,0.7)" : undefined }}
           >
             {page.text_content}
           </p>
@@ -261,24 +267,27 @@ function TextOnlyPage({ page }: { page: PreviewPage }) {
 // ─── Back cover ───────────────────────────────────────────────────────────────
 
 function BackCoverPage({ page }: { page: PreviewPage }) {
+  const slot1 = resolveSlot(page, 1);
   return (
     <PageShell className="bg-secondary">
+      {/* Optional manually-uploaded background image */}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} />}
       <div className="absolute inset-0 bg-gradient-to-tl from-primary/10 via-transparent to-primary/16" />
       <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8 gap-5">
         <Ornament size="lg" />
         {page.text_content && (
           <p
-            className="leading-loose text-muted-foreground italic max-w-[240px] whitespace-pre-line"
-            style={{ fontFamily: "YardenAlbum, serif", fontSize: "18px" }}
+            className={`leading-loose italic max-w-[240px] whitespace-pre-line ${slot1.url ? "text-white" : "text-muted-foreground"}`}
+            style={{ fontFamily: "YardenAlbum, serif", fontSize: "18px", textShadow: slot1.url ? "0 1px 3px rgba(0,0,0,0.7)" : undefined }}
           >
             {page.text_content}
           </p>
         )}
         <div className="mt-2 pt-4 border-t border-primary/20 w-24 flex flex-col items-center gap-1">
-          <span className="text-sm font-semibold text-primary tracking-wide">
+          <span className={`text-sm font-semibold tracking-wide ${slot1.url ? "text-white" : "text-primary"}`}>
             Vitae Studio
           </span>
-          <span className="text-[0.6rem] text-muted-foreground">
+          <span className={`text-[0.6rem] ${slot1.url ? "text-white/70" : "text-muted-foreground"}`}>
             סיפור חיים בחרוזים
           </span>
         </div>

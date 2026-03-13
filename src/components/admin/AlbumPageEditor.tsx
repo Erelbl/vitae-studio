@@ -65,6 +65,13 @@ const LIFE_STAGE_LABELS: Record<string, string> = {
   other: "אחר",
 };
 
+const SPECIAL_PAGE_LABELS: Record<string, string> = {
+  cover: "כריכה",
+  dedication: "הקדשה",
+  back_cover: "גב",
+  text_only: "טקסט",
+};
+
 // ─── Per-slot state ───────────────────────────────────────────────────────────
 
 type SlotState = {
@@ -96,7 +103,7 @@ export function AlbumPageEditor({
   if (pages.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        אין עמודי תוכן לעריכה. יש לייצר את הסיפור תחילה.
+        אין עמודים לעריכה. יש לייצר את הסיפור תחילה.
       </p>
     );
   }
@@ -106,39 +113,52 @@ export function AlbumPageEditor({
       {/* Page selector */}
       <div>
         <p className="text-xs text-muted-foreground mb-2">
-          בחר עמוד לעריכה ({pages.length} עמודי תוכן)
+          בחר עמוד לעריכה ({pages.length} עמודים)
         </p>
         <div className="flex flex-wrap gap-1.5">
-          {pages.map((page) => (
-            <button
-              key={page.id}
-              onClick={() =>
-                setSelectedPageId(
-                  page.id === selectedPageId ? null : page.id
-                )
-              }
-              className={`h-8 min-w-[2.5rem] px-2 rounded-md text-xs font-mono transition-colors ${
-                page.id === selectedPageId
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted hover:bg-muted/80 text-muted-foreground"
-              }`}
-            >
-              {page.page_number}
-            </button>
-          ))}
+          {pages.map((page) => {
+            const specialLabel = SPECIAL_PAGE_LABELS[page.page_type];
+            return (
+              <button
+                key={page.id}
+                onClick={() =>
+                  setSelectedPageId(
+                    page.id === selectedPageId ? null : page.id
+                  )
+                }
+                className={`h-8 min-w-[2.5rem] px-2 rounded-md text-xs font-mono transition-colors ${
+                  page.id === selectedPageId
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                }`}
+              >
+                {specialLabel ?? page.page_number}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Editor panel */}
       {selectedPage && (
-        <PageEditorPanel
-          key={selectedPage.id}
-          orderId={orderId}
-          page={selectedPage}
-          completedPhotos={completedPhotos}
-          personName={personName}
-          onSaved={() => router.refresh()}
-        />
+        selectedPage.page_type === "illustration_and_text" ? (
+          <PageEditorPanel
+            key={selectedPage.id}
+            orderId={orderId}
+            page={selectedPage}
+            completedPhotos={completedPhotos}
+            personName={personName}
+            onSaved={() => router.refresh()}
+          />
+        ) : (
+          <SpecialPagePanel
+            key={selectedPage.id}
+            orderId={orderId}
+            page={selectedPage}
+            personName={personName}
+            onSaved={() => router.refresh()}
+          />
+        )
       )}
     </div>
   );
@@ -183,7 +203,8 @@ function PageEditorPanel({
   /** Build a PreviewPage for the live mini-preview */
   function buildPreviewPage(): PreviewPage {
     const images: PageImageSlot[] = Object.entries(slots)
-      .filter(([, s]) => s.photo_id !== null)
+      // Include slot if it has an image URL (works for both photo and manual)
+      .filter(([, s]) => s.image_url !== null)
       .map(([slot, s]) => ({
         id: `local-slot-${slot}`,
         slot: Number(slot) as 1 | 2,
@@ -269,14 +290,23 @@ function PageEditorPanel({
       [slot]: { ...(prev[slot] ?? { photo_id: null, image_url: null }), crop_x, crop_y, scale },
     }));
 
+    // Skip API call if slot has no image (works for both photo and manual)
     const currentSlot = slots[slot];
-    if (!currentSlot?.photo_id) return;
+    if (!currentSlot?.image_url) return;
 
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot, crop_x, crop_y, scale }),
     });
+    onSaved();
+  }
+
+  function handleManualUpload(slot: 1 | 2, imageUrl: string) {
+    setSlots((prev) => ({
+      ...prev,
+      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 },
+    }));
     onSaved();
   }
 
@@ -357,14 +387,171 @@ function PageEditorPanel({
                 slot={slotNum as 1 | 2}
                 slotState={slots[slotNum] ?? null}
                 completedPhotos={completedPhotos}
+                orderId={orderId}
+                pageId={page.id}
                 onAssign={(photo) => handleSlotAssign(slotNum as 1 | 2, photo)}
                 onCropSave={(crop_x, crop_y, scale) =>
                   handleCropSave(slotNum as 1 | 2, crop_x, crop_y, scale)
+                }
+                onManualUpload={(imageUrl) =>
+                  handleManualUpload(slotNum as 1 | 2, imageUrl)
                 }
               />
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── SpecialPagePanel ─────────────────────────────────────────────────────────
+// Simplified editor for cover, dedication, back_cover, text_only pages.
+// Supports text editing and manual image upload to slot 1.
+
+function SpecialPagePanel({
+  orderId,
+  page,
+  personName,
+  onSaved,
+}: {
+  orderId: string;
+  page: EditorPage;
+  personName: string;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(page.text_content ?? "");
+  const [textDirty, setTextDirty] = useState(false);
+  const [savingText, setSavingText] = useState(false);
+  const [slotState, setSlotState] = useState<SlotState>(() => {
+    const img = page.images.find((i) => i.slot === 1);
+    return img
+      ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale }
+      : { photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1 };
+  });
+
+  const pageLabel = SPECIAL_PAGE_LABELS[page.page_type] ?? page.page_type;
+
+  function buildPreviewPage(): PreviewPage {
+    const images: PageImageSlot[] = slotState.image_url
+      ? [{ id: "local-slot-1", slot: 1, photo_id: slotState.photo_id, crop_x: slotState.crop_x, crop_y: slotState.crop_y, scale: slotState.scale, image_url: slotState.image_url }]
+      : [];
+    return {
+      id: page.id,
+      page_number: page.page_number,
+      page_type: page.page_type as PreviewPage["page_type"],
+      layout_type: (page.layout_type as LayoutType) ?? "FULL_IMAGE",
+      text_content: text || null,
+      image_url: page.images.find((i) => i.slot === 1)?.image_url ?? null,
+      images,
+    };
+  }
+
+  async function saveText() {
+    if (!textDirty) return;
+    setSavingText(true);
+    const res = await fetch(
+      `/api/admin/orders/${orderId}/pages/${page.id}/edit`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text_content: text }),
+      }
+    );
+    setSavingText(false);
+    if (res.ok) {
+      setTextDirty(false);
+      onSaved();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error ?? "שגיאה בשמירת הטקסט");
+    }
+  }
+
+  async function handleCropSave(crop_x: number, crop_y: number, scale: number) {
+    setSlotState((prev) => ({ ...prev, crop_x, crop_y, scale }));
+    if (!slotState.image_url) return;
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot: 1, crop_x, crop_y, scale }),
+    });
+  }
+
+  async function handleRemove() {
+    setSlotState({ photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1 });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot: 1, photoId: null }),
+    });
+    onSaved();
+  }
+
+  function handleManualUpload(imageUrl: string) {
+    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 });
+    onSaved();
+  }
+
+  const previewPage = buildPreviewPage();
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[180px_1fr] gap-6 pt-1">
+      {/* Live mini-preview */}
+      <div>
+        <p className="text-xs text-muted-foreground mb-2">
+          {pageLabel} — עמוד {page.page_number}
+        </p>
+        <div className="w-full max-w-[180px]">
+          <AlbumPageView page={previewPage} personName={personName} />
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="space-y-6">
+        {/* Text editor — all special page types have editable text */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground">
+            טקסט העמוד
+          </label>
+          <textarea
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setTextDirty(true);
+            }}
+            onBlur={saveText}
+            rows={3}
+            dir="rtl"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
+            placeholder="הטקסט של העמוד..."
+          />
+          {textDirty && (
+            <button
+              onClick={saveText}
+              disabled={savingText}
+              className="text-xs text-primary hover:underline disabled:opacity-50"
+            >
+              {savingText ? "שומר..." : "שמור טקסט ←"}
+            </button>
+          )}
+        </div>
+
+        {/* Background image upload — slot 1, no photo picker */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">תמונת רקע</p>
+          <ImageSlotEditor
+            slot={1}
+            slotState={slotState}
+            completedPhotos={[]}
+            orderId={orderId}
+            pageId={page.id}
+            hidePhotoPicker
+            onAssign={handleRemove}
+            onCropSave={(crop_x, crop_y, scale) => handleCropSave(crop_x, crop_y, scale)}
+            onManualUpload={handleManualUpload}
+          />
+        </div>
       </div>
     </div>
   );
@@ -376,27 +563,39 @@ function ImageSlotEditor({
   slot,
   slotState,
   completedPhotos,
+  orderId,
+  pageId,
+  hidePhotoPicker = false,
   onAssign,
   onCropSave,
+  onManualUpload,
 }: {
   slot: 1 | 2;
   slotState: SlotState | null;
   completedPhotos: PhotoForEditor[];
+  orderId: string;
+  pageId: string;
+  hidePhotoPicker?: boolean;
   onAssign: (photo: PhotoForEditor | null) => void;
   onCropSave: (crop_x: number, crop_y: number, scale: number) => void;
+  onManualUpload: (imageUrl: string) => void;
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const [cropX, setCropX] = useState(slotState?.crop_x ?? 0);
   const [cropY, setCropY] = useState(slotState?.crop_y ?? 0);
   const [scale, setScale] = useState(slotState?.scale ?? 1);
+  const [uploading, setUploading] = useState(false);
 
   const frameRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isDraggingRef = useRef(false);
   const dragOriginRef = useRef({ px: 0, py: 0, cx: 0, cy: 0 });
   const latestCropRef = useRef({ crop_x: cropX, crop_y: cropY });
 
   const imageUrl = slotState?.image_url ?? null;
   const hasImage = Boolean(imageUrl);
+  // If photo_id is null but image_url is set, this slot has a manual upload
+  const isManual = hasImage && !slotState?.photo_id;
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -438,13 +637,58 @@ function ImageSlotEditor({
     onCropSave(cropX, cropY, newScale);
   }
 
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("slot", String(slot));
+
+    const res = await fetch(
+      `/api/admin/orders/${orderId}/pages/${pageId}/images/upload`,
+      { method: "POST", body: fd }
+    );
+    setUploading(false);
+    // Reset file input so the same file can be re-selected later
+    e.target.value = "";
+
+    if (res.ok) {
+      const data = await res.json();
+      setCropX(0);
+      setCropY(0);
+      setScale(1);
+      onManualUpload(data.imageUrl);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error ?? "שגיאה בהעלאת התמונה");
+    }
+  }
+
   const slotLabel = slot === 1 ? "איור 1 (ראשי)" : "איור 2 (משני)";
   const s = Math.max(1, scale);
 
   return (
     <div className="rounded-xl border border-border/60 p-4 space-y-3">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium">{slotLabel}</p>
+        <p className="text-xs font-medium">
+          {hidePhotoPicker ? "תמונת רקע" : slotLabel}
+          {isManual && (
+            <span className="ms-1.5 text-[10px] text-primary/60 font-normal">
+              (תמונה ידנית)
+            </span>
+          )}
+        </p>
         {hasImage && (
           <button
             onClick={() => {
@@ -521,25 +765,48 @@ function ImageSlotEditor({
             />
           </div>
 
-          {/* Change photo button */}
-          <button
-            onClick={() => setShowPicker((v) => !v)}
-            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-          >
-            {showPicker ? "סגור בחירה" : "החלף תמונה"}
-          </button>
+          {/* Replace buttons */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
+            >
+              {uploading ? "מעלה..." : "החלף בתמונה ידנית"}
+            </button>
+            {!hidePhotoPicker && (
+              <button
+                onClick={() => setShowPicker((v) => !v)}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+              >
+                {showPicker ? "סגור בחירה" : "החלף מאיורים"}
+              </button>
+            )}
+          </div>
         </div>
       ) : (
-        <button
-          onClick={() => setShowPicker((v) => !v)}
-          className="w-full rounded-lg border-2 border-dashed border-border hover:border-primary/40 aspect-video flex items-center justify-center text-xs text-muted-foreground transition-colors"
-        >
-          {showPicker ? "סגור ▲" : "+ בחר איור"}
-        </button>
+        /* No image: show upload + picker options */
+        <div className="space-y-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="w-full rounded-lg border-2 border-dashed border-primary/40 hover:border-primary/70 bg-primary/5 aspect-video flex items-center justify-center text-xs text-primary/70 transition-colors disabled:opacity-50"
+          >
+            {uploading ? "מעלה תמונה..." : "↑ העלה תמונה מהמחשב"}
+          </button>
+          {!hidePhotoPicker && (
+            <button
+              onClick={() => setShowPicker((v) => !v)}
+              className="w-full rounded-lg border-2 border-dashed border-border hover:border-primary/40 aspect-video flex items-center justify-center text-xs text-muted-foreground transition-colors"
+            >
+              {showPicker ? "סגור ▲" : "+ בחר מאיורים שנוצרו"}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Photo picker */}
-      {showPicker && (
+      {showPicker && !hidePhotoPicker && (
         <div className="space-y-2">
           <p className="text-[10px] text-muted-foreground">
             {completedPhotos.length === 0

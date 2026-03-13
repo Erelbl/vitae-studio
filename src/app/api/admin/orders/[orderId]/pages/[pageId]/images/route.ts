@@ -99,10 +99,12 @@ export async function PUT(
   }
 
   // Upsert: insert or update on conflict (page_id, slot)
+  // Clear manual_image_path when assigning a photo so they don't coexist.
   const { error } = await adminClient.from("page_images").upsert(
     {
       page_id: pageId,
       photo_id: photoId,
+      manual_image_path: null,
       slot,
       crop_x: body.crop_x ?? 0,
       crop_y: body.crop_y ?? 0,
