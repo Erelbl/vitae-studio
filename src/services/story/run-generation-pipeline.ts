@@ -3,6 +3,7 @@ import { assertTransition } from "@/lib/state-machine";
 import { buildStoryProfile } from "@/services/story/story-profile-builder";
 import { generateFullStory, splitStoryIntoPages } from "@/services/story/full-story-generator";
 import { reviewAndFixStory } from "@/services/story/story-review";
+import { evaluateStoryRhyme } from "@/services/story/rhyme-evaluator";
 import type { OrderStatus } from "@/types/order";
 import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
 import type { GenerationSettings } from "@/types/page";
@@ -277,7 +278,32 @@ export async function runGenerationPipeline(
       }
     }
 
-    // 10. Chain status transitions:
+    // 10. Evaluate rhyme quality (non-fatal — pipeline completes regardless)
+    let evaluation = null;
+    try {
+      const pagesForEval = savedPages.map((p) => ({
+        page_number: p.page_number,
+        text_content: p.text_content,
+        page_type:
+          finalPages.find((f) => f.page_number === p.page_number)?.page_type ??
+          "illustration_and_text",
+      }));
+      evaluation = await evaluateStoryRhyme(pagesForEval);
+
+      // Persist to orders.story_evaluation
+      await supabase
+        .from("orders")
+        .update({ story_evaluation: evaluation })
+        .eq("id", orderId);
+
+      console.log(
+        `[pipeline] evaluation: rhyme=${evaluation.rhyme_score} flow=${evaluation.hebrew_flow_score} overall=${evaluation.overall_story_score}`
+      );
+    } catch (evalErr) {
+      console.warn("[pipeline] Evaluation step failed (non-fatal):", evalErr);
+    }
+
+    // 11. Chain status transitions:
     //    generating_text → text_ready → generating_illustrations → preview_ready
     const transitions: [OrderStatus, OrderStatus][] = [
       ["generating_text", "text_ready"],
@@ -298,7 +324,7 @@ export async function runGenerationPipeline(
       }
     }
 
-    // 11. Mark processing job complete
+    // 12. Mark processing job complete
     if (jobId) {
       await supabase
         .from("processing_jobs")
@@ -309,6 +335,13 @@ export async function runGenerationPipeline(
             pages_saved: savedPages.length,
             review_issues: review.issues.length,
             regenerated_count: review.regenerated_count,
+            ...(evaluation
+              ? {
+                  rhyme_score: evaluation.rhyme_score,
+                  hebrew_flow_score: evaluation.hebrew_flow_score,
+                  overall_story_score: evaluation.overall_story_score,
+                }
+              : {}),
           },
         })
         .eq("id", jobId);

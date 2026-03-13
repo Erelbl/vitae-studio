@@ -9,6 +9,8 @@ import type { OrderStatus } from "@/types/order";
 import type { QuestionnaireResponses } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
+import { ImproveRhymeButton } from "@/components/admin/ImproveRhymeButton";
+import { StoryEvaluationDisplay } from "@/components/admin/StoryEvaluationDisplay";
 import { DraftStatusPoller } from "@/components/admin/DraftStatusPoller";
 import { AdminPhotosGallery } from "@/components/admin/AdminPhotosGallery";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
@@ -243,6 +245,17 @@ export default async function AdminOrderDetailPage({
         )
       : 0;
 
+  // ── Extract story evaluation from order ──
+  interface RhymeEvaluation {
+    rhyme_score: number;
+    hebrew_flow_score: number;
+    overall_story_score: number;
+    evaluation_notes: string;
+    evaluated_at: string;
+  }
+  const storyEvaluation =
+    (order.story_evaluation as RhymeEvaluation | null) ?? null;
+
   // ── Derive display state ──
   const currentStatus = order.status as OrderStatus;
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
@@ -318,6 +331,9 @@ export default async function AdminOrderDetailPage({
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <GenerateStoryButton orderId={orderId} disabled={generateDisabled} />
+              {pageCount > 0 && !isGenerating && (
+                <ImproveRhymeButton orderId={orderId} disabled={generateDisabled} />
+              )}
               <PublishButton orderId={orderId} disabled={!canPublish} />
               {currentStatus === "approved" && (
                 <span className="text-sm text-green-700 font-medium">✓ פורסם</span>
@@ -347,6 +363,11 @@ export default async function AdminOrderDetailPage({
                 </Button>
               </Link>
             </div>
+          )}
+
+          {/* Story evaluation */}
+          {storyEvaluation && (
+            <StoryEvaluationDisplay evaluation={storyEvaluation} />
           )}
 
           {/* Empty state */}
