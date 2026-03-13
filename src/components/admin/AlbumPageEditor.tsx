@@ -3,6 +3,12 @@
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlbumPageView } from "@/components/album/AlbumPageView";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { LayoutType, PageImageSlot, PreviewPage } from "@/types/page";
 import { LAYOUT_TYPES } from "@/types/page";
 
@@ -266,16 +272,27 @@ function PageEditorPanel({
     const photoId = photo?.id ?? null;
     const imageUrl = photo?.illustrationUrl ?? null;
 
+    // Optimistic update
+    const prevSlots = slots;
     setSlots((prev) => ({
       ...prev,
       [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 },
     }));
 
-    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+    const res = await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot, photoId, crop_x: 0, crop_y: 0, scale: 1 }),
     });
+
+    if (!res.ok) {
+      // Roll back optimistic update
+      setSlots(prevSlots);
+      const body = await res.json().catch(() => ({}));
+      alert(body.error ?? "שגיאה בשמירת האיור");
+      return;
+    }
+
     onSaved();
   }
 
@@ -776,10 +793,10 @@ function ImageSlotEditor({
             </button>
             {!hidePhotoPicker && (
               <button
-                onClick={() => setShowPicker((v) => !v)}
+                onClick={() => setShowPicker(true)}
                 className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
               >
-                {showPicker ? "סגור בחירה" : "החלף מאיורים"}
+                החלף מאיורים
               </button>
             )}
           </div>
@@ -796,69 +813,75 @@ function ImageSlotEditor({
           </button>
           {!hidePhotoPicker && (
             <button
-              onClick={() => setShowPicker((v) => !v)}
+              onClick={() => setShowPicker(true)}
               className="w-full rounded-lg border-2 border-dashed border-border hover:border-primary/40 aspect-video flex items-center justify-center text-xs text-muted-foreground transition-colors"
             >
-              {showPicker ? "סגור ▲" : "+ בחר מאיורים שנוצרו"}
+              + בחר מאיורים שנוצרו
             </button>
           )}
         </div>
       )}
 
-      {/* Photo picker */}
-      {showPicker && !hidePhotoPicker && (
-        <div className="space-y-2">
-          <p className="text-[10px] text-muted-foreground">
-            {completedPhotos.length === 0
-              ? "אין איורים מוכנים"
-              : "בחר איור מהרשימה:"}
-          </p>
-          {completedPhotos.length > 0 && (
-            <div className="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto">
-              {completedPhotos.map((photo) => {
-                const isSelected = slotState?.photo_id === photo.id;
-                return (
-                  <button
-                    key={photo.id}
-                    onClick={() => {
-                      onAssign(photo);
-                      setCropX(0);
-                      setCropY(0);
-                      setScale(1);
-                      setShowPicker(false);
-                    }}
-                    className={`relative rounded-md overflow-hidden aspect-square border-2 transition-all hover:scale-[1.04] ${
-                      isSelected
-                        ? "border-primary"
-                        : "border-transparent hover:border-primary/40"
-                    }`}
-                  >
-                    {photo.illustrationUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={photo.illustrationUrl}
-                        alt={photo.original_filename}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-muted" />
-                    )}
-                    {isSelected && (
-                      <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                        <span className="text-white text-sm font-bold">✓</span>
-                      </div>
-                    )}
-                    {photo.life_stage && (
-                      <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[8px] text-center py-0.5 truncate">
-                        {LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      {/* Photo picker dialog */}
+      {!hidePhotoPicker && (
+        <Dialog open={showPicker} onOpenChange={setShowPicker}>
+          <DialogContent className="max-w-2xl w-full" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="text-base">בחר איור</DialogTitle>
+            </DialogHeader>
+            {completedPhotos.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                אין איורים מוכנים עדיין
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-[60vh] overflow-y-auto py-1 pe-1">
+                {completedPhotos.map((photo) => {
+                  const isSelected = slotState?.photo_id === photo.id;
+                  return (
+                    <button
+                      key={photo.id}
+                      onClick={() => {
+                        onAssign(photo);
+                        setCropX(0);
+                        setCropY(0);
+                        setScale(1);
+                        setShowPicker(false);
+                      }}
+                      className={`relative rounded-lg overflow-hidden aspect-square border-2 transition-all hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                        isSelected
+                          ? "border-primary ring-2 ring-primary/30"
+                          : "border-transparent hover:border-primary/40"
+                      }`}
+                    >
+                      {photo.illustrationUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={photo.illustrationUrl}
+                          alt={photo.original_filename}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
+                          אין תמונה
+                        </div>
+                      )}
+                      {isSelected && (
+                        <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                          <span className="text-white text-lg font-bold drop-shadow">✓</span>
+                        </div>
+                      )}
+                      {photo.life_stage && (
+                        <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] text-center py-0.5 truncate px-0.5">
+                          {LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
