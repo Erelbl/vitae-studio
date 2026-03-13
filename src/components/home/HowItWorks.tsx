@@ -37,7 +37,7 @@ export function HowItWorks() {
                 </div>
 
                 {/* Body */}
-                <p className="text-base leading-relaxed text-muted-foreground">
+                <p className="text-base leading-relaxed text-muted-foreground sm:text-lg">
                   {step.desc}
                 </p>
               </div>

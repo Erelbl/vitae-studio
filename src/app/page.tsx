@@ -8,7 +8,6 @@ import { HeroSection } from "@/components/home/HeroSection";
 import { HowItWorks } from "@/components/home/HowItWorks";
 import { UseCases } from "@/components/home/UseCases";
 import { ImageComparisonSection } from "@/components/home/ImageComparisonSection";
-import { PremiumValue } from "@/components/home/PremiumValue";
 import { PackagesSection } from "@/components/home/PackagesSection";
 import { TestimonialsSection } from "@/components/home/TestimonialsSection";
 import { FAQSection } from "@/components/home/FAQSection";
@@ -77,8 +76,6 @@ export default function LandingPage() {
         <UseCases />
 
         <ImageComparisonSection />
-
-        <PremiumValue />
 
         <PackagesSection />
 

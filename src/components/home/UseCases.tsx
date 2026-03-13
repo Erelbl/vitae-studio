@@ -42,7 +42,7 @@ export function UseCases() {
                   <div>
                     {/* h3 explicitly larger than body so hierarchy is clear */}
                     <h3 className="mb-1.5 text-lg font-semibold leading-snug">{c.title}</h3>
-                    <p className="text-base leading-relaxed text-muted-foreground">{c.desc}</p>
+                    <p className="text-base leading-relaxed text-muted-foreground sm:text-lg">{c.desc}</p>
                   </div>
                 </div>
               </FadeIn>

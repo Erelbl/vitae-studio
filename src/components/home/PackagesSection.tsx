@@ -37,7 +37,7 @@ export function PackagesSection() {
                     </span>
                   )}
                   <h3 className="text-xl font-semibold leading-snug">{pkg.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  <p className="mt-2 text-base leading-relaxed text-muted-foreground">
                     {pkg.description}
                   </p>
                 </div>
@@ -57,7 +57,7 @@ export function PackagesSection() {
                           }`}
                           strokeWidth={2.5}
                         />
-                        <span className="text-sm leading-relaxed text-foreground/80">
+                        <span className="text-base leading-relaxed text-foreground/80">
                           {line}
                         </span>
                       </li>

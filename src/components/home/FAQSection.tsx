@@ -42,7 +42,7 @@ export function FAQSection() {
                       isOpen ? "max-h-64" : "max-h-0"
                     }`}
                   >
-                    <p className="px-6 pb-5 text-base leading-relaxed text-muted-foreground">
+                    <p className="px-6 pb-5 text-base leading-relaxed text-muted-foreground sm:text-lg">
                       {item.a}
                     </p>
                   </div>
