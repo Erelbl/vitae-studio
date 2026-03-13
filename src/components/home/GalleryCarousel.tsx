@@ -45,13 +45,20 @@ export function GalleryCarousel({
     <div className="w-full">
       {/*
         Carousel layout — three images visible at once.
-        Center = current (72% wide, full padded height).
-        Sides = adjacent (20% wide, vertically centered at 38%).
-        Off-screen items animate in smoothly from the edge.
+        Gallery images are 2268×1134 (2:1 landscape).
+
+        Container height is set via paddingTop as a % of width.
+        Center image occupies 72% of container width.
+        For a 2:1 image at 72% width → height = 36% of container width.
+        paddingTop: "40%" gives slight breathing room above/below.
+
+        Side images (20% wide) at natural 2:1 height = 20%/2 = 10% of
+        container width = 10/40 = 25% of container height → use 28% with
+        top: 36% to center them vertically.
       */}
       <div
         className="relative w-full select-none"
-        style={{ paddingTop: "70%" }}
+        style={{ paddingTop: "40%" }}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
@@ -61,6 +68,7 @@ export function GalleryCarousel({
           let style: React.CSSProperties;
 
           if (pos === 0) {
+            // Center — full height, large shadow
             style = {
               left: "14%",
               width: "72%",
@@ -68,32 +76,35 @@ export function GalleryCarousel({
               top: 0,
               opacity: 1,
               zIndex: 10,
-              boxShadow: "0 28px 72px -16px rgba(0,0,0,0.24)",
+              boxShadow: "0 24px 64px -12px rgba(0,0,0,0.22)",
             };
           } else if (pos === -1) {
+            // Left (previous)
             style = {
               left: "0%",
               width: "20%",
-              height: "40%",
-              top: "30%",
+              height: "28%",
+              top: "36%",
               opacity: 0.42,
               zIndex: 5,
             };
           } else if (pos === 1) {
+            // Right (next)
             style = {
               right: "0%",
               width: "20%",
-              height: "40%",
-              top: "30%",
+              height: "28%",
+              top: "36%",
               opacity: 0.42,
               zIndex: 5,
             };
           } else {
+            // Off-screen — parked out of view
             style = {
               left: pos < 0 ? "-28%" : "108%",
               width: "20%",
-              height: "40%",
-              top: "30%",
+              height: "28%",
+              top: "36%",
               opacity: 0,
               zIndex: 0,
             };

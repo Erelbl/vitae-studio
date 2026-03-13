@@ -40,7 +40,8 @@ export function ImageComparisonSection() {
 
   return (
     <section className="bg-secondary/20 px-4 py-14 sm:py-20">
-      <div className="mx-auto max-w-4xl">
+      {/* Images are portrait ~3:4 (585×817). Narrow container keeps height comfortable. */}
+      <div className="mx-auto max-w-md">
 
         <FadeIn>
           <div className="mb-10 text-center">
@@ -67,7 +68,7 @@ export function ImageComparisonSection() {
             this is a visual before/after tool — original always on the left.
           */}
           {showFallback ? (
-            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-2xl border border-dashed border-border bg-secondary/30 text-center text-muted-foreground">
+            <div className="flex aspect-[3/4] w-full items-center justify-center rounded-2xl border border-dashed border-border bg-secondary/30 text-center text-muted-foreground">
               <div>
                 <p className="mb-1 text-base font-medium">תמונות לדוגמה לא נמצאו</p>
                 <p className="text-sm">הוסיפו תמונות לתיקייה <code className="rounded bg-border/50 px-1">public/examples/</code></p>
@@ -77,7 +78,7 @@ export function ImageComparisonSection() {
             <div
               ref={containerRef}
               dir="ltr"
-              className="relative aspect-[4/3] w-full cursor-col-resize select-none overflow-hidden rounded-2xl border border-border/30 shadow-xl"
+              className="relative aspect-[3/4] w-full cursor-col-resize select-none overflow-hidden rounded-2xl border border-border/30 shadow-xl"
               onMouseDown={() => { isDragging.current = true; }}
               onTouchMove={(e) => updatePosition(e.touches[0].clientX)}
             >

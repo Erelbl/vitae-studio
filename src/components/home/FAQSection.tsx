@@ -14,7 +14,7 @@ export function FAQSection() {
 
         <FadeIn>
           <div className="mb-10 text-center">
-            <h2 className="text-2xl font-semibold sm:text-3xl lg:text-4xl">{FAQ.title}</h2>
+            <h2 className="text-3xl font-semibold sm:text-4xl">{FAQ.title}</h2>
           </div>
         </FadeIn>
 
@@ -29,20 +29,20 @@ export function FAQSection() {
                     onClick={() => setOpenIndex(isOpen ? null : i)}
                     aria-expanded={isOpen}
                   >
-                    <span className="text-base font-medium leading-snug sm:text-lg">{item.q}</span>
+                    {/* Questions are subheadings — clearly larger than answer body */}
+                    <span className="text-lg font-semibold leading-snug">{item.q}</span>
                     <ChevronDown
                       className={`h-5 w-5 shrink-0 text-primary/70 transition-transform duration-300 ${
                         isOpen ? "rotate-180" : ""
                       }`}
                     />
                   </button>
-                  {/* Smooth height animation via max-height transition */}
                   <div
                     className={`overflow-hidden transition-all duration-300 ease-in-out ${
                       isOpen ? "max-h-64" : "max-h-0"
                     }`}
                   >
-                    <p className="px-6 pb-5 text-base leading-relaxed text-muted-foreground sm:text-lg">
+                    <p className="px-6 pb-5 text-base leading-relaxed text-muted-foreground">
                       {item.a}
                     </p>
                   </div>

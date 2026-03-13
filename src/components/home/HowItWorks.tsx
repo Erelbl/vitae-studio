@@ -8,27 +8,36 @@ export function HowItWorks() {
 
         <FadeIn>
           <div className="mb-10 text-center">
-            <h2 className="text-2xl font-semibold sm:text-3xl lg:text-4xl">{HOW_IT_WORKS.title}</h2>
-            <p className="mt-2 text-base text-muted-foreground sm:text-lg">
+            <h2 className="text-3xl font-semibold sm:text-4xl">{HOW_IT_WORKS.title}</h2>
+            <p className="mt-3 text-base text-muted-foreground sm:text-lg">
               {HOW_IT_WORKS.subtitle}
             </p>
           </div>
         </FadeIn>
 
         {/*
-          Equal-height grid. Cards use justify-center so title + desc
-          are treated as one unit, centered vertically within the shared height.
-          No mt-auto gap between title and desc.
+          Equal-height cards. Structure:
+            1. Number circle — always at top (fixed padding above it)
+            2. Title — inside a min-h container so all titles occupy the same vertical
+               space regardless of wrapping, pinning body text to the same Y position
+            3. Body — flows naturally after the title block
         */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {HOW_IT_WORKS.steps.map((step, i) => (
             <FadeIn key={step.num} delay={i * 100}>
-              <div className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl bg-secondary/40 px-6 py-8 text-center">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/12">
+              <div className="flex h-full flex-col items-center rounded-2xl bg-secondary/40 px-6 py-8 text-center">
+                {/* Number circle */}
+                <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/12">
                   <span className="text-base font-bold text-primary">{step.num}</span>
                 </div>
-                <h3 className="text-lg font-semibold leading-snug">{step.title}</h3>
-                <p className="text-base leading-relaxed text-muted-foreground sm:text-lg">
+
+                {/* Title — min-h ensures consistent vertical anchor for body text */}
+                <div className="mb-3 flex min-h-[3.5rem] items-center justify-center">
+                  <h3 className="text-xl font-semibold leading-snug">{step.title}</h3>
+                </div>
+
+                {/* Body */}
+                <p className="text-base leading-relaxed text-muted-foreground">
                   {step.desc}
                 </p>
               </div>
