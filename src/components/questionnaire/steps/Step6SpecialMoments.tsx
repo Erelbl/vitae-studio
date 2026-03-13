@@ -12,7 +12,7 @@ type FormData = z.input<typeof specialMomentsSchema>;
 
 interface Props {
   defaultValues: Partial<FormData>;
-  onSubmit: (data: FormData) => void;
+  onNavigate: (data: Record<string, unknown>) => void;
   onBack: () => void;
 }
 
@@ -20,10 +20,10 @@ const OptionalBadge = () => (
   <span className="ms-1 text-sm font-normal text-muted-foreground">(רשות)</span>
 );
 
-export function Step6SpecialMoments({ defaultValues, onSubmit, onBack }: Props) {
+export function Step6SpecialMoments({ defaultValues, onNavigate, onBack }: Props) {
   const {
     register,
-    handleSubmit,
+    getValues,
     watch,
   } = useForm<FormData>({
     resolver: zodResolver(specialMomentsSchema),
@@ -35,7 +35,7 @@ export function Step6SpecialMoments({ defaultValues, onSubmit, onBack }: Props) 
   const characteristicMoment = watch("characteristic_moment") ?? "";
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
       <p className="text-sm text-muted-foreground -mt-1">
         כל השדות בשלב זה הם רשות – שתפו מה שחשוב לכם.
       </p>
@@ -92,7 +92,11 @@ export function Step6SpecialMoments({ defaultValues, onSubmit, onBack }: Props) 
         <Button type="button" variant="outline" onClick={onBack} className="w-full sm:w-auto">
           חזרה
         </Button>
-        <Button type="submit" className="w-full sm:w-auto">
+        <Button
+          type="button"
+          className="w-full sm:w-auto"
+          onClick={() => onNavigate(getValues())}
+        >
           הבא
         </Button>
       </div>

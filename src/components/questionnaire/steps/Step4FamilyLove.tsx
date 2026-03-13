@@ -13,7 +13,7 @@ type FormData = z.input<typeof familyLoveSchema>;
 
 interface Props {
   defaultValues: Partial<FormData>;
-  onSubmit: (data: FormData) => void;
+  onNavigate: (data: Record<string, unknown>) => void;
   onBack: () => void;
 }
 
@@ -21,10 +21,10 @@ const OptionalBadge = () => (
   <span className="ms-1 text-sm font-normal text-muted-foreground">(רשות)</span>
 );
 
-export function Step4FamilyLove({ defaultValues, onSubmit, onBack }: Props) {
+export function Step4FamilyLove({ defaultValues, onNavigate, onBack }: Props) {
   const {
     register,
-    handleSubmit,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<FormData>({
@@ -37,7 +37,7 @@ export function Step4FamilyLove({ defaultValues, onSubmit, onBack }: Props) {
   const parentingStyle = watch("parenting_style") ?? "";
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
       <p className="text-sm text-muted-foreground -mt-1">
         כל השדות בשלב זה הם רשות – מלאו מה שרלוונטי לסיפור.
       </p>
@@ -118,7 +118,11 @@ export function Step4FamilyLove({ defaultValues, onSubmit, onBack }: Props) {
         <Button type="button" variant="outline" onClick={onBack} className="w-full sm:w-auto">
           חזרה
         </Button>
-        <Button type="submit" className="w-full sm:w-auto">
+        <Button
+          type="button"
+          className="w-full sm:w-auto"
+          onClick={() => onNavigate(getValues())}
+        >
           הבא
         </Button>
       </div>

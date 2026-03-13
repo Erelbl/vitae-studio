@@ -20,17 +20,18 @@ type FormData = z.input<typeof introductionSchema>;
 
 interface Props {
   defaultValues: Partial<FormData>;
-  onSubmit: (data: FormData) => void;
+  onNavigate: (data: Record<string, unknown>) => void;
 }
 
 const OptionalBadge = () => (
   <span className="ms-1 text-sm font-normal text-muted-foreground">(רשות)</span>
 );
 
-export function Step1Introduction({ defaultValues, onSubmit }: Props) {
+export function Step1Introduction({ defaultValues, onNavigate }: Props) {
   const {
     register,
-    handleSubmit,
+    trigger,
+    getValues,
     setValue,
     watch,
     formState: { errors },
@@ -44,7 +45,7 @@ export function Step1Introduction({ defaultValues, onSubmit }: Props) {
   const descValue = watch("one_sentence_description") ?? "";
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
       {/* person_name */}
       <div className="space-y-1.5">
         <Label htmlFor="person_name">שם בעל/ת השמחה *</Label>
@@ -169,7 +170,11 @@ export function Step1Introduction({ defaultValues, onSubmit }: Props) {
       </div>
 
       <div className="pt-2">
-        <Button type="submit" className="w-full sm:w-auto">
+        <Button
+          type="button"
+          className="w-full sm:w-auto"
+          onClick={() => { trigger(); onNavigate(getValues()); }}
+        >
           הבא
         </Button>
       </div>

@@ -13,6 +13,7 @@ import { Step6SpecialMoments } from "./steps/Step6SpecialMoments";
 import { Step7Legacy } from "./steps/Step7Legacy";
 import { Step8Blessing } from "./steps/Step8Blessing";
 import { Step9BuyerDetails } from "./steps/Step9BuyerDetails";
+import { STEP_SCHEMAS, fullQuestionnaireSchema } from "@/lib/validation/questionnaire";
 
 interface Props {
   orderId: string;
@@ -28,36 +29,55 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
   const [allData, setAllData] = useState<Record<string, unknown>>(initialData);
   const [submitting, setSubmitting] = useState(false);
 
-  async function saveStep(
-    stepData: Record<string, unknown>,
-    isComplete: boolean
-  ) {
-    const merged = { ...allData, ...stepData };
-    setAllData(merged);
+  // Compute per-step validity against stored allData
+  const stepCompletion = STEP_SCHEMAS.map((schema) => schema.safeParse(allData).success);
 
+  async function persist(merged: Record<string, unknown>, isComplete: boolean) {
     const res = await fetch(`/api/orders/${orderId}/questionnaire`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ responses: merged, isComplete }),
     });
-
-    if (!res.ok) {
-      throw new Error("שגיאה בשמירה");
-    }
-
-    return merged;
+    if (!res.ok) throw new Error("שגיאה בשמירה");
   }
 
-  async function handleStepSubmit(stepData: Record<string, unknown>) {
-    const isLast = currentStep === TOTAL_STEPS - 1;
+  // Free navigation: save current step data and advance — no validation gate
+  async function handleNavigate(stepData: Record<string, unknown>) {
+    const merged = { ...allData, ...stepData };
+    setAllData(merged);
     setSubmitting(true);
     try {
-      await saveStep(stepData, isLast);
-      if (isLast) {
-        router.push(`/order/${orderId}/photos?token=${token}`);
-      } else {
-        setCurrentStep((s) => s + 1);
-      }
+      await persist(merged, false);
+      setCurrentStep((s) => s + 1);
+    } catch {
+      toast.error("שגיאה בשמירת הנתונים. נסו שוב.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Final submission: step 9 already validated its own fields via handleSubmit.
+  // Here we also validate the full dataset to catch missing required fields from earlier steps.
+  async function handleFinalSubmit(stepData: Record<string, unknown>) {
+    const merged = { ...allData, ...stepData };
+    setAllData(merged);
+
+    const result = fullQuestionnaireSchema.safeParse(merged);
+    if (!result.success) {
+      // Find the first incomplete step and navigate there
+      const firstIncomplete = stepCompletion.findIndex((ok) => !ok);
+      const targetStep = firstIncomplete >= 0 ? firstIncomplete : 0;
+      toast.error("יש שדות חובה חסרים בשלבים קודמים. אנא השלימו אותם לפני שליחה.", {
+        duration: 5000,
+      });
+      setCurrentStep(targetStep);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await persist(merged, true);
+      router.push(`/order/${orderId}/photos?token=${token}`);
     } catch {
       toast.error("שגיאה בשמירת הנתונים. נסו שוב.");
     } finally {
@@ -69,9 +89,12 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
     setCurrentStep((s) => s - 1);
   }
 
-  const stepProps = {
+  function handleStepClick(step: number) {
+    setCurrentStep(step);
+  }
+
+  const navProps = {
     defaultValues: allData,
-    onSubmit: handleStepSubmit,
     onBack: handleBack,
   };
 
@@ -82,11 +105,15 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
         <div className="mb-5 rounded-xl border border-border/50 bg-muted/40 px-4 py-3 text-sm text-muted-foreground leading-relaxed">
           השאלון כולל מספר שאלות חובה וכמה שאלות רשות.
           <br />
-          ככל שתשתפו יותר פרטים – כך נוכל ליצור סיפור אישי ומרגש יותר.
+          ניתן לנוע בין השלבים בחופשיות – השאלות עם * חובה למילוי לפני סיום השאלון.
         </div>
       )}
 
-      <WizardProgress currentStep={currentStep} />
+      <WizardProgress
+        currentStep={currentStep}
+        stepCompletion={stepCompletion}
+        onStepClick={handleStepClick}
+      />
 
       {/* Form card */}
       <div
@@ -96,20 +123,34 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
         {currentStep === 0 && (
           <Step1Introduction
             defaultValues={allData}
-            onSubmit={handleStepSubmit}
+            onNavigate={handleNavigate}
           />
         )}
-        {currentStep === 1 && <Step2ChildhoodRoots {...stepProps} />}
-        {currentStep === 2 && <Step3Milestones {...stepProps} />}
-        {currentStep === 3 && <Step4FamilyLove {...stepProps} />}
-        {currentStep === 4 && <Step5Personality {...stepProps} />}
-        {currentStep === 5 && <Step6SpecialMoments {...stepProps} />}
-        {currentStep === 6 && <Step7Legacy {...stepProps} />}
-        {currentStep === 7 && <Step8Blessing {...stepProps} />}
+        {currentStep === 1 && (
+          <Step2ChildhoodRoots {...navProps} onNavigate={handleNavigate} />
+        )}
+        {currentStep === 2 && (
+          <Step3Milestones {...navProps} onNavigate={handleNavigate} />
+        )}
+        {currentStep === 3 && (
+          <Step4FamilyLove {...navProps} onNavigate={handleNavigate} />
+        )}
+        {currentStep === 4 && (
+          <Step5Personality {...navProps} onNavigate={handleNavigate} />
+        )}
+        {currentStep === 5 && (
+          <Step6SpecialMoments {...navProps} onNavigate={handleNavigate} />
+        )}
+        {currentStep === 6 && (
+          <Step7Legacy {...navProps} onNavigate={handleNavigate} />
+        )}
+        {currentStep === 7 && (
+          <Step8Blessing {...navProps} onNavigate={handleNavigate} />
+        )}
         {currentStep === 8 && (
           <Step9BuyerDetails
             defaultValues={allData}
-            onSubmit={handleStepSubmit}
+            onSubmit={handleFinalSubmit}
             onBack={handleBack}
             submitting={submitting}
           />

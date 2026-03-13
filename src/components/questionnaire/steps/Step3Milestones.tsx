@@ -13,7 +13,7 @@ type FormData = z.input<typeof milestonesSchema>;
 
 interface Props {
   defaultValues: Partial<FormData>;
-  onSubmit: (data: FormData) => void;
+  onNavigate: (data: Record<string, unknown>) => void;
   onBack: () => void;
 }
 
@@ -21,10 +21,11 @@ const OptionalBadge = () => (
   <span className="ms-1 text-sm font-normal text-muted-foreground">(רשות)</span>
 );
 
-export function Step3Milestones({ defaultValues, onSubmit, onBack }: Props) {
+export function Step3Milestones({ defaultValues, onNavigate, onBack }: Props) {
   const {
     register,
-    handleSubmit,
+    trigger,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<FormData>({
@@ -36,7 +37,7 @@ export function Step3Milestones({ defaultValues, onSubmit, onBack }: Props) {
   const defMoments = watch("defining_moments") ?? "";
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={(e) => e.preventDefault()} className="space-y-5">
       {/* profession */}
       <div className="space-y-1.5">
         <Label htmlFor="profession">מה היה העיסוק המרכזי בחיים *</Label>
@@ -115,7 +116,11 @@ export function Step3Milestones({ defaultValues, onSubmit, onBack }: Props) {
         <Button type="button" variant="outline" onClick={onBack} className="w-full sm:w-auto">
           חזרה
         </Button>
-        <Button type="submit" className="w-full sm:w-auto">
+        <Button
+          type="button"
+          className="w-full sm:w-auto"
+          onClick={() => { trigger(); onNavigate(getValues()); }}
+        >
           הבא
         </Button>
       </div>
