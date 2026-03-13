@@ -10,8 +10,7 @@ export function FounderSection() {
         <FadeIn>
           <div className="flex flex-col items-center gap-10 lg:flex-row lg:items-start lg:gap-16">
 
-            {/* Photo — start side (right in RTL).
-                Uses w-full h-auto on the image so the photo is never harshly cropped. */}
+            {/* Photo — start side (right in RTL) */}
             <div className="shrink-0">
               <div className="h-56 w-56 overflow-hidden rounded-full border-4 border-primary/20 shadow-xl bg-secondary/50">
                 <Image
@@ -20,6 +19,8 @@ export function FounderSection() {
                   width={224}
                   height={224}
                   className="h-full w-full object-cover"
+                  /* Image path is set in landing-content.ts → FOUNDER.image.src
+                     File must be at: public/assets/founder.jpeg */
                 />
               </div>
             </div>
@@ -30,11 +31,26 @@ export function FounderSection() {
                 {FOUNDER.sectionLabel}
               </span>
 
-              <blockquote className="mb-6 text-xl font-medium leading-relaxed text-foreground sm:text-2xl">
+              {/* Opening greeting — displayed prominently */}
+              <p className="mb-5 text-xl font-semibold leading-relaxed text-foreground sm:text-2xl">
                 {FOUNDER.quote}
-              </blockquote>
+              </p>
 
-              <p className="mb-5 leading-relaxed text-muted-foreground">{FOUNDER.bio}</p>
+              {/* Body paragraphs — each rendered separately for clean line breaks */}
+              <div className="mb-5 space-y-4">
+                {FOUNDER.paragraphs.map((para, i) => (
+                  <p
+                    key={i}
+                    className={`leading-relaxed ${
+                      i === 0
+                        ? "font-medium text-foreground/90"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {para}
+                  </p>
+                ))}
+              </div>
 
               <div className="my-2 h-px w-12 bg-primary/30" />
 

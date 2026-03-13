@@ -135,20 +135,22 @@ export const PREMIUM_VALUE = {
 
 export const FOUNDER = {
   sectionLabel: "מאחורי הקלעים",
-  // Replace with the actual founder name
-  name: "שם המייסד/ת",
-  // Replace with the actual title
-  title: "דור אלירז",
-  // Replace /assets/founder.jpg with the real founder photo
+  name: "דור אלירז",
+  title: "מעצבת רב-תחומית ויוצרת חוויות",
+  // Place the founder photo at public/assets/founder.jpeg
   image: {
-    src: "/assets/founder.jepg",
+    src: "/assets/founder.jpeg",
     alt: "דור אלירז",
   },
-  // Replace with an actual quote
-  quote:
-    '"כשסבא שלי הלך לעולמו, הבנתי כמה סיפורים נאבדים. Vitae Studio נולד מתוך הרצון לשמר את מה שחשוב באמת."',
-  // Replace with actual founder bio
-  bio: "Vitae Studio נולד מתוך אהבה לסיפורים ואמונה שכל חיים ראויים להיזכר בצורה יפה ומכבדת. אנחנו עובדים עם כל משפחה בלב שלם — כי זה לא פרויקט, זו מורשת.",
+  // Opening line — rendered prominently as the section's lead
+  quote: "נעים להכיר, אני דור.",
+  // Body paragraphs — each string is a separate paragraph in the UI
+  paragraphs: [
+    "מעצבת רב-תחומית ויוצרת חוויות שמספרות סיפור ונשארות בלב.",
+    "את ״סיפור חיים בחרוזים״ יצרתי לראשונה ליום הולדתה ה-80 של סבתי האהובה מיכל שהייתה על ערש דווי. כשהגשתי לה את האלבום במיטת בית החולים קרה דבר מדהים — הידיעה שהיא משאירה אחריה חותם בעולם נתנה לה כוחות מחודשים לכמה חודשים יפים ונוספים בחיק המשפחה.",
+    "החוויה הזו חיזקה את האמונה שלי שלכל אדם יש סיפור שראוי שיסופר ויישמר. אני מודה על הזכות ליצור עבורכם ועבור הדורות הבאים רגעים מלאי משמעות.",
+    "בסטודיו שלי חושבים, מדמיינים, מתכננים, מעצבים ומפיקים תוכן לאירועים (אבל כזה שזוכרים). אז אם אתם רוצים לשמוע עוד — בואו נדבר ואשמח לתת לכם את כל הפרטים.",
+  ],
 };
 
 export const FINAL_CTA = {
