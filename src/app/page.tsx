@@ -41,15 +41,17 @@ export default function LandingPage() {
       {/* ── Sticky nav with logo ──────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          {/* Logo — replace /assets/Logo.png with your final logo file */}
-          <Image
-            src="/assets/Logo.png"
-            alt="Vitae Studio"
-            width={120}
-            height={40}
-            className="h-10 w-auto object-contain"
-            priority
-          />
+          {/* Logo — replace /assets/Logo.png with your final logo file.
+              Explicit container prevents flex shrink collapsing the logo on desktop. */}
+          <div className="relative h-10 w-36 shrink-0">
+            <Image
+              src="/assets/Logo.png"
+              alt="Vitae Studio"
+              fill
+              priority
+              className="object-contain object-start"
+            />
+          </div>
           <Button
             size="sm"
             onClick={handleStartOrder}
