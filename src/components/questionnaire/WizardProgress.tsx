@@ -36,7 +36,7 @@ export function WizardProgress({ currentStep, stepCompletion, onStepClick }: Pro
             segmentColor = "bg-primary/50";
           } else if (isPast && !isComplete) {
             segmentColor = "bg-amber-400";
-          } else if (isPast || isComplete) {
+          } else if (isPast && isComplete) {
             segmentColor = "bg-primary";
           } else {
             segmentColor = "bg-border";
