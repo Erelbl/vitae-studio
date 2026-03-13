@@ -6,7 +6,7 @@ import { STATUS_LABELS } from "@/lib/state-machine";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { OrderStatus } from "@/types/order";
-import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
+import type { QuestionnaireResponses } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
 import { DraftStatusPoller } from "@/components/admin/DraftStatusPoller";
@@ -111,7 +111,7 @@ export default async function AdminOrderDetailPage({
   // ── Fetch questionnaire ──
   const { data: questionnaireRow } = await adminClient
     .from("questionnaire_responses")
-    .select("responses, followup_questions, is_complete")
+    .select("responses, is_complete")
     .eq("order_id", orderId)
     .single();
 
@@ -246,7 +246,6 @@ export default async function AdminOrderDetailPage({
   // ── Derive display state ──
   const currentStatus = order.status as OrderStatus;
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
-  const followups = (questionnaireRow?.followup_questions ?? []) as FollowUpQA[];
 
   const canPublish = PUBLISHABLE_STATUSES.includes(currentStatus);
   const isGenerating = GENERATING_IN_PROGRESS_STATUSES.includes(currentStatus);
@@ -471,22 +470,6 @@ export default async function AdminOrderDetailPage({
           </dl>
         </section>
       </div>
-
-      {/* ── Follow-up Q&A ── */}
-      {followups.length > 0 && (
-        <Section title={`שאלות המשך (${followups.length})`}>
-          <ol className="space-y-4 list-decimal list-inside">
-            {followups.map((qa, i) => (
-              <li key={i} className="space-y-1">
-                <p className="font-medium text-sm">{qa.question}</p>
-                <p className="text-sm text-muted-foreground ps-4">
-                  {qa.answer || <span className="italic">ללא תשובה</span>}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      )}
 
       {/* ── Photos + Illustration generation ── */}
       <Section title={`תמונות (${photosForGallery.length})`}>
