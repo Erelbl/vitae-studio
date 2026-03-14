@@ -129,12 +129,19 @@ export function AlbumPageEditor({
   completedPhotos,
   personName,
   onPageSelect,
+  onPageUpdate,
 }: {
   orderId: string;
   pages: EditorPage[];
   completedPhotos: PhotoForEditor[];
   personName: string;
   onPageSelect?: (pageNumber: number) => void;
+  /**
+   * Called whenever a style property is committed by the editor so the large
+   * AlbumPreview can reflect the change without a server round-trip.
+   * Only style fields that skip router.refresh() are reported here.
+   */
+  onPageUpdate?: (pageId: string, overrides: Partial<import("@/types/page").PreviewPage>) => void;
 }) {
   const router = useRouter();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
@@ -190,6 +197,7 @@ export function AlbumPageEditor({
             completedPhotos={completedPhotos}
             personName={personName}
             onSaved={() => router.refresh()}
+            onPageUpdate={onPageUpdate}
           />
         ) : (
           <SpecialPagePanel
@@ -213,12 +221,14 @@ function PageEditorPanel({
   completedPhotos,
   personName,
   onSaved,
+  onPageUpdate,
 }: {
   orderId: string;
   page: EditorPage;
   completedPhotos: PhotoForEditor[];
   personName: string;
   onSaved: () => void;
+  onPageUpdate?: (pageId: string, overrides: Partial<import("@/types/page").PreviewPage>) => void;
 }) {
   const [text, setText] = useState(page.text_content ?? "");
   const [layoutType, setLayoutType] = useState<LayoutType>(
@@ -254,6 +264,10 @@ function PageEditorPanel({
   const isTextDraggingRef = useRef(false);
   const fontSizePxRef = useRef(fontSizePx);
   fontSizePxRef.current = fontSizePx;
+
+  // Stable ref so drag callbacks can call onPageUpdate without listing it as a dep
+  const onPageUpdateRef = useRef(onPageUpdate);
+  onPageUpdateRef.current = onPageUpdate;
 
   const canDragText = OVERLAY_LAYOUTS.includes(layoutType) && Boolean(text);
 
@@ -301,6 +315,9 @@ function PageEditorPanel({
     setSavingText(false);
     if (res.ok) {
       setTextDirty(false);
+      // Push text change to large preview immediately; router.refresh() will
+      // confirm with fresh server data and clear the override.
+      onPageUpdate?.(page.id, { text_content: text || null });
       onSaved();
     } else {
       const body = await res.json().catch(() => ({}));
@@ -323,17 +340,20 @@ function PageEditorPanel({
   }
 
   async function handleFontSizeCommit(newSize: number) {
+    // Push to large preview immediately (no router.refresh — that would force
+    // all signed image URLs to regenerate and the browser to re-download them).
+    onPageUpdate?.(page.id, { font_size_px: newSize });
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ font_size_px: newSize }),
     });
-    // Don't call onSaved() — mini-preview already reflects the change,
-    // and refreshing would force all signed images to reload.
   }
 
   async function handleTextAlignChange(newAlign: TextAlign) {
     setTextAlign(newAlign);
+    // Push to large preview immediately.
+    onPageUpdate?.(page.id, { text_align: newAlign });
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -435,6 +455,8 @@ function PageEditorPanel({
     if (!pos) return;
     setTextX(pos.x);
     setTextY(pos.y);
+    // Push to large preview immediately via ref (stable, no dep needed).
+    onPageUpdateRef.current?.(page.id, { text_x: pos.x, text_y: pos.y });
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -447,6 +469,8 @@ function PageEditorPanel({
     setTextX(null);
     setTextY(null);
     setTextDragMode(false);
+    // Push reset to large preview immediately.
+    onPageUpdate?.(page.id, { text_x: null, text_y: null });
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
