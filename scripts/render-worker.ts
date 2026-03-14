@@ -6,14 +6,17 @@
  * using Remotion (headless Chrome).
  *
  * Usage:
- *   # Render all queued scenes
+ *   # Run once (process all currently queued scenes, then exit)
  *   npm run render-worker
  *
- *   # Render specific scene IDs
- *   npx tsx scripts/render-worker.ts <sceneId1> <sceneId2> ...
+ *   # Watch mode — poll continuously, process scenes as they are queued
+ *   npm run render-worker:watch
  *
- *   # Poll mode — check for queued scenes every N seconds
- *   npm run render-worker:poll
+ *   # Custom poll interval (seconds)
+ *   npx tsx scripts/render-worker.ts --poll 60
+ *
+ *   # Render specific scene IDs once, then exit
+ *   npx tsx scripts/render-worker.ts <sceneId1> <sceneId2> ...
  *
  * Prerequisites:
  *   1. Chrome installed on the machine
@@ -29,15 +32,34 @@ import { config as loadEnv } from "dotenv";
 // Load .env.local first (overrides .env), then .env as a fallback for defaults.
 loadEnv({ path: ".env.local" });
 loadEnv({ path: ".env" });
+
 import { createClient } from "@supabase/supabase-js";
 import { renderScene } from "@/services/film/render/render-scene";
 
-// ── Environment ──────────────────────────────────────────────────────────────
+// ── Logging ───────────────────────────────────────────────────────────────────
+
+function ts(): string {
+  return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
+function log(msg: string) {
+  console.log(`[${ts()}] [render-worker] ${msg}`);
+}
+
+function warn(msg: string) {
+  console.warn(`[${ts()}] [render-worker] WARN ${msg}`);
+}
+
+function err(msg: string) {
+  console.error(`[${ts()}] [render-worker] ERROR ${msg}`);
+}
+
+// ── Environment ───────────────────────────────────────────────────────────────
 
 function requireEnv(name: string): string {
   const val = process.env[name];
   if (!val) {
-    console.error(`[render-worker] Missing required env variable: ${name}`);
+    err(`Missing required env variable: ${name}`);
     process.exit(1);
   }
   return val;
@@ -50,14 +72,13 @@ const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false },
 });
 
-// ── Core logic ───────────────────────────────────────────────────────────────
+// ── Core logic ────────────────────────────────────────────────────────────────
 
 /**
  * Finds scenes stuck in "rendering" status (updated more than 30 minutes ago)
  * and resets them to "queued" so they can be picked up again.
  *
- * This handles the case where the render worker crashed mid-render, leaving
- * scenes in the "rendering" state indefinitely.
+ * Called once at startup and then every STALE_CHECK_INTERVAL_MS in watch mode.
  */
 async function resetStaleRenderingScenes(): Promise<void> {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -69,15 +90,13 @@ async function resetStaleRenderingScenes(): Promise<void> {
     .lt("updated_at", cutoff);
 
   if (error) {
-    console.warn("[render-worker] Could not check for stale scenes:", error.message);
+    warn(`Could not check for stale scenes: ${error.message}`);
     return;
   }
 
   if (!stale || stale.length === 0) return;
 
-  console.log(
-    `[render-worker] Resetting ${stale.length} stale rendering scene(s) back to queued.`
-  );
+  log(`Resetting ${stale.length} stale rendering scene(s) back to queued.`);
 
   await adminClient
     .from("film_scenes")
@@ -91,9 +110,7 @@ async function resetStaleRenderingScenes(): Promise<void> {
 
 async function fetchQueuedScenes(
   specificIds?: string[]
-): Promise<
-  Array<{ id: string; film_project_id: string; order_id: string }>
-> {
+): Promise<Array<{ id: string; film_project_id: string; order_id: string }>> {
   let query = adminClient
     .from("film_scenes")
     .select("id, film_project_id, film_projects!inner(order_id)")
@@ -107,10 +124,7 @@ async function fetchQueuedScenes(
   const { data, error } = await query;
 
   if (error) {
-    console.error(
-      "[render-worker] Failed to fetch queued scenes:",
-      error.message
-    );
+    err(`Failed to fetch queued scenes: ${error.message}`);
     return [];
   }
 
@@ -126,13 +140,8 @@ async function processScene(scene: {
   film_project_id: string;
   order_id: string;
 }): Promise<boolean> {
-  const {
-    id: sceneId,
-    film_project_id: filmProjectId,
-    order_id: orderId,
-  } = scene;
+  const { id: sceneId, film_project_id: filmProjectId, order_id: orderId } = scene;
 
-  // Mark as rendering
   await adminClient
     .from("film_scenes")
     .update({
@@ -142,39 +151,35 @@ async function processScene(scene: {
     })
     .eq("id", sceneId);
 
-  console.log(`[render-worker] Rendering scene ${sceneId}...`);
+  log(`Rendering scene ${sceneId}...`);
 
   try {
     const result = await renderScene({ sceneId, orderId, filmProjectId });
-    console.log(
-      `[render-worker] Scene ${sceneId} rendered → ${result.renderedPath}`
-    );
+    log(`Scene ${sceneId} rendered → ${result.renderedPath}`);
     return true;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[render-worker] Scene ${sceneId} failed: ${message}`);
-    // renderScene already sets status to "error" and saves error_message in DB
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    err(`Scene ${sceneId} failed: ${message}`);
+    // renderScene already sets status="error" and saves error_message in DB
     return false;
   }
 }
 
-async function runOnce(specificIds?: string[]): Promise<{
-  rendered: number;
-  failed: number;
-}> {
+async function runOnce(
+  specificIds?: string[],
+  silent = false
+): Promise<{ rendered: number; failed: number }> {
   const scenes = await fetchQueuedScenes(specificIds);
 
   if (scenes.length === 0) {
-    console.log("[render-worker] No queued scenes found.");
+    if (!silent) log("No queued scenes found.");
     return { rendered: 0, failed: 0 };
   }
 
-  console.log(`[render-worker] Found ${scenes.length} queued scene(s).`);
+  log(`Found ${scenes.length} queued scene(s).`);
 
   let rendered = 0;
   let failed = 0;
-
-  // Track which film projects had successful renders (for last_rendered_at update)
   const successfulProjectIds = new Set<string>();
 
   for (const scene of scenes) {
@@ -187,7 +192,7 @@ async function runOnce(specificIds?: string[]): Promise<{
     }
   }
 
-  // Update last_rendered_at for projects that had at least one successful render
+  // Update last_rendered_at for projects that had at least one success
   if (successfulProjectIds.size > 0) {
     await adminClient
       .from("film_projects")
@@ -195,16 +200,67 @@ async function runOnce(specificIds?: string[]): Promise<{
       .in("id", [...successfulProjectIds]);
   }
 
-  console.log(
-    `[render-worker] Done. Rendered: ${rendered}, Failed: ${failed}`
-  );
+  log(`Done. Rendered: ${rendered}, Failed: ${failed}`);
   return { rendered, failed };
 }
 
-// ── CLI entry point ──────────────────────────────────────────────────────────
+// ── Watch mode ────────────────────────────────────────────────────────────────
+
+// Run stale-scene recovery every 10 minutes in watch mode
+const STALE_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+
+async function runWatch(intervalSec: number): Promise<never> {
+  log(`Watch mode: polling every ${intervalSec}s. Ctrl+C to stop.`);
+
+  let lastStaleCheck = Date.now();
+  let idleSince: number | null = null;
+
+  // Graceful shutdown on SIGTERM (e.g. from process manager)
+  process.on("SIGTERM", () => {
+    log("Received SIGTERM — shutting down.");
+    process.exit(0);
+  });
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      // Periodic stale-scene recovery (not just at startup)
+      if (Date.now() - lastStaleCheck >= STALE_CHECK_INTERVAL_MS) {
+        await resetStaleRenderingScenes();
+        lastStaleCheck = Date.now();
+      }
+
+      const { rendered } = await runOnce(
+        undefined,
+        /* silent = */ true // suppress "no scenes" on every idle poll
+      );
+
+      if (rendered > 0) {
+        // Something was processed — reset idle tracking
+        idleSince = null;
+      } else {
+        // Log an "idle" heartbeat once per minute so logs confirm the worker
+        // is alive even when there's nothing to render.
+        if (idleSince === null) {
+          idleSince = Date.now();
+        } else if (Date.now() - idleSince >= 60_000) {
+          log("Idle — waiting for queued scenes.");
+          idleSince = Date.now(); // reset so it logs again in another minute
+        }
+      }
+    } catch (e) {
+      // Catch unexpected errors so a transient failure doesn't kill the loop
+      err(`Unexpected error in poll loop: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalSec * 1000));
+  }
+}
+
+// ── CLI entry point ───────────────────────────────────────────────────────────
 
 async function main() {
-  console.log("[render-worker] Starting film render worker...");
+  log("Starting film render worker.");
 
   // Reset any scenes stuck in "rendering" from a previous crashed run
   await resetStaleRenderingScenes();
@@ -219,27 +275,22 @@ async function main() {
     args.splice(pollIdx, 2);
   }
 
-  // Remaining args are scene IDs
+  // Remaining args are scene IDs (only valid in single-run mode)
   const specificIds = args.length > 0 ? args : undefined;
 
   if (pollIntervalSec != null) {
-    console.log(
-      `[render-worker] Poll mode: checking every ${pollIntervalSec}s. Ctrl+C to stop.`
-    );
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      await runOnce(specificIds);
-      await new Promise((resolve) =>
-        setTimeout(resolve, pollIntervalSec! * 1000)
-      );
+    if (specificIds) {
+      err("--poll cannot be combined with specific scene IDs.");
+      process.exit(1);
     }
+    await runWatch(pollIntervalSec);
   } else {
-    const { rendered, failed } = await runOnce(specificIds);
+    const { failed } = await runOnce(specificIds);
     process.exit(failed > 0 ? 1 : 0);
   }
 }
 
-main().catch((err) => {
-  console.error("[render-worker] Fatal error:", err);
+main().catch((e) => {
+  err(`Fatal: ${e instanceof Error ? e.message : String(e)}`);
   process.exit(1);
 });

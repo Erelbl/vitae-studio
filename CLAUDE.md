@@ -125,6 +125,49 @@ Premium web app for creating personalized "life story in rhymes" illustrated alb
 - **Docs**: `docs/film-product.md` — full technical reference for the Film foundation
 - No changes to existing order statuses or album flow
 
+## Film Render Worker
+
+Film rendering runs outside Vercel (requires Chrome + Remotion). The admin queues scenes via the Film panel; the render worker picks them up.
+
+### One-time setup (local machine)
+```bash
+# 1. Build the Remotion bundle (run once, or after changing src/remotion/)
+npm run bundle:remotion
+
+# 2. Ensure .env.local has NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+```
+
+### Running the worker
+
+```bash
+# Watch mode — polls every 30s, picks up scenes as admin queues them. Keep this running.
+npm run render-worker:watch
+
+# Single-run — process all currently queued scenes, then exit (useful for CI or testing)
+npm run render-worker
+
+# Custom poll interval
+npx tsx scripts/render-worker.ts --poll 60
+```
+
+### Worker behavior
+- **Startup**: resets any scenes stuck in `rendering` (>30 min old) back to `queued`
+- **Idle heartbeat**: logs "Idle — waiting for queued scenes." once per minute when nothing is queued
+- **Failures**: a failed scene is marked `error` in the DB; the loop continues with remaining scenes
+- **Periodic stale recovery**: re-runs the stale-scene check every 10 minutes
+- **Graceful shutdown**: responds to SIGTERM (e.g. from a process manager)
+
+### Logs
+Timestamps on every line. Example:
+```
+[2025-03-15 10:00:00] [render-worker] Watch mode: polling every 30s. Ctrl+C to stop.
+[2025-03-15 10:00:31] [render-worker] Found 2 queued scene(s).
+[2025-03-15 10:00:31] [render-worker] Rendering scene abc123...
+[2025-03-15 10:01:45] [render-worker] Scene abc123 rendered → films/.../scene.mp4
+[2025-03-15 10:01:46] [render-worker] Done. Rendered: 2, Failed: 0
+[2025-03-15 10:02:16] [render-worker] Idle — waiting for queued scenes.
+```
+
 ## Environment Variables
 See `.env.example` for all required variables. Key ones:
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
