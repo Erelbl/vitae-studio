@@ -105,6 +105,20 @@ export function FilmPanel({
     });
   }
 
+  async function handleBuildScenes() {
+    await runAction("build-scenes", async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/build-scenes`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה בבניית סצנות");
+      }
+      router.refresh();
+    });
+  }
+
   async function handleSelectVoice(voiceId: string) {
     await runAction(`select-${voiceId}`, async () => {
       const res = await fetch(
@@ -196,8 +210,13 @@ export function FilmPanel({
           {scenes.length} סצנות
           {" · "}
           {scenes.filter((s) => s.status === "rendered").length} מרונדרות
+          {" · "}
+          {Math.round(
+            scenes.reduce((sum, s) => sum + (s.duration_ms ?? 0), 0) / 1000
+          )}{" "}
+          שניות (אומדן)
           {filmProject.final_duration_seconds != null && (
-            <> · {Math.round(filmProject.final_duration_seconds)} שניות</>
+            <> · {Math.round(filmProject.final_duration_seconds)} שניות סופי</>
           )}
         </div>
       )}
@@ -300,15 +319,19 @@ export function FilmPanel({
         />
       )}
 
-      {/* ── Other actions (placeholder stubs) ────────────────────────────── */}
+      {/* ── Actions ──────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
           size="sm"
           disabled={isLoading}
-          onClick={() => setError("בניית סצנות עדיין לא מחוברת")}
+          onClick={handleBuildScenes}
         >
-          בנה סצנות
+          {loadingAction === "build-scenes"
+            ? "בונה סצנות..."
+            : scenes.length > 0
+            ? "בנה סצנות מחדש"
+            : "בנה סצנות"}
         </Button>
         <Button
           variant="outline"
@@ -331,7 +354,70 @@ export function FilmPanel({
         </Button>
       </div>
 
+      {/* ── Scene list ────────────────────────────────────────────────────── */}
+      {scenes.length > 0 && (
+        <div className="rounded-lg border border-border/60 p-4 space-y-3">
+          <p className="text-sm font-medium">סצנות ({scenes.length})</p>
+          <div className="space-y-1">
+            {scenes.map((scene) => (
+              <SceneRow key={scene.id} scene={scene} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+// ── SceneRow ──────────────────────────────────────────────────────────────────
+
+const SCENE_STATUS_LABELS: Record<string, string> = {
+  pending: "ממתין",
+  narration_ready: "קריינות מוכנה",
+  rendered: "מרונדר",
+  error: "שגיאה",
+};
+
+function SceneRow({ scene }: { scene: FilmScene }) {
+  const textPreview = scene.narration_text
+    ? scene.narration_text.length > 60
+      ? scene.narration_text.slice(0, 60) + "…"
+      : scene.narration_text
+    : "—";
+
+  const durationSec =
+    scene.duration_ms != null ? (scene.duration_ms / 1000).toFixed(1) : "—";
+
+  return (
+    <div className="flex items-center gap-3 text-xs py-1.5 border-b border-border/40 last:border-b-0">
+      <span className="text-muted-foreground shrink-0 w-6 text-center font-mono">
+        {scene.scene_order}
+      </span>
+      <span className="text-muted-foreground shrink-0 w-20 truncate font-mono">
+        {scene.page_spread_key ?? "—"}
+      </span>
+      <span className="flex-1 truncate" dir="rtl">
+        {scene.title ? (
+          <span className="font-medium">{scene.title} — </span>
+        ) : null}
+        {textPreview}
+      </span>
+      <span className="text-muted-foreground shrink-0 w-14 text-end">
+        {durationSec}s
+      </span>
+      <span
+        className={`shrink-0 w-16 text-end ${
+          scene.status === "error"
+            ? "text-red-600"
+            : scene.status === "rendered"
+            ? "text-green-600"
+            : "text-muted-foreground"
+        }`}
+      >
+        {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
+      </span>
     </div>
   );
 }

@@ -140,15 +140,59 @@ The **"תיקוני הגייה"** section in the Film panel (`FilmPanel.tsx` + `
 - "שמור תיקונים" calls PATCH; empty `original` rows are stripped before saving
 - Saves first, then regenerate voice samples to hear the corrected pronunciation
 
-## Intended Pipeline (future)
+## Scene Generation (implemented)
 
-1. **Create film project** — admin clicks button, creates `film_projects` row
-2. **Build scenes** — reads album pages, groups into spreads, creates `film_scenes`
-3. **Generate narration** — for each scene, build narration text → ElevenLabs TTS → store audio
-4. **Voice selection** — generate A/B samples, admin picks preferred voice
-5. **Render scenes** — for each scene, combine images + motion + audio → video segment
-6. **Assemble film** — concatenate all scene segments, mix music → final video
-7. **Deliver** — store final video, generate thumbnail, make available to customer
+### What a Film Scene Represents
+A film scene maps to one logical "spread" from the album — typically a 2-page pair that will be shown together in the video with narration and motion effects. Special pages (cover, dedication, back_cover) become standalone scenes.
+
+### How Scenes Are Generated
+1. Admin clicks "בנה סצנות" in the Film panel
+2. `POST /api/admin/orders/[orderId]/film/build-scenes` is called
+3. Server loads all album pages for the order, ordered by `page_number`
+4. Special pages (cover, dedication, back_cover) become standalone scenes
+5. Content pages are paired into 2-page spreads (matching the album preview logic)
+6. Each scene gets:
+   - `source_text` — concatenated `text_content` from its pages
+   - `narration_text` — whitespace-normalized version (via `buildNarrationText`)
+   - `duration_ms` — estimated from text length (~2.5 words/sec Hebrew speech rate)
+   - `page_spread_key` — e.g. "cover", "spread_01", "back_cover"
+   - `page_ids_json` — array of page UUIDs in this scene
+   - Default motion/transition: `ken_burns` / `fade`
+7. Film project status is updated to `scenes_built`
+
+### Idempotency
+Scene generation is safe to run multiple times. Old scenes are deleted before new ones are inserted.
+
+### Duration Estimation
+`estimateSceneDurationFromText(narrationText)` uses a word-count heuristic:
+- Hebrew speech rate: ~2.5 words/second
+- Minimum: 3 seconds
+- Padding: 1.5 seconds after estimated speech
+- Default (no text): 5 seconds
+
+This is only an initial estimate. Actual duration will be refined when real audio is generated.
+
+### Limitations
+- No AI rewriting of narration text — only whitespace normalization
+- Duration is a rough estimate until real audio exists
+- No audio generation in this phase
+- No rendering in this phase
+
+### API route
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/admin/orders/[orderId]/film/build-scenes` | POST | Generate scenes from album pages |
+
+## Pipeline Status
+
+1. **Create film project** — implemented
+2. **Build scenes** — implemented
+3. **Voice selection** — implemented (A/B samples, admin picks)
+4. **TTS overrides** — implemented (pronunciation fixes)
+5. **Generate narration** — not yet implemented (per-scene TTS)
+6. **Render scenes** — not yet implemented
+7. **Assemble film** — not yet implemented
+8. **Deliver** — not yet implemented
 
 ## Environment Variables
 
@@ -170,11 +214,14 @@ The **"תיקוני הגייה"** section in the Film panel (`FilmPanel.tsx` + `
 The Film section appears on the admin order detail page (`/admin/orders/[orderId]`), below the story section. It shows:
 
 - Film project status, narration mode, motion style, selected voice
-- Scene count and render progress summary
-- Action buttons: Create project, Build scenes, Generate voice samples, Render scenes, Assemble film
+- Scene count, estimated total duration, and render progress summary
+- Voice samples section: generate A/B samples, play audio, select voice
+- TTS pronunciation overrides editor
+- Action buttons: Build scenes, Render scenes (placeholder), Assemble film (placeholder)
+- Scene list: each scene shows order number, spread key, text preview, estimated duration, status
 - Empty state when no film project exists yet
 
-Only the "Create film project" action is wired to an API route. Other buttons show placeholder messages.
+Implemented actions: Create film project, Build scenes, Generate voice samples, Select voice, TTS overrides.
 
 ## Migration
 
