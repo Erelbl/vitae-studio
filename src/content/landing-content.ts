@@ -98,8 +98,8 @@ export const GALLERY = {
 
 export const FOUNDER = {
   sectionLabel: "מאחורי הקלעים",
-  name: "דור אלירז",
-  title: "מעצבת רב תחומית ויוצרת חוויות",
+  name: "",
+  title: "",
   // Place the founder photo at public/assets/founder.jpeg
   image: {
     src: "/assets/founder.jpeg",
@@ -117,18 +117,18 @@ export const FOUNDER = {
 };
 
 export const FINAL_CTA = {
-  title: "הסיפור שלכם מחכה",
+  title: "הסיפור שלכם מחכה להכתב",
   subtitle:
-    "כל יום שעובר הוא רגע שלא ישוב. תנו לנו להנציח אותו — בשיר, בצבע, בספר.",
+    "כל יום שעובר הוא רגע שלא ישוב. תנו לנו להנציח אותו - בשיר, בצבע, בספר.",
   ctaLabel: "התחילו את האלבום שלכם",
-  trustNote: "✦ ללא התחייבות מראש · מתחילים תוך דקות",
+  trustNote: "✦ מתחילים תוך דקות",
 };
 
 export const CONTACT = {
   name: "דור אלירז",
   email: "doreliraz@gmail.com",
   whatsapp: "https://wa.me/972507824664",
-  message: "לשאלות והתייעצות אישית ניתן לפנות אליי",
+  message: "לשאלות והתייעצות אישית ניתן לפנות אלי",
 };
 
 export const FOOTER = {
@@ -159,7 +159,7 @@ export const IMAGE_COMPARISON = {
 
 export const PACKAGES = {
   sectionLabel: "חבילות",
-  title: "חבילות",
+  title: "",
   subtitle: "בחרו את חבילת האלבום המתאימה לכם",
   items: [
     {
@@ -179,7 +179,7 @@ export const PACKAGES = {
     {
       title: "חבילה משולבת",
       description: "אלבום + סרט — הכל בחבילה אחת",
-      price: "₪3,800",
+      price: "₪3,780",
       featured: true,
       inclusions: [
         "כל מה שב\"אלבום\" +",
