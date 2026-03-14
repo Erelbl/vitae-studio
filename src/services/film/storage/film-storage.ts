@@ -17,12 +17,26 @@ export async function uploadFilmAsset(
   const bucket = filmEnv.storageBucket!;
   const adminClient = createAdminClient();
 
+  if (!data || data.length === 0) {
+    throw new Error(
+      `Cannot upload film asset to ${path}: payload is empty (bucket: ${bucket})`
+    );
+  }
+
+  // Wrap Buffer in a Blob so the Supabase storage client produces a correctly
+  // typed multipart/form-data body. Passing a raw Buffer (ArrayBufferView)
+  // omits the MIME type on the FormData part, which causes Cloudflare 520.
+  // Converting to Uint8Array first satisfies both TypeScript and the Blob constructor.
+  const blob = new Blob([new Uint8Array(data)], { type: contentType });
+
   const { error } = await adminClient.storage
     .from(bucket)
-    .upload(path, data, { contentType, upsert: true });
+    .upload(path, blob, { contentType, upsert: true });
 
   if (error) {
-    throw new Error(`Failed to upload film asset to ${path}: ${error.message}`);
+    throw new Error(
+      `Failed to upload film asset (bucket: ${bucket}, path: ${path}, size: ${data.length}B): ${error.message}`
+    );
   }
 
   return path;
