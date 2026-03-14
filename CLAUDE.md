@@ -118,7 +118,9 @@ Premium web app for creating personalized "life story in rhymes" illustrated alb
 - **Env helper**: `src/lib/film-env.ts` — server-only, lazy access, fail-fast for required vars
 - **Services**: `src/services/film/` — project, narration, render, storage, utils modules (skeletons with TODOs)
 - **Admin UI**: `FilmPanel` component on admin order detail page. Only "Create film project" is wired to API
-- **API route**: `POST /api/admin/orders/[orderId]/film` — creates film project
+- **API routes**: `POST /api/admin/orders/[orderId]/film` (create), `/film/voice-samples` (generate A/B samples), `/film/select-voice` (persist choice)
+- **ElevenLabs TTS**: `src/services/film/narration/elevenlabs.ts` — real implementation using `eleven_multilingual_v2`
+- **Voice samples**: `src/services/film/narration/generate-voice-samples.ts` — fetches album text as sample, generates 2 MP3s, uploads to `films/{orderId}/{filmProjectId}/voice-samples/`
 - **Docs**: `docs/film-product.md` — full technical reference for the Film foundation
 - No changes to existing order statuses or album flow
 

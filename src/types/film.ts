@@ -50,6 +50,18 @@ export interface FilmProject {
   updated_at: string;
 }
 
+// ── Voice Samples ─────────────────────────────────────────────────────────────
+
+export interface VoiceSamplesResult {
+  filmProject: FilmProject;
+  sampleAPath: string;
+  sampleBPath: string;
+}
+
+export interface VoiceSelectionResult {
+  filmProject: FilmProject;
+}
+
 // ── Film Scene ───────────────────────────────────────────────────────────────
 
 export const FILM_SCENE_STATUSES = [

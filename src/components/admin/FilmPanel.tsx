@@ -8,7 +8,10 @@ import type {
   FilmProject,
   FilmProjectStatus,
   FilmScene,
+  VoiceChoiceStatus,
 } from "@/types/film";
+
+// ── Label maps ────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<FilmProjectStatus, string> = {
   draft: "טיוטה",
@@ -16,7 +19,7 @@ const STATUS_LABELS: Record<FilmProjectStatus, string> = {
   narration_pending: "ממתין לקריינות",
   narration_ready: "קריינות מוכנה",
   rendering: "ברינדור",
-  rendered: "רונדר הושלם",
+  rendered: "רינדור הושלם",
   assembled: "סרט מורכב",
   error: "שגיאה",
 };
@@ -44,64 +47,124 @@ const MOTION_STYLE_LABELS: Record<string, string> = {
   none: "ללא תנועה",
 };
 
+const VOICE_CHOICE_LABELS: Record<VoiceChoiceStatus, string> = {
+  pending: "ממתין לדגימות",
+  samples_ready: "דגימות מוכנות",
+  chosen: "קול נבחר",
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 interface FilmPanelProps {
   orderId: string;
   filmProject: FilmProject | null;
   scenes: FilmScene[];
+  sampleAUrl: string | null;
+  sampleBUrl: string | null;
 }
 
-export function FilmPanel({ orderId, filmProject, scenes }: FilmPanelProps) {
+export function FilmPanel({
+  orderId,
+  filmProject,
+  scenes,
+  sampleAUrl,
+  sampleBUrl,
+}: FilmPanelProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState<string | null>(null);
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   async function handleCreateFilmProject() {
-    setLoading("create");
-    setError(null);
-    try {
+    await runAction("create", async () => {
       const res = await fetch(`/api/admin/orders/${orderId}/film`, {
         method: "POST",
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "שגיאה ביצירת פרויקט סרט");
-        return;
+        throw new Error(body.error ?? "שגיאה ביצירת פרויקט סרט");
       }
       router.refresh();
-    } catch {
-      setError("שגיאת רשת");
+    });
+  }
+
+  async function handleGenerateVoiceSamples() {
+    await runAction("voice-samples", async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/voice-samples`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ביצירת דגימות קול");
+      }
+      router.refresh();
+    });
+  }
+
+  async function handleSelectVoice(voiceId: string) {
+    await runAction(`select-${voiceId}`, async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/select-voice`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ voiceId }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה בבחירת קול");
+      }
+      router.refresh();
+    });
+  }
+
+  async function runAction(key: string, fn: () => Promise<void>) {
+    setLoadingAction(key);
+    setError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "שגיאה לא ידועה");
     } finally {
-      setLoading(null);
+      setLoadingAction(null);
     }
   }
 
-  // ── Empty state ──
+  const isLoading = loadingAction !== null;
+
+  // ── Empty state ────────────────────────────────────────────────────────────
+
   if (!filmProject) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          לא נוצר פרויקט סרט עדיין.
-        </p>
+        <p className="text-sm text-muted-foreground">לא נוצר פרויקט סרט עדיין.</p>
         <Button
           onClick={handleCreateFilmProject}
-          disabled={loading === "create"}
+          disabled={loadingAction === "create"}
           size="sm"
         >
-          {loading === "create" ? "יוצר..." : "צור פרויקט סרט"}
+          {loadingAction === "create" ? "יוצר..." : "צור פרויקט סרט"}
         </Button>
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
     );
   }
 
-  // ── Film project exists ──
+  // ── Film project exists ────────────────────────────────────────────────────
+
   const status = filmProject.status;
   const colorClass =
     STATUS_COLORS[status] ?? "bg-gray-50 text-gray-600 border-gray-200";
+  const hasSamples =
+    filmProject.voice_choice_status === "samples_ready" ||
+    filmProject.voice_choice_status === "chosen";
 
   return (
-    <div className="space-y-4">
-      {/* Status + metadata */}
+    <div className="space-y-5">
+      {/* Status row */}
       <div className="flex items-center gap-3 flex-wrap">
         <span
           className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${colorClass}`}
@@ -109,19 +172,16 @@ export function FilmPanel({ orderId, filmProject, scenes }: FilmPanelProps) {
           {STATUS_LABELS[status]}
         </span>
         <Badge variant="outline">
-          {NARRATION_MODE_LABELS[filmProject.narration_mode] ?? filmProject.narration_mode}
+          {NARRATION_MODE_LABELS[filmProject.narration_mode] ??
+            filmProject.narration_mode}
         </Badge>
         <Badge variant="outline">
-          {MOTION_STYLE_LABELS[filmProject.motion_style] ?? filmProject.motion_style}
+          {MOTION_STYLE_LABELS[filmProject.motion_style] ??
+            filmProject.motion_style}
         </Badge>
-        {filmProject.selected_voice_id && (
-          <Badge variant="outline">
-            קול: {filmProject.selected_voice_id}
-          </Badge>
-        )}
       </div>
 
-      {/* Error message */}
+      {/* Error banner */}
       {filmProject.error_message && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           {filmProject.error_message}
@@ -129,78 +189,133 @@ export function FilmPanel({ orderId, filmProject, scenes }: FilmPanelProps) {
       )}
 
       {/* Scene summary */}
-      <div className="text-sm text-muted-foreground">
-        {scenes.length > 0 ? (
-          <span>
-            {scenes.length} סצנות
-            {" · "}
-            {scenes.filter((s) => s.status === "rendered").length} מרונדרות
-            {filmProject.final_duration_seconds != null && (
-              <>
-                {" · "}
-                {Math.round(filmProject.final_duration_seconds)} שניות
-              </>
-            )}
-          </span>
-        ) : (
-          <span>אין סצנות עדיין</span>
-        )}
-      </div>
+      {scenes.length > 0 && (
+        <div className="text-sm text-muted-foreground">
+          {scenes.length} סצנות
+          {" · "}
+          {scenes.filter((s) => s.status === "rendered").length} מרונדרות
+          {filmProject.final_duration_seconds != null && (
+            <> · {Math.round(filmProject.final_duration_seconds)} שניות</>
+          )}
+        </div>
+      )}
 
-      {/* Action buttons */}
+      {/* ── Voice samples section ──────────────────────────────────────────── */}
+      {filmProject.narration_mode !== "none" && (
+        <div className="rounded-lg border border-border/60 p-4 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-medium">דגימות קול</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {VOICE_CHOICE_LABELS[filmProject.voice_choice_status]}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isLoading}
+              onClick={handleGenerateVoiceSamples}
+            >
+              {loadingAction === "voice-samples"
+                ? "מייצר דגימות..."
+                : hasSamples
+                ? "צור דגימות מחדש"
+                : "צור דגימות קול"}
+            </Button>
+          </div>
+
+          {!hasSamples && (
+            <p className="text-sm text-muted-foreground">
+              לחץ על &ldquo;צור דגימות קול&rdquo; כדי לשמוע שתי אופציות קריינות ולבחור בין קול א׳ לקול ב׳.
+            </p>
+          )}
+
+          {hasSamples && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <VoiceSampleCard
+                label="קול א׳"
+                audioUrl={sampleAUrl}
+                voiceId={filmProject.voice_sample_a_voice_id}
+                isSelected={
+                  filmProject.selected_voice_id ===
+                  filmProject.voice_sample_a_voice_id
+                }
+                onSelect={() =>
+                  filmProject.voice_sample_a_voice_id &&
+                  handleSelectVoice(filmProject.voice_sample_a_voice_id)
+                }
+                selectLoading={
+                  loadingAction ===
+                  `select-${filmProject.voice_sample_a_voice_id}`
+                }
+                disabled={isLoading}
+              />
+              <VoiceSampleCard
+                label="קול ב׳"
+                audioUrl={sampleBUrl}
+                voiceId={filmProject.voice_sample_b_voice_id}
+                isSelected={
+                  filmProject.selected_voice_id ===
+                  filmProject.voice_sample_b_voice_id
+                }
+                onSelect={() =>
+                  filmProject.voice_sample_b_voice_id &&
+                  handleSelectVoice(filmProject.voice_sample_b_voice_id)
+                }
+                selectLoading={
+                  loadingAction ===
+                  `select-${filmProject.voice_sample_b_voice_id}`
+                }
+                disabled={isLoading}
+              />
+            </div>
+          )}
+
+          {filmProject.voice_choice_status === "chosen" &&
+            filmProject.selected_voice_id && (
+              <p className="text-sm text-green-700 font-medium">
+                ✓ קול נבחר:{" "}
+                {filmProject.selected_voice_id ===
+                filmProject.voice_sample_a_voice_id
+                  ? "קול א׳"
+                  : filmProject.selected_voice_id ===
+                    filmProject.voice_sample_b_voice_id
+                  ? "קול ב׳"
+                  : filmProject.selected_voice_id}
+              </p>
+            )}
+        </div>
+      )}
+
+      {/* ── Other actions (placeholder stubs) ────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
-        <ActionButton
-          label="בנה סצנות"
-          loadingLabel="בונה..."
-          actionKey="build-scenes"
-          loading={loading}
-          setLoading={setLoading}
-          setError={setError}
-          disabled={false}
-          onClick={() => {
-            // TODO: Wire to API route
-            setError("בניית סצנות עדיין לא מחוברת");
-          }}
-        />
-        <ActionButton
-          label="צור דגימות קול"
-          loadingLabel="מייצר..."
-          actionKey="voice-samples"
-          loading={loading}
-          setLoading={setLoading}
-          setError={setError}
-          disabled={filmProject.narration_mode === "none"}
-          onClick={() => {
-            // TODO: Wire to API route
-            setError("יצירת דגימות קול עדיין לא מחוברת");
-          }}
-        />
-        <ActionButton
-          label="רנדר סצנות נבחרות"
-          loadingLabel="מרנדר..."
-          actionKey="render-scenes"
-          loading={loading}
-          setLoading={setLoading}
-          setError={setError}
-          disabled={scenes.length === 0}
-          onClick={() => {
-            // TODO: Wire to API route
-            setError("רינדור סצנות עדיין לא מחובר");
-          }}
-        />
-        <ActionButton
-          label="הרכב סרט"
-          loadingLabel="מרכיב..."
-          actionKey="assemble"
-          loading={loading}
-          setLoading={setLoading}
-          setError={setError}
-          disabled={scenes.filter((s) => s.status === "rendered").length === 0}
-          onClick={() => {
-            // TODO: Wire to API route
-            setError("הרכבת סרט עדיין לא מחוברת");
-          }}
-        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isLoading}
+          onClick={() => setError("בניית סצנות עדיין לא מחוברת")}
+        >
+          בנה סצנות
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isLoading || scenes.length === 0}
+          onClick={() => setError("רינדור סצנות עדיין לא מחובר")}
+        >
+          רנדר סצנות נבחרות
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={
+            isLoading ||
+            scenes.filter((s) => s.status === "rendered").length === 0
+          }
+          onClick={() => setError("הרכבת סרט עדיין לא מחוברת")}
+        >
+          הרכב סרט
+        </Button>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -208,44 +323,63 @@ export function FilmPanel({ orderId, filmProject, scenes }: FilmPanelProps) {
   );
 }
 
-// ── Helper ────────────────────────────────────────────────────────────────────
+// ── VoiceSampleCard ───────────────────────────────────────────────────────────
 
-function ActionButton({
+function VoiceSampleCard({
   label,
-  loadingLabel,
-  actionKey,
-  loading,
-  setLoading,
-  setError,
+  audioUrl,
+  voiceId,
+  isSelected,
+  onSelect,
+  selectLoading,
   disabled,
-  onClick,
 }: {
   label: string;
-  loadingLabel: string;
-  actionKey: string;
-  loading: string | null;
-  setLoading: (v: string | null) => void;
-  setError: (v: string | null) => void;
+  audioUrl: string | null;
+  voiceId: string | null;
+  isSelected: boolean;
+  onSelect: () => void;
+  selectLoading: boolean;
   disabled: boolean;
-  onClick: () => void;
 }) {
-  const isLoading = loading === actionKey;
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={disabled || loading !== null}
-      onClick={() => {
-        setLoading(actionKey);
-        setError(null);
-        try {
-          onClick();
-        } finally {
-          setLoading(null);
-        }
-      }}
+    <div
+      className={`rounded-lg border p-3 space-y-2 ${
+        isSelected
+          ? "border-green-400 bg-green-50"
+          : "border-border/60 bg-card"
+      }`}
     >
-      {isLoading ? loadingLabel : label}
-    </Button>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">{label}</p>
+        {isSelected && (
+          <span className="text-xs text-green-700 font-medium">✓ נבחר</span>
+        )}
+      </div>
+
+      {audioUrl ? (
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        <audio
+          controls
+          src={audioUrl}
+          className="w-full h-8"
+          style={{ minWidth: 0 }}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {voiceId ? "כתובת השמע אינה זמינה" : "לא נוצרה דגימה"}
+        </p>
+      )}
+
+      <Button
+        variant={isSelected ? "default" : "outline"}
+        size="sm"
+        className="w-full"
+        disabled={disabled || isSelected}
+        onClick={onSelect}
+      >
+        {selectLoading ? "בוחר..." : isSelected ? "קול זה נבחר" : "בחר קול זה"}
+      </Button>
+    </div>
   );
 }

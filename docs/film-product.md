@@ -78,6 +78,38 @@ film/
     └── build-render-hash.ts      ← Deterministic hash for render caching
 ```
 
+## Voice Sample Generation (implemented)
+
+### Flow
+1. Admin clicks "צור דגימות קול" in the Film panel
+2. `POST /api/admin/orders/[orderId]/film/voice-samples` is called
+3. Server fetches the first available album page text (up to 300 chars) as the sample
+   - Falls back to a static Hebrew sample sentence if no pages exist yet
+4. ElevenLabs TTS is called in parallel for `ELEVENLABS_VOICE_ID_A` and `ELEVENLABS_VOICE_ID_B`
+5. Both MP3s are uploaded to film storage
+6. `film_projects` is updated: `voice_sample_a_path`, `voice_sample_b_path`, `voice_sample_a_voice_id`, `voice_sample_b_voice_id`, `voice_choice_status = 'samples_ready'`
+7. Admin hears both samples via HTML audio players and clicks "בחר קול זה"
+8. `POST /api/admin/orders/[orderId]/film/select-voice` with `{ voiceId }` sets `selected_voice_id` and `voice_choice_status = 'chosen'`
+
+### Storage paths
+```
+films/{orderId}/{filmProjectId}/voice-samples/sample-a.mp3
+films/{orderId}/{filmProjectId}/voice-samples/sample-b.mp3
+```
+
+### API routes
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/admin/orders/[orderId]/film` | POST | Create film project |
+| `/api/admin/orders/[orderId]/film/voice-samples` | POST | Generate A/B voice samples |
+| `/api/admin/orders/[orderId]/film/select-voice` | POST | Persist chosen voice |
+
+### ElevenLabs model
+`eleven_multilingual_v2` — supports Hebrew natively.
+
+### Duration estimates
+ElevenLabs does not return audio duration in the TTS response. Duration is estimated at ~2.5 words/second. This is refined later when scene rendering computes actual audio lengths.
+
 ## Intended Pipeline (future)
 
 1. **Create film project** — admin clicks button, creates `film_projects` row

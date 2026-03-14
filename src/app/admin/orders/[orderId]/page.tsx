@@ -266,6 +266,23 @@ export default async function AdminOrderDetailPage({
     filmScenes = (scenesData ?? []) as unknown as FilmScene[];
   }
 
+  // Resolve signed URLs for voice samples (1-hour expiry, admin-only access)
+  const filmBucket = process.env.FILM_STORAGE_BUCKET ?? "films";
+  const [filmSampleAUrl, filmSampleBUrl] = await Promise.all([
+    filmProject?.voice_sample_a_path
+      ? adminClient.storage
+          .from(filmBucket)
+          .createSignedUrl(filmProject.voice_sample_a_path, 3600)
+          .then((r) => r.data?.signedUrl ?? null)
+      : Promise.resolve(null),
+    filmProject?.voice_sample_b_path
+      ? adminClient.storage
+          .from(filmBucket)
+          .createSignedUrl(filmProject.voice_sample_b_path, 3600)
+          .then((r) => r.data?.signedUrl ?? null)
+      : Promise.resolve(null),
+  ]);
+
   // ── Extract story evaluation from order ──
   interface RhymeEvaluation {
     rhyme_score: number;
@@ -519,6 +536,8 @@ export default async function AdminOrderDetailPage({
           orderId={orderId}
           filmProject={filmProject}
           scenes={filmScenes}
+          sampleAUrl={filmSampleAUrl}
+          sampleBUrl={filmSampleBUrl}
         />
       </Section>
 

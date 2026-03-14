@@ -55,6 +55,22 @@ export async function getFilmAssetUrl(
 }
 
 /**
+ * Upload a voice sample MP3 for a film project.
+ * Stored at: films/{orderId}/{filmProjectId}/voice-samples/{sampleName}.mp3
+ *
+ * @returns The stored path
+ */
+export async function uploadVoiceSample(
+  orderId: string,
+  filmProjectId: string,
+  sampleName: string,
+  audioBuffer: Buffer
+): Promise<string> {
+  const path = `films/${orderId}/${filmProjectId}/voice-samples/${sampleName}.mp3`;
+  return uploadFilmAsset(path, audioBuffer, "audio/mpeg");
+}
+
+/**
  * Delete a film asset from storage.
  */
 export async function deleteFilmAsset(path: string): Promise<void> {
