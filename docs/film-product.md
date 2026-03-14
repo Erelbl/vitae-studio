@@ -183,6 +183,69 @@ This is only an initial estimate. Actual duration will be refined when real audi
 |-------|--------|-------------|
 | `/api/admin/orders/[orderId]/film/build-scenes` | POST | Generate scenes from album pages |
 
+## Scene Rendering (implemented)
+
+### How Scenes Are Rendered
+
+Rendering uses [Remotion](https://remotion.dev) v4 — a headless Chrome-based React video renderer.
+
+**⚠️ Environment requirement**: Rendering requires a Node.js process with Chrome available (local `npm run dev` / `npm start`, or a VPS/EC2). It does **not** work on Vercel serverless functions. For production cloud rendering, migrate to `@remotion/lambda`.
+
+### Flow
+
+1. Admin selects scenes (or renders all) in the Film panel
+2. `POST /api/admin/orders/[orderId]/film/render-scenes` or `render-scene` is called
+3. Server:
+   - Fetches scene row from `film_scenes`
+   - Resolves page image signed URLs (1-hour) from `page_images` slot 1 → `photos.illustration_storage_path`, falling back to `pages.illustration_storage_path`
+   - Builds a `renderHash` (SHA-256 prefix of narrationText + voiceId + motionPreset + transitions + pageIds)
+   - Skips scenes whose hash hasn't changed and status is already `rendered` (batch mode)
+   - Bundles the Remotion composition (webpack, ~30–60s first time, cached per process)
+   - Calls `renderMedia()` → H.264 MP4 to temp file
+   - Calls `renderStill()` at frame 15% of the scene → JPEG thumbnail to temp file
+   - Uploads both to film storage
+   - Updates `film_scenes`: status → `rendered`, `rendered_scene_path`, `thumbnail_path`, `render_hash`
+
+### Remotion Composition
+
+`src/remotion/SceneComposition.tsx` — registered as `id: "Scene"` (1920×1080, 30fps default):
+- **Ken Burns motion**: `interpolate()` on `useCurrentFrame()` — scale 1.0→1.08, 2% pan over scene duration. Uses Remotion APIs (not CSS animations — those freeze in frame renders).
+- **Fade transitions**: 15-frame (0.5s) opacity envelope on both ends when `transitionIn/Out = "fade"`
+- **RTL text overlay**: Hebrew font stack, `direction: rtl`, gradient background from bottom
+
+### Storage Paths
+
+```
+films/{orderId}/{filmProjectId}/scenes/{sceneId}/scene.mp4
+films/{orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
+```
+
+### API Routes
+
+| Route | Method | Body | Description |
+|-------|--------|------|-------------|
+| `/api/admin/orders/[orderId]/film/render-scene` | POST | `{ sceneId: string }` | Render single scene |
+| `/api/admin/orders/[orderId]/film/render-scenes` | POST | `{ sceneIds?: string[] }` | Render batch (all if omitted) |
+
+### Render Hash Caching
+
+`buildRenderHash()` computes a 16-char SHA-256 prefix from: `narrationText`, `voiceId`, `motionPreset`, `transitionIn`, `transitionOut`, `pageIds`. Batch rendering skips scenes whose hash matches the stored value and status is `rendered`.
+
+### Admin UI
+
+- Per-scene checkbox for multi-select
+- "Render Selected (N)" button for batch render
+- Per-scene ▶ render button (↺ re-render if already rendered)
+- 40×28px thumbnail preview when rendered
+- Color-coded status badges: pending / rendering / rendered / error
+- Warning note about Node.js + Chrome requirement
+
+### Dependencies
+
+`@remotion/bundler` and `@remotion/renderer` are in `package.json`. Both are dynamically imported inside service functions to prevent parse-time failures on Vercel.
+
+---
+
 ## Pipeline Status
 
 1. **Create film project** — implemented
@@ -190,7 +253,7 @@ This is only an initial estimate. Actual duration will be refined when real audi
 3. **Voice selection** — implemented (A/B samples, admin picks)
 4. **TTS overrides** — implemented (pronunciation fixes)
 5. **Generate narration** — not yet implemented (per-scene TTS)
-6. **Render scenes** — not yet implemented
+6. **Render scenes** — implemented (local/VPS only; see Remotion section above)
 7. **Assemble film** — not yet implemented
 8. **Deliver** — not yet implemented
 

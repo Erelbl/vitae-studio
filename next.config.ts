@@ -4,6 +4,20 @@ import createNextIntlPlugin from "next-intl/plugin";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
+  // Remotion packages use native binaries (Puppeteer/Chrome compositor) and
+  // esbuild — they must NOT be bundled by Next.js/Turbopack.
+  serverExternalPackages: [
+    "@remotion/renderer",
+    "@remotion/bundler",
+    "@remotion/compositor-win32-x64-msvc",
+    "@remotion/compositor-linux-x64-gnu",
+    "@remotion/compositor-linux-x64-musl",
+    "@remotion/compositor-linux-arm64-gnu",
+    "@remotion/compositor-linux-arm64-musl",
+    "@remotion/compositor-darwin-x64",
+    "@remotion/compositor-darwin-arm64",
+    "esbuild",
+  ],
   async headers() {
     return [
       {

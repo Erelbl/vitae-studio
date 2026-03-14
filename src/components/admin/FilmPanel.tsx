@@ -63,6 +63,8 @@ interface FilmPanelProps {
   scenes: FilmScene[];
   sampleAUrl: string | null;
   sampleBUrl: string | null;
+  /** Pre-resolved signed thumbnail URLs keyed by scene id. */
+  sceneThumbnailUrls?: Record<string, string | null>;
 }
 
 export function FilmPanel({
@@ -71,10 +73,14 @@ export function FilmPanel({
   scenes,
   sampleAUrl,
   sampleBUrl,
+  sceneThumbnailUrls = {},
 }: FilmPanelProps) {
   const router = useRouter();
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSceneIds, setSelectedSceneIds] = useState<Set<string>>(
+    new Set()
+  );
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -91,20 +97,6 @@ export function FilmPanel({
     });
   }
 
-  async function handleGenerateVoiceSamples() {
-    await runAction("voice-samples", async () => {
-      const res = await fetch(
-        `/api/admin/orders/${orderId}/film/voice-samples`,
-        { method: "POST" }
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "שגיאה ביצירת דגימות קול");
-      }
-      router.refresh();
-    });
-  }
-
   async function handleBuildScenes() {
     await runAction("build-scenes", async () => {
       const res = await fetch(
@@ -114,6 +106,58 @@ export function FilmPanel({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "שגיאה בבניית סצנות");
+      }
+      router.refresh();
+    });
+  }
+
+  async function handleRenderScene(sceneId: string) {
+    await runAction(`render-${sceneId}`, async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/render-scene`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sceneId }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ברינדור הסצנה");
+      }
+      router.refresh();
+    });
+  }
+
+  async function handleRenderSelected() {
+    const ids = [...selectedSceneIds];
+    await runAction("render-selected", async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/render-scenes`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sceneIds: ids }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ברינדור הסצנות");
+      }
+      setSelectedSceneIds(new Set());
+      router.refresh();
+    });
+  }
+
+  async function handleGenerateVoiceSamples() {
+    await runAction("voice-samples", async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/voice-samples`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ביצירת דגימות קול");
       }
       router.refresh();
     });
@@ -149,6 +193,26 @@ export function FilmPanel({
     }
   }
 
+  function toggleSceneSelection(sceneId: string) {
+    setSelectedSceneIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sceneId)) {
+        next.delete(sceneId);
+      } else {
+        next.add(sceneId);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedSceneIds.size === scenes.length) {
+      setSelectedSceneIds(new Set());
+    } else {
+      setSelectedSceneIds(new Set(scenes.map((s) => s.id)));
+    }
+  }
+
   const isLoading = loadingAction !== null;
 
   // ── Empty state ────────────────────────────────────────────────────────────
@@ -177,6 +241,8 @@ export function FilmPanel({
   const hasSamples =
     filmProject.voice_choice_status === "samples_ready" ||
     filmProject.voice_choice_status === "chosen";
+
+  const renderedSceneCount = scenes.filter((s) => s.status === "rendered").length;
 
   return (
     <div className="space-y-5">
@@ -209,7 +275,7 @@ export function FilmPanel({
         <div className="text-sm text-muted-foreground">
           {scenes.length} סצנות
           {" · "}
-          {scenes.filter((s) => s.status === "rendered").length} מרונדרות
+          {renderedSceneCount} מרונדרות
           {" · "}
           {Math.round(
             scenes.reduce((sum, s) => sum + (s.duration_ms ?? 0), 0) / 1000
@@ -333,21 +399,26 @@ export function FilmPanel({
             ? "בנה סצנות מחדש"
             : "בנה סצנות"}
         </Button>
+
+        {scenes.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isLoading || selectedSceneIds.size === 0}
+            onClick={handleRenderSelected}
+          >
+            {loadingAction === "render-selected"
+              ? "מרנדר..."
+              : selectedSceneIds.size > 0
+              ? `רנדר ${selectedSceneIds.size} סצנות`
+              : "רנדר סצנות נבחרות"}
+          </Button>
+        )}
+
         <Button
           variant="outline"
           size="sm"
-          disabled={isLoading || scenes.length === 0}
-          onClick={() => setError("רינדור סצנות עדיין לא מחובר")}
-        >
-          רנדר סצנות נבחרות
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={
-            isLoading ||
-            scenes.filter((s) => s.status === "rendered").length === 0
-          }
+          disabled={isLoading || renderedSceneCount === 0}
           onClick={() => setError("הרכבת סרט עדיין לא מחוברת")}
         >
           הרכב סרט
@@ -357,12 +428,39 @@ export function FilmPanel({
       {/* ── Scene list ────────────────────────────────────────────────────── */}
       {scenes.length > 0 && (
         <div className="rounded-lg border border-border/60 p-4 space-y-3">
-          <p className="text-sm font-medium">סצנות ({scenes.length})</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">סצנות ({scenes.length})</p>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={toggleSelectAll}
+            >
+              {selectedSceneIds.size === scenes.length
+                ? "בטל בחירה"
+                : "בחר הכל"}
+            </button>
+          </div>
+
           <div className="space-y-1">
             {scenes.map((scene) => (
-              <SceneRow key={scene.id} scene={scene} />
+              <SceneRow
+                key={scene.id}
+                scene={scene}
+                thumbnailUrl={sceneThumbnailUrls[scene.id] ?? null}
+                isSelected={selectedSceneIds.has(scene.id)}
+                onToggleSelect={() => toggleSceneSelection(scene.id)}
+                onRender={() => handleRenderScene(scene.id)}
+                isRendering={loadingAction === `render-${scene.id}`}
+                disabled={isLoading}
+              />
             ))}
           </div>
+
+          {renderedSceneCount > 0 && (
+            <p className="text-xs text-muted-foreground pt-1">
+              ⚠️ רינדור מצריך סביבת Node.js עם Chrome. אינו פועל על Vercel serverless.
+            </p>
+          )}
         </div>
       )}
 
@@ -380,44 +478,118 @@ const SCENE_STATUS_LABELS: Record<string, string> = {
   error: "שגיאה",
 };
 
-function SceneRow({ scene }: { scene: FilmScene }) {
+const SCENE_STATUS_COLORS: Record<string, string> = {
+  pending: "text-muted-foreground",
+  narration_ready: "text-blue-600",
+  rendered: "text-green-600",
+  error: "text-red-600",
+};
+
+function SceneRow({
+  scene,
+  thumbnailUrl,
+  isSelected,
+  onToggleSelect,
+  onRender,
+  isRendering,
+  disabled,
+}: {
+  scene: FilmScene;
+  thumbnailUrl: string | null;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  onRender: () => void;
+  isRendering: boolean;
+  disabled: boolean;
+}) {
   const textPreview = scene.narration_text
-    ? scene.narration_text.length > 60
-      ? scene.narration_text.slice(0, 60) + "…"
+    ? scene.narration_text.length > 55
+      ? scene.narration_text.slice(0, 55) + "…"
       : scene.narration_text
     : "—";
 
   const durationSec =
     scene.duration_ms != null ? (scene.duration_ms / 1000).toFixed(1) : "—";
 
+  const statusColor =
+    SCENE_STATUS_COLORS[scene.status] ?? "text-muted-foreground";
+
   return (
-    <div className="flex items-center gap-3 text-xs py-1.5 border-b border-border/40 last:border-b-0">
-      <span className="text-muted-foreground shrink-0 w-6 text-center font-mono">
+    <div className="flex items-center gap-2 text-xs py-1.5 border-b border-border/40 last:border-b-0">
+      {/* Checkbox */}
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={onToggleSelect}
+        disabled={disabled}
+        className="shrink-0 h-3.5 w-3.5 cursor-pointer"
+        aria-label={`בחר סצנה ${scene.scene_order}`}
+      />
+
+      {/* Thumbnail */}
+      <div className="shrink-0 w-10 h-7 rounded overflow-hidden bg-muted/50 border border-border/30">
+        {thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={thumbnailUrl}
+            alt={`תמונה ממוזערת — סצנה ${scene.scene_order}`}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-muted-foreground/50 text-[8px]">
+            {scene.status === "rendered" ? "?" : "—"}
+          </div>
+        )}
+      </div>
+
+      {/* Order */}
+      <span className="text-muted-foreground shrink-0 w-5 text-center font-mono">
         {scene.scene_order}
       </span>
+
+      {/* Spread key */}
       <span className="text-muted-foreground shrink-0 w-20 truncate font-mono">
         {scene.page_spread_key ?? "—"}
       </span>
+
+      {/* Text preview */}
       <span className="flex-1 truncate" dir="rtl">
         {scene.title ? (
           <span className="font-medium">{scene.title} — </span>
         ) : null}
         {textPreview}
       </span>
-      <span className="text-muted-foreground shrink-0 w-14 text-end">
+
+      {/* Duration */}
+      <span className="text-muted-foreground shrink-0 w-12 text-end">
         {durationSec}s
       </span>
-      <span
-        className={`shrink-0 w-16 text-end ${
-          scene.status === "error"
-            ? "text-red-600"
-            : scene.status === "rendered"
-            ? "text-green-600"
-            : "text-muted-foreground"
-        }`}
-      >
+
+      {/* Status */}
+      <span className={`shrink-0 w-16 text-end ${statusColor}`}>
         {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
       </span>
+
+      {/* Render button */}
+      <button
+        type="button"
+        onClick={onRender}
+        disabled={disabled || isRendering}
+        className="shrink-0 h-6 px-2 rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        title={scene.status === "rendered" ? "רנדר מחדש" : "רנדר"}
+      >
+        {isRendering ? "…" : scene.status === "rendered" ? "↺" : "▶"}
+      </button>
+
+      {/* Error hint */}
+      {scene.status === "error" && scene.error_message && (
+        <span
+          className="shrink-0 text-red-500 cursor-help"
+          title={scene.error_message}
+        >
+          ⚠
+        </span>
+      )}
     </div>
   );
 }

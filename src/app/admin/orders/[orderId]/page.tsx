@@ -266,8 +266,25 @@ export default async function AdminOrderDetailPage({
     filmScenes = (scenesData ?? []) as unknown as FilmScene[];
   }
 
-  // Resolve signed URLs for voice samples (1-hour expiry, admin-only access)
+  // Resolve signed URLs for voice samples + scene thumbnails (1-hour expiry, admin-only access)
   const filmBucket = process.env.FILM_STORAGE_BUCKET ?? "films";
+
+  const sceneThumbnailUrls: Record<string, string | null> = {};
+  if (filmScenes.length > 0) {
+    await Promise.all(
+      filmScenes.map(async (scene) => {
+        if (scene.thumbnail_path) {
+          const { data } = await adminClient.storage
+            .from(filmBucket)
+            .createSignedUrl(scene.thumbnail_path, 3600);
+          sceneThumbnailUrls[scene.id] = data?.signedUrl ?? null;
+        } else {
+          sceneThumbnailUrls[scene.id] = null;
+        }
+      })
+    );
+  }
+
   const [filmSampleAUrl, filmSampleBUrl] = await Promise.all([
     filmProject?.voice_sample_a_path
       ? adminClient.storage
@@ -538,6 +555,7 @@ export default async function AdminOrderDetailPage({
           scenes={filmScenes}
           sampleAUrl={filmSampleAUrl}
           sampleBUrl={filmSampleBUrl}
+          sceneThumbnailUrls={sceneThumbnailUrls}
         />
       </Section>
 
