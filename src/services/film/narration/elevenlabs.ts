@@ -1,19 +1,17 @@
 import { filmEnv } from "@/lib/film-env";
 
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1";
-// eleven_turbo_v2_5 accepts an explicit language_code, which prevents the model
-// from defaulting to the voice's training language (e.g. Arabic or English)
-// when the input text is Hebrew. eleven_multilingual_v2 ignores language_code
-// and relies on auto-detection, which is the root cause of this bug.
-const DEFAULT_MODEL_ID = "eleven_turbo_v2_5";
+// eleven_v3 is ElevenLabs' latest model and handles Hebrew natively via
+// automatic language detection from the input text. It does not accept a
+// language_code parameter (causes 422). eleven_turbo_v2_5 / eleven_multilingual_v2
+// both had issues with non-Hebrew-trained voices defaulting to their own language.
+const FILM_MODEL_ID = "eleven_v3";
 
 export interface TextToSpeechInput {
   text: string;
   voiceId: string;
-  /** Optional model override. Defaults to "eleven_turbo_v2_5" */
+  /** Optional model override. Defaults to "eleven_v3". */
   modelId?: string;
-  /** ISO 639-1 language code. Defaults to "he" (Hebrew). */
-  languageCode?: string;
 }
 
 export interface TextToSpeechResult {
@@ -24,15 +22,14 @@ export interface TextToSpeechResult {
 
 /**
  * Converts text to speech using the ElevenLabs API.
- * Uses eleven_multilingual_v2 for Hebrew support.
+ * Uses eleven_v3 for reliable Hebrew support via automatic language detection.
  * Returns the raw MP3 audio buffer.
  */
 export async function textToSpeech(
   input: TextToSpeechInput
 ): Promise<TextToSpeechResult> {
   const apiKey = filmEnv.elevenLabsApiKey; // throws if missing
-  const modelId = input.modelId ?? DEFAULT_MODEL_ID;
-  const languageCode = input.languageCode ?? "he";
+  const modelId = input.modelId ?? FILM_MODEL_ID;
 
   const response = await fetch(
     `${ELEVENLABS_BASE_URL}/text-to-speech/${input.voiceId}`,
@@ -46,7 +43,8 @@ export async function textToSpeech(
       body: JSON.stringify({
         text: input.text,
         model_id: modelId,
-        language_code: languageCode,
+        // NOTE: language_code is intentionally omitted — eleven_v3 rejects it
+        // and detects Hebrew automatically from the input text.
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
@@ -57,10 +55,8 @@ export async function textToSpeech(
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => "");
-    const hint = buildErrorHint(response.status, errorBody);
-    throw new Error(
-      `ElevenLabs TTS failed (${response.status}): ${hint}`
-    );
+    const hint = buildErrorHint(response.status, errorBody, modelId);
+    throw new Error(`ElevenLabs TTS failed (${response.status}): ${hint}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();
@@ -83,9 +79,11 @@ function estimateDurationMs(text: string): number {
   return Math.round((words / 2.5) * 1000);
 }
 
-function buildErrorHint(status: number, body: string): string {
-  if (status === 401) return "Invalid or missing ELEVENLABS_API_KEY";
-  if (status === 422) return `Unprocessable — text may be too long or voice invalid. ${body}`;
-  if (status === 429) return "Rate limit reached — try again later";
-  return body.slice(0, 200) || `HTTP ${status}`;
+function buildErrorHint(status: number, body: string, modelId: string): string {
+  const modelTag = `model=${modelId}`;
+  if (status === 401) return `Invalid or missing ELEVENLABS_API_KEY (${modelTag})`;
+  if (status === 422)
+    return `Unprocessable — check voice ID or model compatibility (${modelTag}). ${body.slice(0, 200)}`;
+  if (status === 429) return `Rate limit reached — try again later (${modelTag})`;
+  return `${body.slice(0, 200) || `HTTP ${status}`} (${modelTag})`;
 }
