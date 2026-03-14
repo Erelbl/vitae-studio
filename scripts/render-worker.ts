@@ -24,7 +24,11 @@
  *      - REMOTION_BUNDLE_PATH (optional, defaults to .remotion-bundle/)
  */
 
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+// Next.js stores secrets in .env.local; dotenv/config only reads .env by default.
+// Load .env.local first (overrides .env), then .env as a fallback for defaults.
+loadEnv({ path: ".env.local" });
+loadEnv({ path: ".env" });
 import { createClient } from "@supabase/supabase-js";
 import { renderScene } from "@/services/film/render/render-scene";
 
