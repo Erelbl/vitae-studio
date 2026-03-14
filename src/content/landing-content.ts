@@ -8,9 +8,9 @@ export const HERO = {
   title: "סיפור חיים",
   titleHighlight: "בחרוזים",
   subtitle:
-    "סיפור החיים של היקרים לכם הופך לספר אישי ומקבל צבע וחריזה מרגשת ויישמר כמזכרת לכל החיים. זו הדרך הכי יפה להגיד תודה ולוודא שהסיפור שלהם ימשיך לדורות הבאים.",
+    "סיפור החיים של היקרים לכם הופך לספר אישי ומקבל צבע וחריזה מרגשת ויישמר כמזכרת לכל החיים. הדרך הכי יפה להגיד תודה ולוודא שהסיפור שלהם ימשיך לדורות הבאים.",
   ctaLabel: "בואו נכתוב את הסיפור שלכם",
-  trustNote: "תהליך פשוט ומודרך",
+  trustNote: "",
   // Hero visual: replace src with a final mockup when ready
   heroImage: {
     src: "/gallery/page1.png",
@@ -20,7 +20,7 @@ export const HERO = {
 
 export const HOW_IT_WORKS = {
   title: "איך זה עובד?",
-  subtitle: "פחות מ-15 דקות עבודה ויש לכם סיפור בחרוזים",
+  subtitle: "אתם תפנו רק 15 דקות למילוי השאלון ואנחנו כבר ניקח את זה מכאן",
   steps: [
     {
       num: "1",
@@ -99,7 +99,7 @@ export const GALLERY = {
 export const FOUNDER = {
   sectionLabel: "מאחורי הקלעים",
   name: "דור אלירז",
-  title: "מעצבת רב-תחומית ויוצרת חוויות",
+  title: "מעצבת רב תחומית ויוצרת חוויות",
   // Place the founder photo at public/assets/founder.jpeg
   image: {
     src: "/assets/founder.jpeg",
@@ -136,9 +136,9 @@ export const FOOTER = {
 };
 
 export const IMAGE_COMPARISON = {
-  sectionLabel: "הקסם מאחורי האיורים",
+  sectionLabel: "התמונות שלכם מקבלות צבע וחיים",
   title: "מתמונה לאיור",
-  subtitle: "גרור לגלות את השינוי",
+  subtitle: "גררו כדי לגלות את התמונה המקורית",
   beforeLabel: "תמונה מקורית",
   afterLabel: "איור בצבעי מים",
   // Images from /public/examples/ — replace with real examples when ready
