@@ -17,11 +17,11 @@
  *
  * Prerequisites:
  *   1. Chrome installed on the machine
- *   2. Remotion bundle built: npm run bundle:remotion
- *   3. Environment variables set (.env.local or exported):
+ *   2. Remotion bundle built:  npm run bundle:remotion  (outputs to .remotion-bundle/)
+ *   3. Environment variables set in .env.local (loaded automatically):
  *      - NEXT_PUBLIC_SUPABASE_URL
  *      - SUPABASE_SERVICE_ROLE_KEY
- *      - REMOTION_BUNDLE_PATH (optional, defaults to .remotion-bundle/)
+ *      - REMOTION_BUNDLE_PATH (optional — overrides default .remotion-bundle/ lookup)
  */
 
 import { config as loadEnv } from "dotenv";

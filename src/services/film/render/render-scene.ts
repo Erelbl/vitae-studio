@@ -46,33 +46,44 @@ export interface RenderSceneResult {
 // @remotion/bundler is NOT imported at runtime — it depends on @rspack/binding
 // (a native binary) that is not available on Vercel or in some CI environments.
 //
-// Instead, the Remotion composition is built once with:
-//   npm run bundle:remotion   →   outputs to .remotion-bundle/
+// The Remotion composition is built once via:
+//   npm run bundle:remotion   →   outputs to REMOTION_BUNDLE_DIR/
 //
 // At render time we pass that directory to @remotion/renderer as `serveUrl`.
 // Remotion's renderer starts its own internal HTTP server from the local path.
 //
-// Override the path with the REMOTION_BUNDLE_PATH environment variable if needed.
+// REMOTION_BUNDLE_DIR must match the --out flag in package.json's bundle:remotion script.
+// Override with the REMOTION_BUNDLE_PATH env variable when running from a non-standard CWD.
+
+/** Default bundle output directory — must match `--out` in package.json bundle:remotion. */
+const REMOTION_BUNDLE_DIR = ".remotion-bundle";
 
 function getBundlePath(): string {
-  const bundlePath =
+  const bundleDir =
     process.env.REMOTION_BUNDLE_PATH ??
-    path.join(process.cwd(), ".remotion-bundle");
+    path.join(process.cwd(), REMOTION_BUNDLE_DIR);
 
-  if (!fsSync.existsSync(bundlePath)) {
+  // Check for index.html specifically — `remotion bundle` always creates this file.
+  // Checking the directory alone would succeed even if the bundle is empty or incomplete.
+  const indexHtml = path.join(bundleDir, "index.html");
+
+  if (!fsSync.existsSync(indexHtml)) {
+    const envInfo = process.env.REMOTION_BUNDLE_PATH
+      ? `\n  REMOTION_BUNDLE_PATH : ${process.env.REMOTION_BUNDLE_PATH}`
+      : `\n  Default bundle dir   : ${bundleDir}`;
+
     throw new Error(
       `[film-render] Remotion bundle not found.\n` +
-        `  Expected path : ${bundlePath}\n` +
-        `  process.cwd() : ${process.cwd()}\n` +
-        `  The bundle is created by "npm run build" (which runs bundle:remotion first).\n` +
-        `  If you are running outside of a full build (e.g. "next dev"), run:\n` +
+        `  Looking for : ${indexHtml}\n` +
+        `  process.cwd(): ${process.cwd()}${envInfo}\n` +
+        `  Build the bundle first:\n` +
         `    npm run bundle:remotion\n` +
-        `  To use a custom bundle location set the REMOTION_BUNDLE_PATH env variable.\n` +
-        `  Note: rendering requires Chrome — it will not work on Vercel serverless.`
+        `  To use a custom location set REMOTION_BUNDLE_PATH in .env.local.\n` +
+        `  Note: rendering requires Chrome — it does not work on Vercel serverless.`
     );
   }
 
-  return bundlePath;
+  return bundleDir;
 }
 
 // ── Image URL resolution ──────────────────────────────────────────────────────
@@ -337,7 +348,7 @@ export async function renderScene(
     const raw = err instanceof Error ? err.message : String(err);
     // Surface actionable diagnostics for the two most common failure modes.
     let message = raw;
-    if (raw.includes("REMOTION_BUNDLE_PATH") || raw.includes(".remotion-bundle")) {
+    if (raw.includes("REMOTION_BUNDLE_PATH") || raw.includes(REMOTION_BUNDLE_DIR)) {
       // Already a clear message from getBundlePath() — pass through as-is.
     } else if (
       raw.includes("Chrome") ||
