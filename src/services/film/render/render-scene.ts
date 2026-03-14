@@ -2,16 +2,21 @@
  * Film scene renderer — Node.js only.
  *
  * ⚠️  ENVIRONMENT REQUIREMENT
- * This module uses @remotion/bundler (webpack) and @remotion/renderer (Puppeteer /
- * headless Chrome). It works in:
+ * This module uses @remotion/renderer (Puppeteer / headless Chrome). It works in:
  *   - Local `npm run dev` / `npm run start`
  *   - A VPS or EC2 instance with Chrome installed
  *
  * It does NOT work on Vercel serverless functions (no bundled Chrome).
  * For production cloud rendering, migrate to @remotion/lambda (AWS Lambda).
+ *
+ * ⚠️  PRE-BUILD REQUIREMENT
+ * The Remotion composition must be bundled before rendering. Run once:
+ *   npm run bundle:remotion
+ * Or set REMOTION_BUNDLE_PATH to point to an existing bundle directory.
  */
 
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as os from "os";
 import * as path from "path";
 
@@ -19,7 +24,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildRenderHash } from "@/services/film/utils/build-render-hash";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
 import { filmEnv } from "@/lib/film-env";
-import type { SceneCompositionProps } from "@/remotion/SceneComposition";
 
 export interface RenderSceneInput {
   sceneId: string;
@@ -38,29 +42,32 @@ export interface RenderSceneResult {
   renderHash: string;
 }
 
-// ── Bundle cache (per process) ────────────────────────────────────────────────
-// Caches the Remotion webpack bundle URL so subsequent renders skip the
-// ~30-60 s webpack step.
-let cachedBundleUrl: string | null = null;
+// ── Pre-built bundle path ─────────────────────────────────────────────────────
+// @remotion/bundler is NOT imported at runtime — it depends on @rspack/binding
+// (a native binary) that is not available on Vercel or in some CI environments.
+//
+// Instead, the Remotion composition is built once with:
+//   npm run bundle:remotion   →   outputs to .remotion-bundle/
+//
+// At render time we pass that directory to @remotion/renderer as `serveUrl`.
+// Remotion's renderer starts its own internal HTTP server from the local path.
+//
+// Override the path with the REMOTION_BUNDLE_PATH environment variable if needed.
 
-async function getBundle(): Promise<string> {
-  if (cachedBundleUrl) return cachedBundleUrl;
+function getBundlePath(): string {
+  const bundlePath =
+    process.env.REMOTION_BUNDLE_PATH ??
+    path.join(process.cwd(), ".remotion-bundle");
 
-  // Dynamic import so this module can be imported without failing on Vercel
-  // (the import will still fail at call time, but not at module parse time).
-  const { bundle } = await import("@remotion/bundler");
+  if (!fsSync.existsSync(bundlePath)) {
+    throw new Error(
+      `[film-render] Remotion bundle not found at "${bundlePath}". ` +
+        `Run "npm run bundle:remotion" to build it, or set REMOTION_BUNDLE_PATH ` +
+        `to the path of an existing Remotion bundle directory.`
+    );
+  }
 
-  const entryPoint = path.join(process.cwd(), "src/remotion/index.ts");
-  console.log("[film-render] Bundling Remotion composition from", entryPoint);
-
-  const bundleUrl = await bundle({
-    entryPoint,
-    onProgress: (p) => process.stdout.write(`\r[film-render] Bundle: ${p}%`),
-  });
-
-  process.stdout.write("\n");
-  cachedBundleUrl = bundleUrl;
-  return bundleUrl;
+  return bundlePath;
 }
 
 // ── Image URL resolution ──────────────────────────────────────────────────────
@@ -224,8 +231,8 @@ export async function renderScene(
         (sceneRow.transition_out as string) === "fade" ? "fade" : "none",
     };
 
-    // Get bundle
-    const bundleUrl = await getBundle();
+    // Resolve pre-built bundle path (throws with a clear message if not found)
+    const serveUrl = getBundlePath();
 
     // Dynamic import of renderer (avoids parse-time failure on Vercel)
     const { renderMedia, renderStill, selectComposition } = await import(
@@ -234,7 +241,7 @@ export async function renderScene(
 
     // Select composition and override duration
     const composition = await selectComposition({
-      serveUrl: bundleUrl,
+      serveUrl,
       id: "Scene",
       inputProps: compositionProps,
     });
@@ -265,7 +272,7 @@ export async function renderScene(
       );
       await renderMedia({
         composition: compositionWithDuration,
-        serveUrl: bundleUrl,
+        serveUrl,
         codec: "h264",
         outputLocation: tmpVideo,
         inputProps: compositionProps,
@@ -276,7 +283,7 @@ export async function renderScene(
       console.log(`[film-render] Rendering thumbnail at frame ${thumbFrame}`);
       await renderStill({
         composition: compositionWithDuration,
-        serveUrl: bundleUrl,
+        serveUrl,
         output: tmpThumb,
         imageFormat: "jpeg",
         frame: thumbFrame,
@@ -322,7 +329,21 @@ export async function renderScene(
       await fs.unlink(tmpThumb).catch(() => {});
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Render failed";
+    const raw = err instanceof Error ? err.message : String(err);
+    // Surface actionable diagnostics for the two most common failure modes.
+    let message = raw;
+    if (raw.includes("REMOTION_BUNDLE_PATH") || raw.includes(".remotion-bundle")) {
+      // Already a clear message from getBundlePath() — pass through as-is.
+    } else if (
+      raw.includes("Chrome") ||
+      raw.includes("Chromium") ||
+      raw.includes("puppeteer") ||
+      raw.includes("browser")
+    ) {
+      message = `[film-render] Chrome not found. Rendering requires a Node.js environment with Chrome installed (not available on Vercel serverless). Original error: ${raw}`;
+    } else {
+      message = `[film-render] Render failed: ${raw}`;
+    }
     console.error(`[film-render] Scene ${sceneId} failed: ${message}`);
 
     await adminClient
