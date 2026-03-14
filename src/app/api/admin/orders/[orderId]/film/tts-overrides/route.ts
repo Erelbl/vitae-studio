@@ -3,14 +3,31 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { TtsOverride } from "@/types/film";
 
-async function resolveFilmProject(orderId: string) {
+/**
+ * Checks that a film project exists for this order and returns its id.
+ * Intentionally selects only id + order_id — NOT tts_overrides_json — so
+ * that this lookup never fails due to a missing column when a migration
+ * hasn't been applied yet.
+ */
+async function resolveFilmProjectId(
+  orderId: string
+): Promise<{ id: string } | null> {
   const adminClient = createAdminClient();
-  const { data } = await adminClient
+  const { data, error } = await adminClient
     .from("film_projects")
-    .select("id, order_id, tts_overrides_json")
+    .select("id, order_id")
     .eq("order_id", orderId)
-    .single();
-  return data;
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      `[tts-overrides] DB error resolving film project for order ${orderId}: ` +
+        `${error.message} (code: ${error.code})`
+    );
+    return null;
+  }
+
+  return data ? { id: data.id as string } : null;
 }
 
 function validateOverrides(raw: unknown): TtsOverride[] | null {
@@ -33,20 +50,40 @@ export async function GET(
   { params }: { params: Promise<{ orderId: string }> }
 ) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user || user.app_metadata?.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { orderId } = await params;
-  const filmProject = await resolveFilmProject(orderId);
+  const project = await resolveFilmProjectId(orderId);
 
-  if (!filmProject) {
-    return NextResponse.json({ error: "No film project found for this order" }, { status: 404 });
+  if (!project) {
+    return NextResponse.json(
+      { error: "No film project found for this order. Create one first." },
+      { status: 404 }
+    );
+  }
+
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
+    .from("film_projects")
+    .select("tts_overrides_json")
+    .eq("id", project.id)
+    .single();
+
+  if (error) {
+    console.error(`[tts-overrides] GET error for project ${project.id}: ${error.message}`);
+    return NextResponse.json(
+      { error: `Failed to read overrides: ${error.message}` },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
-    overrides: (filmProject.tts_overrides_json as TtsOverride[] | null) ?? [],
+    overrides: (data?.tts_overrides_json as TtsOverride[] | null) ?? [],
   });
 }
 
@@ -60,7 +97,9 @@ export async function PATCH(
   { params }: { params: Promise<{ orderId: string }> }
 ) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user || user.app_metadata?.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -74,17 +113,25 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const overrides = validateOverrides((body as Record<string, unknown>)?.overrides);
+  const overrides = validateOverrides(
+    (body as Record<string, unknown>)?.overrides
+  );
   if (overrides === null) {
     return NextResponse.json(
-      { error: "overrides must be an array of { original: string, spoken: string } (max 200 entries)" },
+      {
+        error:
+          "overrides must be an array of { original: string, spoken: string } (max 200 entries)",
+      },
       { status: 400 }
     );
   }
 
-  const filmProject = await resolveFilmProject(orderId);
-  if (!filmProject) {
-    return NextResponse.json({ error: "No film project found for this order" }, { status: 404 });
+  const project = await resolveFilmProjectId(orderId);
+  if (!project) {
+    return NextResponse.json(
+      { error: "No film project found for this order. Create one first." },
+      { status: 404 }
+    );
   }
 
   const adminClient = createAdminClient();
@@ -94,11 +141,14 @@ export async function PATCH(
       tts_overrides_json: overrides,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", filmProject.id as string)
+    .eq("id", project.id)
     .select("id, tts_overrides_json")
     .single();
 
   if (error || !updated) {
+    console.error(
+      `[tts-overrides] PATCH error for project ${project.id}: ${error?.message}`
+    );
     return NextResponse.json(
       { error: error?.message ?? "Failed to save overrides" },
       { status: 500 }
