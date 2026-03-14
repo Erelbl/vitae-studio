@@ -87,6 +87,8 @@ export interface VoiceSelectionResult {
 
 export const FILM_SCENE_STATUSES = [
   "pending",
+  "queued",
+  "rendering",
   "narration_ready",
   "rendered",
   "error",

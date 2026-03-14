@@ -7,7 +7,9 @@
     "build": "remotion bundle src/remotion/index.ts --out .remotion-bundle && next build",
     "start": "next start",
     "lint": "eslint",
-    "bundle:remotion": "remotion bundle src/remotion/index.ts --out .remotion-bundle"
+    "bundle:remotion": "remotion bundle src/remotion/index.ts --out .remotion-bundle",
+    "render-worker": "tsx scripts/render-worker.ts",
+    "render-worker:poll": "tsx scripts/render-worker.ts --poll 30"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -47,7 +49,10 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "dotenv": "^16.4.0",
+    "server-only": "^0.0.1",
     "supabase": "^2.78.1",
+    "tsx": "^4.19.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

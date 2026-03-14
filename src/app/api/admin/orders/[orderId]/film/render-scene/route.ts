@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { renderScene } from "@/services/film/render/render-scene";
 
 /**
  * POST /api/admin/orders/[orderId]/film/render-scene
  * Body: { sceneId: string }
  *
- * Renders a single film scene to MP4 + thumbnail.
- *
- * ⚠️  Requires a Node.js environment with Chrome installed (Remotion).
- *     Will NOT work on Vercel serverless functions.
- *     For production cloud rendering, use @remotion/lambda.
+ * Queues a single film scene for rendering by marking it as "queued".
+ * Actual rendering is performed by the render worker (scripts/render-worker.ts),
+ * NOT inside this Vercel request handler.
  */
 export async function POST(
   req: NextRequest,
@@ -69,17 +66,47 @@ export async function POST(
     );
   }
 
-  try {
-    const result = await renderScene({
-      sceneId,
-      orderId,
-      filmProjectId: filmProject.id as string,
-    });
-    return NextResponse.json({ result });
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to render scene";
-    console.error(`[render-scene] Error for scene ${sceneId}: ${message}`);
-    return NextResponse.json({ error: message }, { status: 500 });
+  // Verify scene belongs to this film project
+  const { data: scene, error: sceneError } = await adminClient
+    .from("film_scenes")
+    .select("id, film_project_id, status")
+    .eq("id", sceneId)
+    .single();
+
+  if (sceneError || !scene) {
+    return NextResponse.json(
+      { error: `Scene not found: ${sceneId}` },
+      { status: 404 }
+    );
   }
+
+  if ((scene.film_project_id as string) !== (filmProject.id as string)) {
+    return NextResponse.json(
+      { error: "Scene does not belong to this order's film project." },
+      { status: 400 }
+    );
+  }
+
+  // Mark scene as queued
+  const { error: updateError } = await adminClient
+    .from("film_scenes")
+    .update({
+      status: "queued",
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sceneId);
+
+  if (updateError) {
+    return NextResponse.json(
+      { error: `Failed to queue scene: ${updateError.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({
+    queued: 1,
+    sceneId,
+    message: "Scene queued for rendering. Run the render worker to process it.",
+  });
 }

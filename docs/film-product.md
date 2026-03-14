@@ -183,34 +183,96 @@ This is only an initial estimate. Actual duration will be refined when real audi
 |-------|--------|-------------|
 | `/api/admin/orders/[orderId]/film/build-scenes` | POST | Generate scenes from album pages |
 
-## Scene Rendering (implemented)
+## Scene Rendering (queue + worker model)
 
-### How Scenes Are Rendered
+### Why rendering cannot run on Vercel
 
-Rendering uses [Remotion](https://remotion.dev) v4 — a headless Chrome-based React video renderer.
+Remotion rendering requires:
+- A Node.js process with **headless Chrome** (Puppeteer)
+- A **pre-built Remotion bundle** on disk (`.remotion-bundle/`)
+- Significant CPU/RAM for video encoding
 
-**⚠️ Environment requirement**: Rendering requires a Node.js process with Chrome available (local `npm run dev` / `npm start`, or a VPS/EC2). It does **not** work on Vercel serverless functions. For production cloud rendering, migrate to `@remotion/lambda`.
+Vercel serverless functions have none of these. Rendering must run on a
+local machine, VPS, or EC2 instance.
 
-### Flow
+### Architecture: Queue + Worker
 
-1. Admin selects scenes (or renders all) in the Film panel
-2. `POST /api/admin/orders/[orderId]/film/render-scenes` or `render-scene` is called
-3. Server:
-   - Fetches scene row from `film_scenes`
-   - Resolves page image signed URLs (1-hour) from `page_images` slot 1 → `photos.illustration_storage_path`, falling back to `pages.illustration_storage_path`
-   - Builds a `renderHash` (SHA-256 prefix of narrationText + voiceId + motionPreset + transitions + pageIds)
-   - Skips scenes whose hash hasn't changed and status is already `rendered` (batch mode)
-   - Bundles the Remotion composition (webpack, ~30–60s first time, cached per process)
-   - Calls `renderMedia()` → H.264 MP4 to temp file
-   - Calls `renderStill()` at frame 15% of the scene → JPEG thumbnail to temp file
-   - Uploads both to film storage
-   - Updates `film_scenes`: status → `rendered`, `rendered_scene_path`, `thumbnail_path`, `render_hash`
+The render flow is split into two parts:
+
+1. **Vercel (admin routes)** — validates input, marks scenes as `queued`
+2. **Render worker** — standalone Node.js process that picks up queued scenes, renders them with Remotion, uploads outputs, and updates DB status
+
+```
+Admin UI  →  POST /film/render-scene(s)  →  film_scenes.status = "queued"
+                                                      ↓
+                                            render worker (local/VPS)
+                                                      ↓
+                                            status = "rendering" → "rendered" | "error"
+```
+
+### Scene Statuses
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Scene created, not yet queued |
+| `queued` | Marked for rendering by admin, waiting for worker |
+| `rendering` | Worker has picked it up and is actively rendering |
+| `narration_ready` | TTS audio generated (future) |
+| `rendered` | Video + thumbnail uploaded successfully |
+| `error` | Render failed — see `error_message` |
+
+### How to queue renders (admin)
+
+1. Open the Film panel for an order in `/admin/orders/[orderId]`
+2. Select scenes with checkboxes → click "הוסף N סצנות לתור רינדור"
+3. Or click ▶ on individual scenes
+4. Scenes move to `queued` status immediately
+5. The admin UI shows `בתור` (queued) and `מרנדר` (rendering) badges
+
+### How to run the render worker
+
+```bash
+# Prerequisites:
+#   1. Chrome installed
+#   2. Remotion bundle built
+npm run bundle:remotion
+
+#   3. Environment vars set (uses .env.local automatically)
+#      NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+# Process all queued scenes once, then exit
+npm run render-worker
+
+# Process specific scene IDs
+npx tsx scripts/render-worker.ts <sceneId1> <sceneId2>
+
+# Poll mode — check for queued scenes every 30s
+npm run render-worker:poll
+```
+
+### API Routes
+
+| Route | Method | Body | Description |
+|-------|--------|------|-------------|
+| `/api/admin/orders/[orderId]/film/render-scene` | POST | `{ sceneId: string }` | Queue single scene |
+| `/api/admin/orders/[orderId]/film/render-scenes` | POST | `{ sceneIds?: string[] }` | Queue batch (all changed if omitted) |
+
+These routes **do not** perform rendering. They validate inputs and set `status = "queued"`.
+
+### Render worker internals
+
+The worker (`scripts/render-worker.ts`) runs outside Vercel:
+
+1. Queries `film_scenes` for `status = "queued"`
+2. For each scene: sets `status = "rendering"`, calls `renderScene()` from `src/services/film/render/render-scene.ts`
+3. `renderScene()` resolves page images → builds composition → calls Remotion `renderMedia()` + `renderStill()` → uploads to Supabase storage → sets `status = "rendered"`
+4. On failure: sets `status = "error"` with `error_message`
 
 ### Remotion Composition
 
 `src/remotion/SceneComposition.tsx` — registered as `id: "Scene"` (1920×1080, 30fps default):
-- **Ken Burns motion**: `interpolate()` on `useCurrentFrame()` — scale 1.0→1.08, 2% pan over scene duration. Uses Remotion APIs (not CSS animations — those freeze in frame renders).
-- **Fade transitions**: 15-frame (0.5s) opacity envelope on both ends when `transitionIn/Out = "fade"`
+- **Ken Burns motion**: `interpolate()` on `useCurrentFrame()` — scale 1.0→1.08, 2% pan over scene duration
+- **Fade transitions**: 15-frame (0.5s) opacity envelope on both ends
 - **RTL text overlay**: Hebrew font stack, `direction: rtl`, gradient background from bottom
 
 ### Storage Paths
@@ -220,29 +282,9 @@ films/{orderId}/{filmProjectId}/scenes/{sceneId}/scene.mp4
 films/{orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
 ```
 
-### API Routes
-
-| Route | Method | Body | Description |
-|-------|--------|------|-------------|
-| `/api/admin/orders/[orderId]/film/render-scene` | POST | `{ sceneId: string }` | Render single scene |
-| `/api/admin/orders/[orderId]/film/render-scenes` | POST | `{ sceneIds?: string[] }` | Render batch (all if omitted) |
-
 ### Render Hash Caching
 
-`buildRenderHash()` computes a 16-char SHA-256 prefix from: `narrationText`, `voiceId`, `motionPreset`, `transitionIn`, `transitionOut`, `pageIds`. Batch rendering skips scenes whose hash matches the stored value and status is `rendered`.
-
-### Admin UI
-
-- Per-scene checkbox for multi-select
-- "Render Selected (N)" button for batch render
-- Per-scene ▶ render button (↺ re-render if already rendered)
-- 40×28px thumbnail preview when rendered
-- Color-coded status badges: pending / rendering / rendered / error
-- Warning note about Node.js + Chrome requirement
-
-### Dependencies
-
-`@remotion/bundler` and `@remotion/renderer` are in `package.json`. Both are dynamically imported inside service functions to prevent parse-time failures on Vercel.
+`buildRenderHash()` computes a 16-char SHA-256 prefix from: `narrationText`, `voiceId`, `motionPreset`, `transitionIn`, `transitionOut`, `pageIds`. The batch queue route skips scenes whose hash matches the stored value and status is `rendered`.
 
 ---
 
@@ -253,7 +295,7 @@ films/{orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
 3. **Voice selection** — implemented (A/B samples, admin picks)
 4. **TTS overrides** — implemented (pronunciation fixes)
 5. **Generate narration** — not yet implemented (per-scene TTS)
-6. **Render scenes** — implemented (local/VPS only; see Remotion section above)
+6. **Render scenes** — implemented (queue + external worker; see above)
 7. **Assemble film** — not yet implemented
 8. **Deliver** — not yet implemented
 

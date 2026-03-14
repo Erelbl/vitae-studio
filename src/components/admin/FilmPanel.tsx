@@ -243,6 +243,9 @@ export function FilmPanel({
     filmProject.voice_choice_status === "chosen";
 
   const renderedSceneCount = scenes.filter((s) => s.status === "rendered").length;
+  const queuedSceneCount = scenes.filter(
+    (s) => s.status === "queued" || s.status === "rendering"
+  ).length;
 
   return (
     <div className="space-y-5">
@@ -276,6 +279,12 @@ export function FilmPanel({
           {scenes.length} סצנות
           {" · "}
           {renderedSceneCount} מרונדרות
+          {queuedSceneCount > 0 && (
+            <>
+              {" · "}
+              {queuedSceneCount} בתור
+            </>
+          )}
           {" · "}
           {Math.round(
             scenes.reduce((sum, s) => sum + (s.duration_ms ?? 0), 0) / 1000
@@ -408,10 +417,10 @@ export function FilmPanel({
             onClick={handleRenderSelected}
           >
             {loadingAction === "render-selected"
-              ? "מרנדר..."
+              ? "מוסיף לתור..."
               : selectedSceneIds.size > 0
-              ? `רנדר ${selectedSceneIds.size} סצנות`
-              : "רנדר סצנות נבחרות"}
+              ? `הוסף ${selectedSceneIds.size} סצנות לתור רינדור`
+              : "הוסף סצנות לתור רינדור"}
           </Button>
         )}
 
@@ -456,11 +465,10 @@ export function FilmPanel({
             ))}
           </div>
 
-          {renderedSceneCount > 0 && (
-            <p className="text-xs text-muted-foreground pt-1">
-              ⚠️ רינדור מצריך סביבת Node.js עם Chrome. אינו פועל על Vercel serverless.
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground pt-1">
+            סצנות שנוספות לתור ירונדרו ע״י ה-render worker.
+            {" "}הפעלה: <code className="text-[10px] bg-muted px-1 rounded">npm run render-worker</code>
+          </p>
         </div>
       )}
 
@@ -473,6 +481,8 @@ export function FilmPanel({
 
 const SCENE_STATUS_LABELS: Record<string, string> = {
   pending: "ממתין",
+  queued: "בתור",
+  rendering: "מרנדר",
   narration_ready: "קריינות מוכנה",
   rendered: "מרונדר",
   error: "שגיאה",
@@ -480,6 +490,8 @@ const SCENE_STATUS_LABELS: Record<string, string> = {
 
 const SCENE_STATUS_COLORS: Record<string, string> = {
   pending: "text-muted-foreground",
+  queued: "text-amber-600",
+  rendering: "text-blue-600",
   narration_ready: "text-blue-600",
   rendered: "text-green-600",
   error: "text-red-600",
@@ -570,15 +582,36 @@ function SceneRow({
         {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
       </span>
 
-      {/* Render button */}
+      {/* Queue button */}
       <button
         type="button"
         onClick={onRender}
-        disabled={disabled || isRendering}
+        disabled={
+          disabled ||
+          isRendering ||
+          scene.status === "queued" ||
+          scene.status === "rendering"
+        }
         className="shrink-0 h-6 px-2 rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        title={scene.status === "rendered" ? "רנדר מחדש" : "רנדר"}
+        title={
+          scene.status === "queued"
+            ? "בתור לרינדור"
+            : scene.status === "rendering"
+            ? "מרנדר כעת"
+            : scene.status === "rendered"
+            ? "הוסף לתור מחדש"
+            : "הוסף לתור רינדור"
+        }
       >
-        {isRendering ? "…" : scene.status === "rendered" ? "↺" : "▶"}
+        {isRendering
+          ? "…"
+          : scene.status === "queued"
+          ? "⏳"
+          : scene.status === "rendering"
+          ? "⚙"
+          : scene.status === "rendered"
+          ? "↺"
+          : "▶"}
       </button>
 
       {/* Error hint */}
