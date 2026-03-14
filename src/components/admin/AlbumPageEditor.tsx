@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlbumPageView } from "@/components/album/AlbumPageView";
 import {
   Dialog,
   DialogContent,
@@ -127,26 +126,58 @@ export function AlbumPageEditor({
   orderId,
   pages,
   completedPhotos,
-  personName,
   onPageSelect,
   onPageUpdate,
+  textDragMode,
+  onTextDragToggle,
+  onClearTextPosition,
+  currentTextX,
+  currentTextY,
 }: {
   orderId: string;
   pages: EditorPage[];
   completedPhotos: PhotoForEditor[];
-  personName: string;
-  onPageSelect?: (pageNumber: number) => void;
   /**
-   * Called whenever a style property is committed by the editor so the large
-   * AlbumPreview can reflect the change without a server round-trip.
-   * Only style fields that skip router.refresh() are reported here.
+   * Called when the user selects a page — tells the parent which spread to
+   * scroll to and which page is now active for drag operations.
    */
-  onPageUpdate?: (pageId: string, overrides: Partial<import("@/types/page").PreviewPage>) => void;
+  onPageSelect?: (pageNumber: number, pageId: string) => void;
+  /**
+   * Called whenever a style property is committed so the large AlbumPreview
+   * can reflect the change without a server round-trip.
+   */
+  onPageUpdate?: (pageId: string, overrides: Partial<PreviewPage>) => void;
+  /** Whether text drag mode is currently active (controlled by parent). */
+  textDragMode?: boolean;
+  /** Called when the user toggles drag mode on/off. */
+  onTextDragToggle?: (active: boolean) => void;
+  /** Called when the user resets the text position for a page. */
+  onClearTextPosition?: (pageId: string) => void;
+  /** Current text_x of the selected page from livePreviewData (for "clear" button). */
+  currentTextX?: number | null;
+  /** Current text_y of the selected page from livePreviewData (for "clear" button). */
+  currentTextY?: number | null;
 }) {
   const router = useRouter();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
 
   const selectedPage = pages.find((p) => p.id === selectedPageId) ?? null;
+  const selectedIndex = pages.findIndex((p) => p.id === selectedPageId);
+
+  function selectPage(page: EditorPage) {
+    setSelectedPageId(page.id);
+    onPageSelect?.(page.page_number, page.id);
+  }
+
+  function goToPrev() {
+    if (selectedIndex <= 0) return;
+    selectPage(pages[selectedIndex - 1]);
+  }
+
+  function goToNext() {
+    if (selectedIndex < 0 || selectedIndex >= pages.length - 1) return;
+    selectPage(pages[selectedIndex + 1]);
+  }
 
   if (pages.length === 0) {
     return (
@@ -157,24 +188,52 @@ export function AlbumPageEditor({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Page selector */}
-      <div>
-        <p className="text-xs text-muted-foreground mb-2">
-          בחר עמוד לעריכה ({pages.length} עמודים)
-        </p>
-        <div className="flex flex-wrap gap-1.5">
+      <div className="space-y-2">
+        {/* Prev / current label / next row */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={goToPrev}
+            disabled={selectedIndex <= 0}
+            className="h-7 w-7 rounded border border-border bg-muted hover:bg-muted/60 text-xs flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            ←
+          </button>
+          <span className="flex-1 text-xs text-center text-muted-foreground">
+            {selectedPage ? (
+              <span className="font-medium text-foreground">
+                {SPECIAL_PAGE_LABELS[selectedPage.page_type] ??
+                  `עמוד ${selectedPage.page_number}`}
+              </span>
+            ) : (
+              `${pages.length} עמודים — בחר עמוד לעריכה`
+            )}
+          </span>
+          <button
+            onClick={goToNext}
+            disabled={selectedIndex < 0 || selectedIndex >= pages.length - 1}
+            className="h-7 w-7 rounded border border-border bg-muted hover:bg-muted/60 text-xs flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            →
+          </button>
+        </div>
+
+        {/* Page button grid — scrollable when many pages */}
+        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto py-0.5">
           {pages.map((page) => {
             const specialLabel = SPECIAL_PAGE_LABELS[page.page_type];
             return (
               <button
                 key={page.id}
                 onClick={() => {
-                  const isDeselect = page.id === selectedPageId;
-                  setSelectedPageId(isDeselect ? null : page.id);
-                  if (!isDeselect) onPageSelect?.(page.page_number);
+                  if (page.id === selectedPageId) {
+                    setSelectedPageId(null);
+                  } else {
+                    selectPage(page);
+                  }
                 }}
-                className={`h-8 min-w-[2.5rem] px-2 rounded-md text-xs font-mono transition-colors ${
+                className={`h-7 min-w-[2rem] px-1.5 rounded text-xs font-mono transition-colors ${
                   page.id === selectedPageId
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted hover:bg-muted/80 text-muted-foreground"
@@ -195,16 +254,27 @@ export function AlbumPageEditor({
             orderId={orderId}
             page={selectedPage}
             completedPhotos={completedPhotos}
-            personName={personName}
             onSaved={() => router.refresh()}
             onPageUpdate={onPageUpdate}
+            textDragMode={textDragMode}
+            onTextDragToggle={
+              onTextDragToggle
+                ? () => onTextDragToggle(!textDragMode)
+                : undefined
+            }
+            onClearTextPosition={
+              onClearTextPosition
+                ? () => onClearTextPosition(selectedPage.id)
+                : undefined
+            }
+            currentTextX={currentTextX}
+            currentTextY={currentTextY}
           />
         ) : (
           <SpecialPagePanel
             key={selectedPage.id}
             orderId={orderId}
             page={selectedPage}
-            personName={personName}
             onSaved={() => router.refresh()}
           />
         )
@@ -214,21 +284,33 @@ export function AlbumPageEditor({
 }
 
 // ─── PageEditorPanel ──────────────────────────────────────────────────────────
+// Full editor for illustration_and_text pages.
+// No mini-preview — editing is done directly on the large AlbumPreview.
 
 function PageEditorPanel({
   orderId,
   page,
   completedPhotos,
-  personName,
   onSaved,
   onPageUpdate,
+  textDragMode,
+  onTextDragToggle,
+  onClearTextPosition,
+  currentTextX,
+  currentTextY,
 }: {
   orderId: string;
   page: EditorPage;
   completedPhotos: PhotoForEditor[];
-  personName: string;
   onSaved: () => void;
-  onPageUpdate?: (pageId: string, overrides: Partial<import("@/types/page").PreviewPage>) => void;
+  onPageUpdate?: (pageId: string, overrides: Partial<PreviewPage>) => void;
+  textDragMode?: boolean;
+  /** Toggle drag mode for current page. */
+  onTextDragToggle?: () => void;
+  /** Clear custom text position for current page. */
+  onClearTextPosition?: () => void;
+  currentTextX?: number | null;
+  currentTextY?: number | null;
 }) {
   const [text, setText] = useState(page.text_content ?? "");
   const [layoutType, setLayoutType] = useState<LayoutType>(
@@ -238,9 +320,6 @@ function PageEditorPanel({
     page.font_size_px ?? legacyTextSizeToPx(page.text_size)
   );
   const [textAlign, setTextAlign] = useState<TextAlign>(page.text_align ?? "center");
-  const [textX, setTextX] = useState<number | null>(page.text_x ?? null);
-  const [textY, setTextY] = useState<number | null>(page.text_y ?? null);
-  const [textDragMode, setTextDragMode] = useState(false);
 
   const [slots, setSlots] = useState<Record<number, SlotState>>(() => {
     const m: Record<number, SlotState> = {};
@@ -259,47 +338,8 @@ function PageEditorPanel({
   const [savingText, setSavingText] = useState(false);
   const [textDirty, setTextDirty] = useState(false);
 
-  // Refs for text drag on preview
-  const dragOverlayRef = useRef<HTMLDivElement>(null);
-  const isTextDraggingRef = useRef(false);
-  const fontSizePxRef = useRef(fontSizePx);
-  fontSizePxRef.current = fontSizePx;
-
-  // Stable ref so drag callbacks can call onPageUpdate without listing it as a dep
-  const onPageUpdateRef = useRef(onPageUpdate);
-  onPageUpdateRef.current = onPageUpdate;
-
   const canDragText = OVERLAY_LAYOUTS.includes(layoutType) && Boolean(text);
-
-  /** Build a PreviewPage for the live mini-preview */
-  function buildPreviewPage(): PreviewPage {
-    const images: PageImageSlot[] = Object.entries(slots)
-      .filter(([, s]) => s.image_url !== null)
-      .map(([slot, s]) => ({
-        id: `local-slot-${slot}`,
-        slot: Number(slot) as 1 | 2,
-        photo_id: s.photo_id,
-        crop_x: s.crop_x,
-        crop_y: s.crop_y,
-        scale: s.scale,
-        image_url: s.image_url,
-      }));
-
-    return {
-      id: page.id,
-      page_number: page.page_number,
-      page_type: page.page_type as PreviewPage["page_type"],
-      layout_type: layoutType,
-      text_content: text || null,
-      font_size_px: fontSizePx,
-      text_align: textAlign,
-      text_x: textX,
-      text_y: textY,
-      image_url:
-        page.images.find((i) => i.slot === 1)?.image_url ?? null,
-      images,
-    };
-  }
+  const hasCustomPosition = currentTextX != null || currentTextY != null;
 
   async function saveText() {
     if (!textDirty) return;
@@ -327,10 +367,6 @@ function PageEditorPanel({
 
   async function handleLayoutChange(newLayout: LayoutType) {
     setLayoutType(newLayout);
-    // Clear drag mode & position when switching away from overlay layouts
-    if (!OVERLAY_LAYOUTS.includes(newLayout)) {
-      setTextDragMode(false);
-    }
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -409,7 +445,7 @@ function PageEditorPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot, crop_x, crop_y, scale }),
     });
-    // Intentionally NOT calling onSaved() here — crop is shown live in the mini-preview.
+    // Intentionally NOT calling onSaved() here — crop is shown live via onPageUpdate.
     // Calling router.refresh() on every drag-end forces all signed image URLs to
     // regenerate, causing the browser to re-download every image on the page.
   }
@@ -422,264 +458,162 @@ function PageEditorPanel({
     onSaved();
   }
 
-  // ── Text-drag handlers on the mini-preview ────────────────────────────────
-
-  function getOverlayRelativePos(e: React.PointerEvent): { x: number; y: number } | null {
-    if (!dragOverlayRef.current) return null;
-    const rect = dragOverlayRef.current.getBoundingClientRect();
-    return {
-      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
-    };
-  }
-
-  const handleDragOverlayPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    isTextDraggingRef.current = true;
-    const pos = getOverlayRelativePos(e);
-    if (pos) { setTextX(pos.x); setTextY(pos.y); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleDragOverlayPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isTextDraggingRef.current) return;
-    const pos = getOverlayRelativePos(e);
-    if (pos) { setTextX(pos.x); setTextY(pos.y); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleDragOverlayPointerUp = useCallback(async (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isTextDraggingRef.current) return;
-    isTextDraggingRef.current = false;
-    const pos = getOverlayRelativePos(e);
-    if (!pos) return;
-    setTextX(pos.x);
-    setTextY(pos.y);
-    // Push to large preview immediately via ref (stable, no dep needed).
-    onPageUpdateRef.current?.(page.id, { text_x: pos.x, text_y: pos.y });
-    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text_x: pos.x, text_y: pos.y }),
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId, page.id]);
-
-  async function clearTextPosition() {
-    setTextX(null);
-    setTextY(null);
-    setTextDragMode(false);
-    // Push reset to large preview immediately.
-    onPageUpdate?.(page.id, { text_x: null, text_y: null });
-    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text_x: null, text_y: null }),
-    });
-  }
-
   const activeSlots = LAYOUT_SLOTS[layoutType] ?? [];
-  const previewPage = buildPreviewPage();
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 pt-1">
-      {/* Live mini-preview with optional text-drag overlay */}
-      <div>
-        <p className="text-xs text-muted-foreground mb-2">
-          תצוגה מקדימה — עמוד {page.page_number}
-        </p>
-        <div className="w-full max-w-[240px]">
-          <div className="relative">
-            <AlbumPageView page={previewPage} personName={personName} />
-            {/* Drag overlay — sits above the preview, captures pointer events only when active */}
-            {textDragMode && (
-              <div
-                ref={dragOverlayRef}
-                className="absolute inset-0 cursor-crosshair"
-                style={{ zIndex: 20 }}
-                onPointerDown={handleDragOverlayPointerDown}
-                onPointerMove={handleDragOverlayPointerMove}
-                onPointerUp={handleDragOverlayPointerUp}
-                onPointerLeave={handleDragOverlayPointerUp}
-              >
-                {/* Position indicator dot */}
-                {textX !== null && textY !== null && (
-                  <div
-                    className="absolute w-2.5 h-2.5 rounded-full bg-white border-2 border-primary pointer-events-none shadow-sm"
-                    style={{
-                      left: `${textX * 100}%`,
-                      top: `${textY * 100}%`,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-          {/* Drag-mode hint */}
-          {textDragMode && (
-            <p className="text-[10px] text-primary/70 mt-1.5 text-center">
-              לחץ או גרור כדי למקם את הטקסט
-            </p>
-          )}
+    <div className="space-y-6 pt-1">
+      {/* Text editor */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground">
+          טקסט העמוד
+        </label>
+        <textarea
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setTextDirty(true);
+          }}
+          onBlur={saveText}
+          rows={4}
+          dir="rtl"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
+          placeholder="הטקסט של העמוד..."
+        />
+        {textDirty && (
+          <button
+            onClick={saveText}
+            disabled={savingText}
+            className="text-xs text-primary hover:underline disabled:opacity-50"
+          >
+            {savingText ? "שומר..." : "שמור טקסט ←"}
+          </button>
+        )}
+      </div>
+
+      {/* Font size slider */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-muted-foreground">גודל טקסט</p>
+          <span className="text-xs tabular-nums text-muted-foreground/70">{fontSizePx}px</span>
+        </div>
+        <input
+          type="range"
+          min={10}
+          max={36}
+          step={1}
+          value={fontSizePx}
+          onChange={(e) => setFontSizePx(Number(e.target.value))}
+          onPointerUp={(e) => handleFontSizeCommit(Number((e.target as HTMLInputElement).value))}
+          className="w-full h-1.5 appearance-none bg-border rounded accent-primary"
+        />
+        <div className="flex justify-between text-[10px] text-muted-foreground/50 select-none">
+          <span>קטן (10)</span>
+          <span>גדול (36)</span>
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="space-y-6">
-        {/* Text editor */}
+      {/* Text alignment */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">יישור טקסט</p>
+        <div className="flex gap-1.5">
+          {(["right", "center", "left"] as TextAlign[]).map((align) => {
+            const label = align === "right" ? "ימין" : align === "center" ? "מרכז" : "שמאל";
+            const icon  = align === "right" ? "▶" : align === "center" ? "◉" : "◀";
+            return (
+              <button
+                key={align}
+                onClick={() => handleTextAlignChange(align)}
+                title={label}
+                className={`flex-1 rounded-md py-1.5 text-xs border transition-colors flex items-center justify-center gap-1 ${
+                  textAlign === align
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span className="text-[10px]">{icon}</span> {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Text position (drag on large preview) — only for full-image overlay layouts */}
+      {canDragText && (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground">
-            טקסט העמוד
-          </label>
-          <textarea
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setTextDirty(true);
-            }}
-            onBlur={saveText}
-            rows={4}
-            dir="rtl"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
-            placeholder="הטקסט של העמוד..."
-          />
-          {textDirty && (
+          <p className="text-xs font-medium text-muted-foreground">מיקום טקסט</p>
+          <div className="flex gap-2 flex-wrap">
             <button
-              onClick={saveText}
-              disabled={savingText}
-              className="text-xs text-primary hover:underline disabled:opacity-50"
+              onClick={() => onTextDragToggle?.()}
+              className={`rounded-md px-3 py-1.5 text-xs border transition-colors ${
+                textDragMode
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
             >
-              {savingText ? "שומר..." : "שמור טקסט ←"}
+              {textDragMode ? "✓ מצב הזזה פעיל" : "הזז טקסט על התצוגה"}
             </button>
-          )}
-        </div>
-
-        {/* Font size slider */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-muted-foreground">גודל טקסט</p>
-            <span className="text-xs tabular-nums text-muted-foreground/70">{fontSizePx}px</span>
-          </div>
-          <input
-            type="range"
-            min={10}
-            max={36}
-            step={1}
-            value={fontSizePx}
-            onChange={(e) => setFontSizePx(Number(e.target.value))}
-            onPointerUp={(e) => handleFontSizeCommit(Number((e.target as HTMLInputElement).value))}
-            className="w-full h-1.5 appearance-none bg-border rounded accent-primary"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground/50 select-none">
-            <span>קטן (10)</span>
-            <span>גדול (36)</span>
-          </div>
-        </div>
-
-        {/* Text alignment */}
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">יישור טקסט</p>
-          <div className="flex gap-1.5">
-            {(["right", "center", "left"] as TextAlign[]).map((align) => {
-              const label = align === "right" ? "ימין" : align === "center" ? "מרכז" : "שמאל";
-              const icon  = align === "right" ? "▶" : align === "center" ? "◉" : "◀";
-              return (
-                <button
-                  key={align}
-                  onClick={() => handleTextAlignChange(align)}
-                  title={label}
-                  className={`flex-1 rounded-md py-1.5 text-xs border transition-colors flex items-center justify-center gap-1 ${
-                    textAlign === align
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <span className="text-[10px]">{icon}</span> {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Text position (drag) — only for full-image overlay layouts */}
-        {canDragText && (
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">מיקום טקסט</p>
-            <div className="flex gap-2 flex-wrap">
+            {hasCustomPosition && (
               <button
-                onClick={() => setTextDragMode((v) => !v)}
-                className={`rounded-md px-3 py-1.5 text-xs border transition-colors ${
-                  textDragMode
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
-                }`}
+                onClick={() => onClearTextPosition?.()}
+                className="rounded-md px-3 py-1.5 text-xs border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive transition-colors"
               >
-                {textDragMode ? "✓ מצב הזזה פעיל" : "הזז טקסט"}
+                איפוס מיקום
               </button>
-              {(textX !== null || textY !== null) && (
-                <button
-                  onClick={clearTextPosition}
-                  className="rounded-md px-3 py-1.5 text-xs border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive transition-colors"
-                >
-                  איפוס מיקום
-                </button>
-              )}
-            </div>
-            {textDragMode && (
-              <p className="text-[10px] text-muted-foreground/60">
-                גרור את הטקסט על התצוגה המקדימה למיקום הרצוי. הרקע ישאר שקוף.
-              </p>
             )}
           </div>
-        )}
-
-        {/* Layout picker */}
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">פריסת עמוד</p>
-          <div className="flex flex-wrap gap-1.5">
-            {LAYOUT_TYPES.map((lt) => (
-              <button
-                key={lt}
-                onClick={() => handleLayoutChange(lt)}
-                className={`rounded-md px-2.5 py-1.5 text-xs border transition-colors ${
-                  layoutType === lt
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {LAYOUT_LABELS[lt]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Image slot editors */}
-        {activeSlots.length > 0 && (
-          <div className="space-y-4">
-            <p className="text-xs font-medium text-muted-foreground">
-              {activeSlots.length === 1 ? "איור" : "איורים"}
+          {textDragMode && (
+            <p className="text-[10px] text-muted-foreground/60">
+              לחץ וגרור על התצוגה הגדולה למיקום הרצוי. הרקע ישאר שקוף.
             </p>
-            {activeSlots.map((slotNum) => (
-              <ImageSlotEditor
-                key={slotNum}
-                slot={slotNum as 1 | 2}
-                slotState={slots[slotNum] ?? null}
-                completedPhotos={completedPhotos}
-                orderId={orderId}
-                pageId={page.id}
-                onAssign={(photo) => handleSlotAssign(slotNum as 1 | 2, photo)}
-                onCropSave={(crop_x, crop_y, scale) =>
-                  handleCropSave(slotNum as 1 | 2, crop_x, crop_y, scale)
-                }
-                onManualUpload={(imageUrl) =>
-                  handleManualUpload(slotNum as 1 | 2, imageUrl)
-                }
-              />
-            ))}
-          </div>
-        )}
+          )}
+        </div>
+      )}
+
+      {/* Layout picker */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">פריסת עמוד</p>
+        <div className="flex flex-wrap gap-1.5">
+          {LAYOUT_TYPES.map((lt) => (
+            <button
+              key={lt}
+              onClick={() => handleLayoutChange(lt)}
+              className={`rounded-md px-2.5 py-1.5 text-xs border transition-colors ${
+                layoutType === lt
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {LAYOUT_LABELS[lt]}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Image slot editors */}
+      {activeSlots.length > 0 && (
+        <div className="space-y-4">
+          <p className="text-xs font-medium text-muted-foreground">
+            {activeSlots.length === 1 ? "איור" : "איורים"}
+          </p>
+          {activeSlots.map((slotNum) => (
+            <ImageSlotEditor
+              key={slotNum}
+              slot={slotNum as 1 | 2}
+              slotState={slots[slotNum] ?? null}
+              completedPhotos={completedPhotos}
+              orderId={orderId}
+              pageId={page.id}
+              onAssign={(photo) => handleSlotAssign(slotNum as 1 | 2, photo)}
+              onCropSave={(crop_x, crop_y, scale) =>
+                handleCropSave(slotNum as 1 | 2, crop_x, crop_y, scale)
+              }
+              onManualUpload={(imageUrl) =>
+                handleManualUpload(slotNum as 1 | 2, imageUrl)
+              }
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -691,12 +625,10 @@ function PageEditorPanel({
 function SpecialPagePanel({
   orderId,
   page,
-  personName,
   onSaved,
 }: {
   orderId: string;
   page: EditorPage;
-  personName: string;
   onSaved: () => void;
 }) {
   const [text, setText] = useState(page.text_content ?? "");
@@ -708,23 +640,6 @@ function SpecialPagePanel({
       ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale }
       : { photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1 };
   });
-
-  const pageLabel = SPECIAL_PAGE_LABELS[page.page_type] ?? page.page_type;
-
-  function buildPreviewPage(): PreviewPage {
-    const images: PageImageSlot[] = slotState.image_url
-      ? [{ id: "local-slot-1", slot: 1, photo_id: slotState.photo_id, crop_x: slotState.crop_x, crop_y: slotState.crop_y, scale: slotState.scale, image_url: slotState.image_url }]
-      : [];
-    return {
-      id: page.id,
-      page_number: page.page_number,
-      page_type: page.page_type as PreviewPage["page_type"],
-      layout_type: (page.layout_type as LayoutType) ?? "FULL_IMAGE",
-      text_content: text || null,
-      image_url: page.images.find((i) => i.slot === 1)?.image_url ?? null,
-      images,
-    };
-  }
 
   async function saveText() {
     if (!textDirty) return;
@@ -773,65 +688,50 @@ function SpecialPagePanel({
     onSaved();
   }
 
-  const previewPage = buildPreviewPage();
-
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 pt-1">
-      {/* Live mini-preview */}
-      <div>
-        <p className="text-xs text-muted-foreground mb-2">
-          {pageLabel} — עמוד {page.page_number}
-        </p>
-        <div className="w-full max-w-[240px]">
-          <AlbumPageView page={previewPage} personName={personName} />
-        </div>
+    <div className="space-y-6 pt-1">
+      {/* Text editor — all special page types have editable text */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground">
+          טקסט העמוד
+        </label>
+        <textarea
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setTextDirty(true);
+          }}
+          onBlur={saveText}
+          rows={3}
+          dir="rtl"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
+          placeholder="הטקסט של העמוד..."
+        />
+        {textDirty && (
+          <button
+            onClick={saveText}
+            disabled={savingText}
+            className="text-xs text-primary hover:underline disabled:opacity-50"
+          >
+            {savingText ? "שומר..." : "שמור טקסט ←"}
+          </button>
+        )}
       </div>
 
-      {/* Controls */}
-      <div className="space-y-6">
-        {/* Text editor — all special page types have editable text */}
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground">
-            טקסט העמוד
-          </label>
-          <textarea
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setTextDirty(true);
-            }}
-            onBlur={saveText}
-            rows={3}
-            dir="rtl"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
-            placeholder="הטקסט של העמוד..."
-          />
-          {textDirty && (
-            <button
-              onClick={saveText}
-              disabled={savingText}
-              className="text-xs text-primary hover:underline disabled:opacity-50"
-            >
-              {savingText ? "שומר..." : "שמור טקסט ←"}
-            </button>
-          )}
-        </div>
-
-        {/* Background image upload — slot 1, no photo picker */}
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">תמונת רקע</p>
-          <ImageSlotEditor
-            slot={1}
-            slotState={slotState}
-            completedPhotos={[]}
-            orderId={orderId}
-            pageId={page.id}
-            hidePhotoPicker
-            onAssign={handleRemove}
-            onCropSave={(crop_x, crop_y, scale) => handleCropSave(crop_x, crop_y, scale)}
-            onManualUpload={handleManualUpload}
-          />
-        </div>
+      {/* Background image upload — slot 1, no photo picker */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">תמונת רקע</p>
+        <ImageSlotEditor
+          slot={1}
+          slotState={slotState}
+          completedPhotos={[]}
+          orderId={orderId}
+          pageId={page.id}
+          hidePhotoPicker
+          onAssign={handleRemove}
+          onCropSave={(crop_x, crop_y, scale) => handleCropSave(crop_x, crop_y, scale)}
+          onManualUpload={handleManualUpload}
+        />
       </div>
     </div>
   );

@@ -15,10 +15,13 @@ function pageToSpreadIndex(pageNumber: number, pages: PreviewData["pages"]): num
 
 /**
  * Client-side shell that:
- * 1. Connects AlbumPreview navigation with the AlbumPageEditor page-selector.
- * 2. Owns the `pageOverrides` map — the single source of truth for in-flight
- *    style edits (font size, alignment, text position) that have been saved to
- *    the DB but not yet reflected in a fresh server render.
+ * 1. Owns the side-by-side layout: narrow controls column (right in RTL) +
+ *    large album preview column (left in RTL, sticky).
+ * 2. Owns `pageOverrides` — the single source of truth for in-flight style
+ *    edits (font size, alignment, text position, text content) that have been
+ *    saved to the DB but not yet reflected in a fresh server render.
+ * 3. Owns text drag state — `textDragMode` and `selectedPageId` — so that
+ *    dragging happens directly on the large AlbumPreview, not on a mini-preview.
  *
  * Data flow:
  *   Server          → previewData (static until router.refresh())
@@ -45,6 +48,12 @@ export function AlbumEditorLayout({
 }) {
   const [focusedSpreadIndex, setFocusedSpreadIndex] = useState<number | undefined>();
 
+  /** The page currently open in the editor — needed to target the drag overlay. */
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+
+  /** Whether text drag mode is active for the currently selected page. */
+  const [textDragMode, setTextDragMode] = useState(false);
+
   /**
    * Per-page style overrides accumulated from the editor without requiring a
    * full server refresh. Only fields that the editor can change without
@@ -68,7 +77,7 @@ export function AlbumEditorLayout({
 
   /**
    * Called by PageEditorPanel whenever a style value is committed (font size
-   * slider released, alignment button clicked, text drag released, etc.).
+   * slider released, alignment button clicked, etc.).
    * Merges the partial update into the override map so the large AlbumPreview
    * re-renders immediately without waiting for a server round-trip.
    */
@@ -82,7 +91,7 @@ export function AlbumEditorLayout({
 
   /**
    * Merge base server data with in-flight overrides.
-   * This is what both AlbumPreview (large) and the editor mini-preview read from.
+   * This is what AlbumPreview (large) reads from.
    */
   const livePreviewData: PreviewData = useMemo(
     () => ({
@@ -95,28 +104,64 @@ export function AlbumEditorLayout({
     [previewData, pageOverrides]
   );
 
-  function handlePageSelect(pageNumber: number) {
+  /** Called when the user selects a page in the editor. */
+  function handlePageSelect(pageNumber: number, pageId: string) {
     setFocusedSpreadIndex(pageToSpreadIndex(pageNumber, livePreviewData.pages));
+    setSelectedPageId(pageId);
+    setTextDragMode(false); // exit drag mode when switching pages
   }
+
+  /** Toggle text drag mode for the currently selected page. */
+  function handleTextDragToggle(active: boolean) {
+    setTextDragMode(active);
+  }
+
+  /**
+   * Called when the user drops text on the large preview.
+   * Updates pageOverrides immediately (preview re-renders) and persists to DB.
+   * Does NOT call router.refresh() — that would regenerate all signed image URLs.
+   */
+  async function handleTextDrop(pageId: string, x: number, y: number) {
+    handlePageUpdate(pageId, { text_x: x, text_y: y });
+    await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_x: x, text_y: y }),
+    });
+  }
+
+  /**
+   * Clear custom text position for the given page.
+   * Updates pageOverrides immediately and persists to DB.
+   */
+  async function handleClearTextPosition(pageId: string) {
+    handlePageUpdate(pageId, { text_x: null, text_y: null });
+    await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_x: null, text_y: null }),
+    });
+  }
+
+  // Current text position for the selected page — drives "איפוס מיקום" visibility.
+  const selectedPageLive = livePreviewData.pages.find((p) => p.id === selectedPageId) ?? null;
+  const currentTextX = selectedPageLive?.text_x ?? null;
+  const currentTextY = selectedPageLive?.text_y ?? null;
 
   // Diagnostic: preview has real pages but editor failed to load them.
   const previewHasRealPages = !previewData.isMock && previewData.pages.length > 0;
   const editorLoadFailed = previewHasRealPages && editorPages.length === 0;
 
   return (
-    <>
-      {/* Large album preview — reads livePreviewData so it reflects edits immediately */}
-      <div className="w-full">
-        <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold mb-3 text-center">
-          תצוגה מקדימה
-        </p>
-        <h1 className="text-2xl font-semibold text-center mb-6">
-          סיפורו של {personName}
-        </h1>
-        <AlbumPreview data={livePreviewData} focusedSpreadIndex={focusedSpreadIndex} />
-      </div>
+    /*
+      Side-by-side layout:
+        - In RTL, grid column 1 renders on the RIGHT → controls (narrow)
+        - In RTL, grid column 2 renders on the LEFT  → large preview
+      Stacks vertically below lg breakpoint.
+    */
+    <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
 
-      {/* Album page editor */}
+      {/* Controls column — right side in RTL */}
       <section className="rounded-xl border bg-card p-5 space-y-4">
         <div>
           <h2 className="text-base font-semibold">עריכת עמודים</h2>
@@ -137,12 +182,36 @@ export function AlbumEditorLayout({
             orderId={orderId}
             pages={editorPages}
             completedPhotos={completedPhotos}
-            personName={personName}
             onPageSelect={handlePageSelect}
             onPageUpdate={handlePageUpdate}
+            textDragMode={textDragMode}
+            onTextDragToggle={handleTextDragToggle}
+            onClearTextPosition={handleClearTextPosition}
+            currentTextX={currentTextX}
+            currentTextY={currentTextY}
           />
         )}
       </section>
-    </>
+
+      {/* Preview column — left side in RTL, sticky so it stays visible while scrolling controls */}
+      <div className="lg:sticky lg:top-6 space-y-3">
+        <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold text-center">
+          תצוגה מקדימה
+        </p>
+        <h1 className="text-2xl font-semibold text-center">
+          סיפורו של {personName}
+        </h1>
+
+        {/* Large album preview — the real editing surface */}
+        <AlbumPreview
+          data={livePreviewData}
+          focusedSpreadIndex={focusedSpreadIndex}
+          textDragPageId={textDragMode && selectedPageId ? selectedPageId : undefined}
+          textDragMode={textDragMode}
+          onTextDrop={handleTextDrop}
+        />
+      </div>
+
+    </div>
   );
 }
