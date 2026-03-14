@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { filmEnv } from "@/lib/film-env";
+import { filmEnv } from "@/lib/film-env-node";
 
 /**
  * Upload a file to the film storage bucket.

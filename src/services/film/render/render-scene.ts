@@ -23,7 +23,7 @@ import * as path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildRenderHash } from "@/services/film/utils/build-render-hash";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
-import { filmEnv } from "@/lib/film-env";
+import { filmEnv } from "@/lib/film-env-node";
 
 export interface RenderSceneInput {
   sceneId: string;
