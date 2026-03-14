@@ -144,6 +144,17 @@ export const IMAGE_COMPARISON = {
   // Images from /public/examples/ — replace with real examples when ready
   beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית" },
   afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים" },
+  // Additional static comparison pairs
+  additionalPairs: [
+    {
+      before: { src: "/examples/original2.jpg", alt: "תמונה מקורית" },
+      after: { src: "/examples/illustrated2.jpg", alt: "איור בצבעי מים" },
+    },
+    {
+      before: { src: "/examples/original3.jpg", alt: "תמונה מקורית" },
+      after: { src: "/examples/illustrated3.jpg", alt: "איור בצבעי מים" },
+    },
+  ],
 };
 
 export const PACKAGES = {

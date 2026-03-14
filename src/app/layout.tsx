@@ -12,6 +12,11 @@ const assistant = Assistant({
 export const metadata: Metadata = {
   title: "Vitae Studio - סיפור חיים בחרוזים",
   description: "אלבום סיפור חיים מאויר בחרוזים - מתנה אישית ומרגשת",
+  icons: {
+    icon: "/assets/logo.png",
+    shortcut: "/assets/logo.png",
+    apple: "/assets/logo.png",
+  },
 };
 
 export default function RootLayout({

@@ -54,7 +54,14 @@ export function FounderSection() {
 
               <div className="my-2 h-px w-12 bg-primary/30" />
 
-              <p className="mt-3 font-semibold">{FOUNDER.name}</p>
+              <Image
+                src="/images/landing/signature-dor.png"
+                alt="חתימת דור אלירז"
+                width={120}
+                height={48}
+                className="mt-3 opacity-75"
+              />
+              <p className="mt-1 font-semibold">{FOUNDER.name}</p>
               <p className="text-sm text-muted-foreground">{FOUNDER.title}</p>
             </div>
 
