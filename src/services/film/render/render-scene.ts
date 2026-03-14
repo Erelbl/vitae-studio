@@ -24,6 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildRenderHash } from "@/services/film/utils/build-render-hash";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
 import { filmEnv } from "@/lib/film-env-node";
+import type { SlotImageData } from "@/remotion/SceneComposition";
 
 export interface RenderSceneInput {
   sceneId: string;
@@ -43,19 +44,8 @@ export interface RenderSceneResult {
 }
 
 // ── Pre-built bundle path ─────────────────────────────────────────────────────
-// @remotion/bundler is NOT imported at runtime — it depends on @rspack/binding
-// (a native binary) that is not available on Vercel or in some CI environments.
-//
-// The Remotion composition is built once via:
-//   npm run bundle:remotion   →   outputs to REMOTION_BUNDLE_DIR/
-//
-// At render time we pass that directory to @remotion/renderer as `serveUrl`.
-// Remotion's renderer starts its own internal HTTP server from the local path.
-//
-// REMOTION_BUNDLE_DIR must match the --out flag in package.json's bundle:remotion script.
-// Override with the REMOTION_BUNDLE_PATH env variable when running from a non-standard CWD.
 
-/** Default bundle output directory — must match `--out` in package.json bundle:remotion. */
+/** Default bundle output directory — must match `--out-dir` in package.json bundle:remotion. */
 const REMOTION_BUNDLE_DIR = ".remotion-bundle";
 
 function getBundlePath(): string {
@@ -63,8 +53,6 @@ function getBundlePath(): string {
     process.env.REMOTION_BUNDLE_PATH ??
     path.join(process.cwd(), REMOTION_BUNDLE_DIR);
 
-  // Check for index.html specifically — `remotion bundle` always creates this file.
-  // Checking the directory alone would succeed even if the bundle is empty or incomplete.
   const indexHtml = path.join(bundleDir, "index.html");
 
   if (!fsSync.existsSync(indexHtml)) {
@@ -86,45 +74,72 @@ function getBundlePath(): string {
   return bundleDir;
 }
 
-// ── Image URL resolution ──────────────────────────────────────────────────────
+// ── Page data resolution ──────────────────────────────────────────────────────
+
+interface ScenePageData {
+  layoutType: string;
+  textContent: string | null;
+  textSize: string | null;
+  fontSizePx: number | null;
+  textAlign: string;
+  textX: number | null;
+  textY: number | null;
+  slot1: SlotImageData | null;
+  slot2: SlotImageData | null;
+}
 
 /**
- * Resolves signed image URLs for a set of page IDs.
- * Prefers page_images (slot 1) → falls back to pages.illustration_storage_path.
- * URLs are valid for 1 hour — enough time for rendering to complete.
+ * Resolves the primary page's layout + image slot data for a set of page IDs.
+ *
+ * Uses the first page ID as the layout source. Fetches slot images (with crop
+ * params) from page_images, falling back to pages.illustration_storage_path
+ * for slot 1 if no page_images rows exist.
+ *
+ * Returns a layout-faithful data structure matching SceneCompositionProps.
  */
-async function fetchPageImageUrls(
+async function fetchScenePageData(
   pageIds: string[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   adminClient: any
-): Promise<string[]> {
-  if (pageIds.length === 0) return [];
+): Promise<ScenePageData> {
+  const defaultResult: ScenePageData = {
+    layoutType: "FULL_IMAGE",
+    textContent: null,
+    textSize: null,
+    fontSizePx: null,
+    textAlign: "start",
+    textX: null,
+    textY: null,
+    slot1: null,
+    slot2: null,
+  };
 
-  // 1. Fetch pages (legacy illustration path)
-  const { data: pages } = await adminClient
+  if (pageIds.length === 0) return defaultResult;
+
+  // 1. Fetch primary page (first in list) for layout metadata
+  const primaryPageId = pageIds[0];
+  const { data: page } = await adminClient
     .from("pages")
-    .select("id, illustration_storage_path")
-    .in("id", pageIds)
-    .order("page_number");
+    .select(
+      "id, layout_type, text_content, text_size, font_size_px, text_align, text_x, text_y, illustration_storage_path"
+    )
+    .eq("id", primaryPageId)
+    .single();
 
-  if (!pages || pages.length === 0) return [];
+  if (!page) return defaultResult;
 
-  // 2. Fetch slot-1 page_images for these pages
+  // 2. Fetch slot images for the primary page
   const { data: pageImages } = await adminClient
     .from("page_images")
-    .select("page_id, photo_id")
-    .in("page_id", pageIds)
-    .eq("slot", 1);
+    .select("slot, photo_id, crop_x, crop_y, scale")
+    .eq("page_id", primaryPageId)
+    .in("slot", [1, 2]);
 
-  // page_id → photo_id
-  const pageImagePhotoMap = new Map<string, string>(
-    (pageImages ?? [])
-      .filter((pi: { page_id: string; photo_id: string | null }) => pi.photo_id)
-      .map((pi: { page_id: string; photo_id: string }) => [pi.page_id, pi.photo_id])
-  );
+  // 3. Fetch illustration paths for photos referenced in slot images
+  const photoIds = (pageImages ?? [])
+    .filter((pi: { photo_id: string | null }) => pi.photo_id)
+    .map((pi: { photo_id: string }) => pi.photo_id);
 
-  // 3. Fetch illustration paths for those photos
-  const photoIds = [...new Set(pageImagePhotoMap.values())];
   const photoIllustrationMap = new Map<string, string>();
 
   if (photoIds.length > 0) {
@@ -143,31 +158,70 @@ async function fetchPageImageUrls(
     }
   }
 
-  // 4. Resolve signed URLs
-  const urls: string[] = [];
-
-  for (const page of pages) {
-    const photoId = pageImagePhotoMap.get(page.id as string);
-    let illustrationPath: string | null = null;
-
-    if (photoId && photoIllustrationMap.has(photoId)) {
-      illustrationPath = photoIllustrationMap.get(photoId)!;
-    } else if (page.illustration_storage_path) {
-      illustrationPath = page.illustration_storage_path as string;
-    }
-
-    if (illustrationPath) {
-      const { data } = await adminClient.storage
-        .from("illustrations")
-        .createSignedUrl(illustrationPath, 3600);
-
-      if (data?.signedUrl) {
-        urls.push(data.signedUrl as string);
-      }
-    }
+  // 4. Resolve signed URLs for each slot
+  async function resolveSlotUrl(illustrationPath: string): Promise<string | null> {
+    const { data } = await adminClient.storage
+      .from("illustrations")
+      .createSignedUrl(illustrationPath, 3600);
+    return data?.signedUrl ?? null;
   }
 
-  return urls;
+  // Build slot data from page_images rows
+  const slotMap = new Map<
+    number,
+    { crop_x: number; crop_y: number; scale: number; photo_id: string | null }
+  >();
+  for (const pi of pageImages ?? []) {
+    slotMap.set(pi.slot as number, {
+      crop_x: (pi.crop_x as number) ?? 0,
+      crop_y: (pi.crop_y as number) ?? 0,
+      scale: (pi.scale as number) ?? 1,
+      photo_id: pi.photo_id as string | null,
+    });
+  }
+
+  async function buildSlot(slot: 1 | 2): Promise<SlotImageData | null> {
+    const slotData = slotMap.get(slot);
+
+    if (slotData?.photo_id) {
+      const illustPath = photoIllustrationMap.get(slotData.photo_id);
+      if (illustPath) {
+        const url = await resolveSlotUrl(illustPath);
+        if (url) {
+          return {
+            url,
+            crop_x: slotData.crop_x,
+            crop_y: slotData.crop_y,
+            scale: slotData.scale,
+          };
+        }
+      }
+    }
+
+    // Legacy fallback: slot 1 → pages.illustration_storage_path
+    if (slot === 1 && page.illustration_storage_path) {
+      const url = await resolveSlotUrl(page.illustration_storage_path as string);
+      if (url) {
+        return { url, crop_x: 0, crop_y: 0, scale: 1 };
+      }
+    }
+
+    return null;
+  }
+
+  const [slot1, slot2] = await Promise.all([buildSlot(1), buildSlot(2)]);
+
+  return {
+    layoutType: (page.layout_type as string) ?? "FULL_IMAGE",
+    textContent: (page.text_content as string | null) ?? null,
+    textSize: (page.text_size as string | null) ?? null,
+    fontSizePx: (page.font_size_px as number | null) ?? null,
+    textAlign: (page.text_align as string) ?? "start",
+    textX: (page.text_x as number | null) ?? null,
+    textY: (page.text_y as number | null) ?? null,
+    slot1,
+    slot2,
+  };
 }
 
 // ── Main render function ──────────────────────────────────────────────────────
@@ -176,8 +230,8 @@ async function fetchPageImageUrls(
  * Renders a single film scene to an MP4 video and JPEG thumbnail.
  *
  * Steps:
- * 1. Fetch scene row + resolve page image URLs
- * 2. Bundle Remotion composition (cached after first call)
+ * 1. Fetch scene row + resolve page layout/image data
+ * 2. Pass layout-faithful props to the Remotion composition
  * 3. Render video with renderMedia() — silent (no audio in this phase)
  * 4. Render thumbnail with renderStill() at 15% of the duration
  * 5. Upload both to film storage
@@ -215,39 +269,47 @@ export async function renderScene(
   }
 
   try {
-    // Resolve page image URLs
     const pageIds = (sceneRow.page_ids_json as string[]) ?? [];
-    const imageUrls = await fetchPageImageUrls(pageIds, adminClient);
 
-    // Build render hash (used to detect input changes in batch rendering)
+    // Resolve page layout + slot image data (layout-faithful)
+    const pageData = await fetchScenePageData(pageIds, adminClient);
+
+    // Build render hash
     const renderHash = buildRenderHash({
       narrationText: sceneRow.narration_text as string | null,
       voiceId: sceneRow.voice_id as string | null,
       motionPreset: sceneRow.motion_preset as string | null,
       transitionIn: sceneRow.transition_in as string | null,
       transitionOut: sceneRow.transition_out as string | null,
-      pageIds: pageIds,
+      pageIds,
     });
 
     // Compute duration
     const durationMs = (sceneRow.duration_ms as number | null) ?? 5000;
     const durationInFrames = Math.max(1, Math.round((durationMs / 1000) * fps));
 
-    // Composition props (cast to satisfy Remotion's Record<string,unknown> constraint)
+    // Composition props — layout-faithful, matching SceneCompositionProps
     const compositionProps = {
-      imageUrls,
-      narrationText: (sceneRow.narration_text as string | null) ?? null,
+      slot1: pageData.slot1,
+      slot2: pageData.slot2,
+      layoutType: pageData.layoutType,
+      textContent: pageData.textContent,
+      textSize: pageData.textSize,
+      fontSizePx: pageData.fontSizePx,
+      textAlign: pageData.textAlign,
+      textX: pageData.textX,
+      textY: pageData.textY,
       motionPreset:
         (sceneRow.motion_preset as string) === "ken_burns"
           ? "ken_burns"
-          : "static",
+          : ("static" as const),
       transitionIn:
-        (sceneRow.transition_in as string) === "fade" ? "fade" : "none",
+        (sceneRow.transition_in as string) === "fade" ? "fade" : ("none" as const),
       transitionOut:
-        (sceneRow.transition_out as string) === "fade" ? "fade" : "none",
+        (sceneRow.transition_out as string) === "fade" ? "fade" : ("none" as const),
     };
 
-    // Resolve pre-built bundle path (throws with a clear message if not found)
+    // Resolve pre-built bundle path
     const serveUrl = getBundlePath();
 
     // Dynamic import of renderer (avoids parse-time failure on Vercel)
@@ -255,7 +317,6 @@ export async function renderScene(
       "@remotion/renderer"
     );
 
-    // Select composition and override duration
     const composition = await selectComposition({
       serveUrl,
       id: "Scene",
@@ -284,7 +345,7 @@ export async function renderScene(
     try {
       // Render video (silent — no audio in this phase)
       console.log(
-        `[film-render] Rendering scene ${sceneId} (${durationInFrames} frames @ ${fps}fps)`
+        `[film-render] Rendering scene ${sceneId} (${durationInFrames} frames @ ${fps}fps, layout: ${pageData.layoutType})`
       );
       await renderMedia({
         composition: compositionWithDuration,
@@ -346,7 +407,6 @@ export async function renderScene(
     }
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
-    // Surface actionable diagnostics for the two most common failure modes.
     let message = raw;
     if (raw.includes("REMOTION_BUNDLE_PATH") || raw.includes(REMOTION_BUNDLE_DIR)) {
       // Already a clear message from getBundlePath() — pass through as-is.

@@ -22,12 +22,19 @@ export function Root() {
       width={1920}
       height={1080}
       defaultProps={{
-        imageUrls: [],
-        narrationText: "דוגמת קריינות",
+        slot1: null,
+        slot2: null,
+        layoutType: "FULL_IMAGE",
+        textContent: "דוגמת טקסט לאלבום",
+        textSize: "md",
+        fontSizePx: null,
+        textAlign: "center",
+        textX: null,
+        textY: null,
         motionPreset: "ken_burns",
         transitionIn: "fade",
         transitionOut: "fade",
-      }}
+      } satisfies SceneCompositionProps}
     />
   );
 }
