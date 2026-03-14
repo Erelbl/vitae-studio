@@ -61,9 +61,14 @@ function getBundlePath(): string {
 
   if (!fsSync.existsSync(bundlePath)) {
     throw new Error(
-      `[film-render] Remotion bundle not found at "${bundlePath}". ` +
-        `Run "npm run bundle:remotion" to build it, or set REMOTION_BUNDLE_PATH ` +
-        `to the path of an existing Remotion bundle directory.`
+      `[film-render] Remotion bundle not found.\n` +
+        `  Expected path : ${bundlePath}\n` +
+        `  process.cwd() : ${process.cwd()}\n` +
+        `  The bundle is created by "npm run build" (which runs bundle:remotion first).\n` +
+        `  If you are running outside of a full build (e.g. "next dev"), run:\n` +
+        `    npm run bundle:remotion\n` +
+        `  To use a custom bundle location set the REMOTION_BUNDLE_PATH env variable.\n` +
+        `  Note: rendering requires Chrome — it will not work on Vercel serverless.`
     );
   }
 

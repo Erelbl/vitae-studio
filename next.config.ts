@@ -18,6 +18,19 @@ const nextConfig: NextConfig = {
     "@remotion/compositor-darwin-x64",
     "@remotion/compositor-darwin-arm64",
   ],
+  // Tell Next.js/Vercel's output file tracer to include the pre-built Remotion
+  // bundle for the two render API routes. Without this, @vercel/nft would not
+  // include the .remotion-bundle directory in the deployed function package
+  // because the files are only accessed via fs.existsSync (not static imports).
+  // Note: actual rendering still requires Chrome — it will not work on Vercel
+  // serverless; this ensures the bundle is present so the error is "no Chrome"
+  // rather than "bundle not found".
+  outputFileTracingIncludes: {
+    "/api/admin/orders/[orderId]/film/render-scene": [".remotion-bundle/**/*"],
+    "/api/admin/orders/[orderId]/film/render-scenes": [
+      ".remotion-bundle/**/*",
+    ],
+  },
   async headers() {
     return [
       {
