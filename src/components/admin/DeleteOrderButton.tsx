@@ -50,7 +50,7 @@ export function DeleteOrderButton({ orderId, personName, compact = false }: Prop
         toast.success("ההזמנה נמחקה בהצלחה");
       }
 
-      router.push("/admin");
+      router.push("/admin/orders");
       router.refresh();
     } catch {
       toast.error("שגיאת רשת — המחיקה נכשלה");

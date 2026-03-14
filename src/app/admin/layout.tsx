@@ -32,6 +32,12 @@ export default async function AdminLayout({
               href="/admin"
               className="text-sm text-muted-foreground hover:text-foreground"
             >
+              לוח בקרה
+            </Link>
+            <Link
+              href="/admin/orders"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
               הזמנות
             </Link>
           </div>

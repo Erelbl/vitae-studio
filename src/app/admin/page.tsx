@@ -1,17 +1,22 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { STATUS_LABELS } from "@/lib/state-machine";
 import type { OrderStatus } from "@/types/order";
-import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
+
+// Statuses grouped by business stage
+const NEW_STATUSES: OrderStatus[] = [
+  "created",
+  "questionnaire_complete",
+  "enrichment_complete",
+  "photos_uploaded",
+];
+const REVIEW_STATUSES: OrderStatus[] = [
+  "preview_ready",
+  "admin_review",
+  "revision_requested",
+];
+const APPROVED_STATUSES: OrderStatus[] = ["approved", "generating_pdf"];
+const DELIVERED_STATUSES: OrderStatus[] = ["delivered"];
 
 const STATUS_COLORS: Partial<Record<OrderStatus, string>> = {
   photos_uploaded: "bg-gray-100 text-gray-700 border-gray-300",
@@ -40,7 +45,8 @@ const STATUS_DOT_COLORS: Partial<Record<OrderStatus, string>> = {
 };
 
 function StatusBadge({ status }: { status: OrderStatus }) {
-  const colorClass = STATUS_COLORS[status] ?? "bg-gray-50 text-gray-600 border-gray-200";
+  const colorClass =
+    STATUS_COLORS[status] ?? "bg-gray-50 text-gray-600 border-gray-200";
   const dotClass = STATUS_DOT_COLORS[status] ?? "bg-gray-400";
   const label = STATUS_LABELS[status] || status;
 
@@ -54,150 +60,188 @@ function StatusBadge({ status }: { status: OrderStatus }) {
   );
 }
 
-export default async function AdminOrdersPage() {
+export default async function AdminDashboardPage() {
   const supabase = createAdminClient();
   const { data: orders, error } = await supabase
     .from("orders")
-    .select("*")
+    .select("id, status, person_name, buyer_name, created_at")
     .order("created_at", { ascending: false });
 
   if (error) {
-    return <p className="text-destructive">שגיאה בטעינת ההזמנות</p>;
+    return <p className="text-destructive">שגיאה בטעינת נתונים</p>;
   }
 
-  return (
-    <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-6">
-      <h1 className="mb-6 text-2xl font-bold">הזמנות</h1>
-      {orders && orders.length > 0 ? (
-        <div className="hidden md:block rounded-xl border bg-background shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/60 hover:bg-muted/60">
-                <TableHead className="px-4 py-3 font-semibold text-foreground w-[120px]">
-                  מזהה הזמנה
-                </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground">
-                  שם הנפש
-                </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground">
-                  שם המזמין
-                </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground w-[130px]">
-                  טלפון
-                </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground w-[180px]">
-                  סטטוס
-                </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground w-[120px]">
-                  תאריך יצירה
-                </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground text-end w-[150px]">
-                  פעולות
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((order) => (
-                <TableRow
-                  key={order.id}
-                  className="cursor-pointer transition-colors hover:bg-muted/40 border-b last:border-b-0"
-                >
-                  <TableCell className="px-4 py-3">
-                    <Link
-                      href={`/admin/orders/${order.id}`}
-                      className="font-mono text-xs text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      {order.id.slice(0, 8)}…
-                    </Link>
-                  </TableCell>
-                  <TableCell className="px-4 py-3 font-medium">
-                    <Link
-                      href={`/admin/orders/${order.id}`}
-                      className="hover:text-primary transition-colors"
-                    >
-                      {order.person_name || "—"}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground">
-                    {order.buyer_name || "—"}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground font-mono text-sm">
-                    {order.buyer_phone || "—"}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <StatusBadge status={order.status as OrderStatus} />
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground text-sm">
-                    {new Date(order.created_at).toLocaleDateString("he-IL", {
-                      timeZone: "Asia/Jerusalem",
-                    })}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-end">
-                    <div className="flex items-center justify-end gap-1">
-                      <Link
-                        href={`/admin/orders/${order.id}`}
-                        className="inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
-                      >
-                        פתח
-                      </Link>
-                      <DeleteOrderButton
-                        orderId={order.id}
-                        personName={order.person_name}
-                        compact
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <p className="text-muted-foreground">אין הזמנות עדיין</p>
-      )}
+  const allOrders = orders ?? [];
+  const total = allOrders.length;
+  const newCount = allOrders.filter((o) =>
+    NEW_STATUSES.includes(o.status as OrderStatus)
+  ).length;
+  const reviewCount = allOrders.filter((o) =>
+    REVIEW_STATUSES.includes(o.status as OrderStatus)
+  ).length;
+  const approvedCount = allOrders.filter((o) =>
+    APPROVED_STATUSES.includes(o.status as OrderStatus)
+  ).length;
+  const deliveredCount = allOrders.filter((o) =>
+    DELIVERED_STATUSES.includes(o.status as OrderStatus)
+  ).length;
 
-      {/* Mobile fallback — simple card list */}
-      {orders && orders.length > 0 && (
-        <div className="md:hidden flex flex-col gap-3">
-          {orders.map((order) => (
-            <div
-              key={order.id}
-              className="rounded-lg border bg-background p-4"
-            >
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <Link
-                  href={`/admin/orders/${order.id}`}
-                  className="font-medium hover:text-primary transition-colors"
-                >
-                  {order.person_name || "—"}
-                </Link>
-                <StatusBadge status={order.status as OrderStatus} />
-              </div>
-              <div className="text-sm text-muted-foreground flex flex-col gap-0.5 mb-3">
-                <span>{order.buyer_name || "—"}</span>
-                <span>
-                  {new Date(order.created_at).toLocaleDateString("he-IL", {
-                    timeZone: "Asia/Jerusalem",
-                  })}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/admin/orders/${order.id}`}
-                  className="inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
-                >
-                  פתח
-                </Link>
-                <DeleteOrderButton
-                  orderId={order.id}
-                  personName={order.person_name}
-                  compact
-                />
-              </div>
-            </div>
-          ))}
+  const recentOrders = allOrders.slice(0, 8);
+
+  const kpis = [
+    {
+      label: 'סה"כ הזמנות',
+      value: total,
+      bg: "bg-background",
+      border: "border",
+    },
+    {
+      label: "חדשות / בתהליך",
+      value: newCount,
+      bg: "bg-blue-50",
+      border: "border-blue-200",
+    },
+    {
+      label: "ממתינות לאישור",
+      value: reviewCount,
+      bg: "bg-yellow-50",
+      border: "border-yellow-200",
+    },
+    {
+      label: "מאושרות",
+      value: approvedCount,
+      bg: "bg-green-50",
+      border: "border-green-200",
+    },
+    {
+      label: "נמסרו",
+      value: deliveredCount,
+      bg: "bg-emerald-50",
+      border: "border-emerald-200",
+    },
+  ];
+
+  return (
+    <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-6 space-y-8">
+      <h1 className="text-2xl font-bold">לוח בקרה</h1>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {kpis.map((kpi) => (
+          <div
+            key={kpi.label}
+            className={`rounded-xl ${kpi.border} ${kpi.bg} p-5 shadow-sm`}
+          >
+            <p className="text-sm text-muted-foreground mb-1">{kpi.label}</p>
+            <p className="text-3xl font-bold">{kpi.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent Orders */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">הזמנות אחרונות</h2>
+          <Link
+            href="/admin/orders"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            כל ההזמנות ←
+          </Link>
         </div>
-      )}
+
+        {recentOrders.length === 0 ? (
+          <p className="text-muted-foreground">אין הזמנות עדיין</p>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden md:block rounded-xl border bg-background shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/60 border-b">
+                    <th className="px-4 py-3 text-start font-semibold text-foreground">
+                      שם הנפש
+                    </th>
+                    <th className="px-4 py-3 text-start font-semibold text-foreground">
+                      שם המזמין
+                    </th>
+                    <th className="px-4 py-3 text-start font-semibold text-foreground w-[120px]">
+                      תאריך יצירה
+                    </th>
+                    <th className="px-4 py-3 text-start font-semibold text-foreground w-[180px]">
+                      סטטוס
+                    </th>
+                    <th className="px-4 py-3 text-end font-semibold text-foreground w-[100px]" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentOrders.map((order) => (
+                    <tr
+                      key={order.id}
+                      className="border-b last:border-b-0 hover:bg-muted/30 transition-colors"
+                    >
+                      <td className="px-4 py-3 font-medium">
+                        {order.person_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {order.buyer_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {new Date(order.created_at).toLocaleDateString(
+                          "he-IL",
+                          { timeZone: "Asia/Jerusalem" }
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={order.status as OrderStatus} />
+                      </td>
+                      <td className="px-4 py-3 text-end">
+                        <Link
+                          href={`/admin/orders/${order.id}`}
+                          className="inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                        >
+                          פתח
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden flex flex-col gap-3">
+              {recentOrders.map((order) => (
+                <div
+                  key={order.id}
+                  className="rounded-lg border bg-background p-4"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="font-medium">
+                      {order.person_name || "—"}
+                    </span>
+                    <StatusBadge status={order.status as OrderStatus} />
+                  </div>
+                  <div className="text-sm text-muted-foreground flex flex-col gap-0.5 mb-3">
+                    <span>{order.buyer_name || "—"}</span>
+                    <span>
+                      {new Date(order.created_at).toLocaleDateString("he-IL", {
+                        timeZone: "Asia/Jerusalem",
+                      })}
+                    </span>
+                  </div>
+                  <Link
+                    href={`/admin/orders/${order.id}`}
+                    className="inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                  >
+                    פתח
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

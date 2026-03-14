@@ -279,7 +279,7 @@ export default async function AdminOrderDetailPage({
       <div className="rounded-xl border bg-card p-5">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 mb-3 text-sm text-muted-foreground">
-          <Link href="/admin" className="hover:text-foreground transition-colors">
+          <Link href="/admin/orders" className="hover:text-foreground transition-colors">
             הזמנות
           </Link>
           <span>/</span>
