@@ -270,17 +270,24 @@ export default async function AdminOrderDetailPage({
   const filmBucket = process.env.FILM_STORAGE_BUCKET ?? "films";
 
   const sceneThumbnailUrls: Record<string, string | null> = {};
+  const sceneVideoUrls: Record<string, string | null> = {};
   if (filmScenes.length > 0) {
     await Promise.all(
       filmScenes.map(async (scene) => {
-        if (scene.thumbnail_path) {
-          const { data } = await adminClient.storage
-            .from(filmBucket)
-            .createSignedUrl(scene.thumbnail_path, 3600);
-          sceneThumbnailUrls[scene.id] = data?.signedUrl ?? null;
-        } else {
-          sceneThumbnailUrls[scene.id] = null;
-        }
+        const [thumbResult, videoResult] = await Promise.all([
+          scene.thumbnail_path
+            ? adminClient.storage
+                .from(filmBucket)
+                .createSignedUrl(scene.thumbnail_path, 3600)
+            : Promise.resolve({ data: null }),
+          scene.rendered_scene_path
+            ? adminClient.storage
+                .from(filmBucket)
+                .createSignedUrl(scene.rendered_scene_path, 3600)
+            : Promise.resolve({ data: null }),
+        ]);
+        sceneThumbnailUrls[scene.id] = thumbResult.data?.signedUrl ?? null;
+        sceneVideoUrls[scene.id] = videoResult.data?.signedUrl ?? null;
       })
     );
   }
@@ -556,6 +563,7 @@ export default async function AdminOrderDetailPage({
           sampleAUrl={filmSampleAUrl}
           sampleBUrl={filmSampleBUrl}
           sceneThumbnailUrls={sceneThumbnailUrls}
+          sceneVideoUrls={sceneVideoUrls}
         />
       </Section>
 

@@ -48,6 +48,43 @@ const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
 
 // ── Core logic ───────────────────────────────────────────────────────────────
 
+/**
+ * Finds scenes stuck in "rendering" status (updated more than 30 minutes ago)
+ * and resets them to "queued" so they can be picked up again.
+ *
+ * This handles the case where the render worker crashed mid-render, leaving
+ * scenes in the "rendering" state indefinitely.
+ */
+async function resetStaleRenderingScenes(): Promise<void> {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+  const { data: stale, error } = await adminClient
+    .from("film_scenes")
+    .select("id")
+    .eq("status", "rendering")
+    .lt("updated_at", cutoff);
+
+  if (error) {
+    console.warn("[render-worker] Could not check for stale scenes:", error.message);
+    return;
+  }
+
+  if (!stale || stale.length === 0) return;
+
+  console.log(
+    `[render-worker] Resetting ${stale.length} stale rendering scene(s) back to queued.`
+  );
+
+  await adminClient
+    .from("film_scenes")
+    .update({
+      status: "queued",
+      error_message: "Reset from stale rendering state — worker restarted",
+      updated_at: new Date().toISOString(),
+    })
+    .in("id", stale.map((s) => s.id as string));
+}
+
 async function fetchQueuedScenes(
   specificIds?: string[]
 ): Promise<
@@ -133,10 +170,25 @@ async function runOnce(specificIds?: string[]): Promise<{
   let rendered = 0;
   let failed = 0;
 
+  // Track which film projects had successful renders (for last_rendered_at update)
+  const successfulProjectIds = new Set<string>();
+
   for (const scene of scenes) {
     const success = await processScene(scene);
-    if (success) rendered++;
-    else failed++;
+    if (success) {
+      rendered++;
+      successfulProjectIds.add(scene.film_project_id);
+    } else {
+      failed++;
+    }
+  }
+
+  // Update last_rendered_at for projects that had at least one successful render
+  if (successfulProjectIds.size > 0) {
+    await adminClient
+      .from("film_projects")
+      .update({ last_rendered_at: new Date().toISOString() })
+      .in("id", [...successfulProjectIds]);
   }
 
   console.log(
@@ -149,6 +201,9 @@ async function runOnce(specificIds?: string[]): Promise<{
 
 async function main() {
   console.log("[render-worker] Starting film render worker...");
+
+  // Reset any scenes stuck in "rendering" from a previous crashed run
+  await resetStaleRenderingScenes();
 
   const args = process.argv.slice(2);
 

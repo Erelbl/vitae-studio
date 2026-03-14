@@ -65,6 +65,8 @@ interface FilmPanelProps {
   sampleBUrl: string | null;
   /** Pre-resolved signed thumbnail URLs keyed by scene id. */
   sceneThumbnailUrls?: Record<string, string | null>;
+  /** Pre-resolved signed video URLs keyed by scene id (1-hour expiry). */
+  sceneVideoUrls?: Record<string, string | null>;
 }
 
 export function FilmPanel({
@@ -74,6 +76,7 @@ export function FilmPanel({
   sampleAUrl,
   sampleBUrl,
   sceneThumbnailUrls = {},
+  sceneVideoUrls = {},
 }: FilmPanelProps) {
   const router = useRouter();
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -432,6 +435,16 @@ export function FilmPanel({
         >
           הרכב סרט
         </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={isLoading}
+          onClick={() => router.refresh()}
+          title="רענן סטטוס סצנות"
+        >
+          רענן
+        </Button>
       </div>
 
       {/* ── Scene list ────────────────────────────────────────────────────── */}
@@ -456,6 +469,7 @@ export function FilmPanel({
                 key={scene.id}
                 scene={scene}
                 thumbnailUrl={sceneThumbnailUrls[scene.id] ?? null}
+                videoUrl={sceneVideoUrls[scene.id] ?? null}
                 isSelected={selectedSceneIds.has(scene.id)}
                 onToggleSelect={() => toggleSceneSelection(scene.id)}
                 onRender={() => handleRenderScene(scene.id)}
@@ -500,6 +514,7 @@ const SCENE_STATUS_COLORS: Record<string, string> = {
 function SceneRow({
   scene,
   thumbnailUrl,
+  videoUrl,
   isSelected,
   onToggleSelect,
   onRender,
@@ -508,6 +523,7 @@ function SceneRow({
 }: {
   scene: FilmScene;
   thumbnailUrl: string | null;
+  videoUrl: string | null;
   isSelected: boolean;
   onToggleSelect: () => void;
   onRender: () => void;
@@ -613,6 +629,21 @@ function SceneRow({
           ? "↺"
           : "▶"}
       </button>
+
+      {/* Video preview link */}
+      {videoUrl ? (
+        <a
+          href={videoUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 h-6 px-1.5 rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-blue-600"
+          title="צפה בסרטון (נפתח בטאב חדש)"
+        >
+          ▶
+        </a>
+      ) : (
+        <span className="shrink-0 w-5" />
+      )}
 
       {/* Error hint */}
       {scene.status === "error" && scene.error_message && (

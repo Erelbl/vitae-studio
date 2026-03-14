@@ -288,6 +288,31 @@ films/{orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
 
 ---
 
+## Admin UI
+
+The Film section appears on the admin order detail page (`/admin/orders/[orderId]`), below the story section. It shows:
+
+- Film project status, narration mode, motion style, selected voice
+- Scene count, estimated total duration, and render progress summary
+- Voice samples section: generate A/B samples, play audio, select voice
+- TTS pronunciation overrides editor
+- Action buttons: Build scenes, Queue scenes for render, Assemble film (placeholder), Refresh
+- Scene list: each scene shows thumbnail, order number, spread key, text preview, duration, status badge
+- Per-scene: queue button (▶ / ↺), video preview link (▶, blue, opens in new tab when rendered), error tooltip
+- Empty state when no film project exists yet
+
+### Scene video preview
+
+When a scene is successfully rendered, a blue ▶ link appears in its row. Clicking it opens the signed MP4 URL in a new tab. The URL is valid for 1 hour. To get a fresh URL after expiry, use the "Refresh" button (top-right of the scene list), which re-renders the server component and issues new signed URLs.
+
+## Worker stability
+
+The render worker handles crashed-render recovery automatically at startup:
+
+- Any scene stuck in `rendering` with `updated_at` older than 30 minutes is reset to `queued`
+- This prevents scenes being permanently stuck if the worker crashes mid-render
+- `film_project.last_rendered_at` is updated after each successful render batch
+
 ## Pipeline Status
 
 1. **Create film project** — implemented
@@ -295,7 +320,7 @@ films/{orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
 3. **Voice selection** — implemented (A/B samples, admin picks)
 4. **TTS overrides** — implemented (pronunciation fixes)
 5. **Generate narration** — not yet implemented (per-scene TTS)
-6. **Render scenes** — implemented (queue + external worker; see above)
+6. **Render scenes** — implemented (queue + external worker; crash recovery; video preview in admin)
 7. **Assemble film** — not yet implemented
 8. **Deliver** — not yet implemented
 
@@ -313,20 +338,6 @@ films/{orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
 | INNGEST_EVENT_KEY | No | For future background job orchestration |
 | INNGEST_SIGNING_KEY | No | For future background job orchestration |
 | INNGEST_DEV | No | Enable Inngest dev mode |
-
-## Admin UI
-
-The Film section appears on the admin order detail page (`/admin/orders/[orderId]`), below the story section. It shows:
-
-- Film project status, narration mode, motion style, selected voice
-- Scene count, estimated total duration, and render progress summary
-- Voice samples section: generate A/B samples, play audio, select voice
-- TTS pronunciation overrides editor
-- Action buttons: Build scenes, Render scenes (placeholder), Assemble film (placeholder)
-- Scene list: each scene shows order number, spread key, text preview, estimated duration, status
-- Empty state when no film project exists yet
-
-Implemented actions: Create film project, Build scenes, Generate voice samples, Select voice, TTS overrides.
 
 ## Migration
 
