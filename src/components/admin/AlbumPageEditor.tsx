@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { LayoutType, PageImageSlot, PreviewPage } from "@/types/page";
-import { LAYOUT_TYPES } from "@/types/page";
+import type { LayoutType, PageImageSlot, PreviewPage, TextSize } from "@/types/page";
+import { LAYOUT_TYPES, TEXT_SIZES } from "@/types/page";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +21,7 @@ export type EditorPage = {
   layout_type: string;
   text_content: string | null;
   text_version: number;
+  text_size: TextSize | null;
   images: Array<{
     slot: number;
     photo_id: string | null;
@@ -41,12 +42,15 @@ export type PhotoForEditor = {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const LAYOUT_LABELS: Record<LayoutType, string> = {
-  FULL_IMAGE: "תמונה מלאה",
+  FULL_IMAGE: "תמונה מלאה — טקסט תחתון",
   TEXT_ONLY: "טקסט בלבד",
   IMAGE_TOP_TEXT_BOTTOM: "תמונה עליונה",
   TEXT_TOP_IMAGE_BOTTOM: "תמונה תחתונה",
-  IMAGE_LEFT_TEXT_RIGHT: "תמונה ימין / טקסט שמאל",
+  IMAGE_LEFT_TEXT_RIGHT: "תמונה שמאל / טקסט ימין",
+  IMAGE_RIGHT_TEXT_LEFT: "תמונה ימין / טקסט שמאל",
   TWO_IMAGES: "שתי תמונות",
+  FULL_IMAGE_TEXT_TOP: "תמונה מלאה — טקסט עליון",
+  FULL_IMAGE_TEXT_CENTER: "תמונה מלאה — טקסט מרכז",
 };
 
 /** How many image slots each layout uses */
@@ -56,7 +60,17 @@ const LAYOUT_SLOTS: Record<LayoutType, number[]> = {
   IMAGE_TOP_TEXT_BOTTOM: [1],
   TEXT_TOP_IMAGE_BOTTOM: [1],
   IMAGE_LEFT_TEXT_RIGHT: [1],
+  IMAGE_RIGHT_TEXT_LEFT: [1],
   TWO_IMAGES: [1, 2],
+  FULL_IMAGE_TEXT_TOP: [1],
+  FULL_IMAGE_TEXT_CENTER: [1],
+};
+
+const TEXT_SIZE_LABELS: Record<TextSize, string> = {
+  sm: "קטן",
+  md: "בינוני",
+  lg: "גדול",
+  xl: "גדול מאוד",
 };
 
 const LIFE_STAGE_LABELS: Record<string, string> = {
@@ -95,11 +109,13 @@ export function AlbumPageEditor({
   pages,
   completedPhotos,
   personName,
+  onPageSelect,
 }: {
   orderId: string;
   pages: EditorPage[];
   completedPhotos: PhotoForEditor[];
   personName: string;
+  onPageSelect?: (pageNumber: number) => void;
 }) {
   const router = useRouter();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
@@ -127,11 +143,11 @@ export function AlbumPageEditor({
             return (
               <button
                 key={page.id}
-                onClick={() =>
-                  setSelectedPageId(
-                    page.id === selectedPageId ? null : page.id
-                  )
-                }
+                onClick={() => {
+                  const isDeselect = page.id === selectedPageId;
+                  setSelectedPageId(isDeselect ? null : page.id);
+                  if (!isDeselect) onPageSelect?.(page.page_number);
+                }}
                 className={`h-8 min-w-[2.5rem] px-2 rounded-md text-xs font-mono transition-colors ${
                   page.id === selectedPageId
                     ? "bg-primary text-primary-foreground"
@@ -189,6 +205,7 @@ function PageEditorPanel({
   const [layoutType, setLayoutType] = useState<LayoutType>(
     (page.layout_type as LayoutType) ?? "FULL_IMAGE"
   );
+  const [textSize, setTextSize] = useState<TextSize>(page.text_size ?? "md");
   const [slots, setSlots] = useState<Record<number, SlotState>>(() => {
     const m: Record<number, SlotState> = {};
     for (const img of page.images) {
@@ -227,6 +244,7 @@ function PageEditorPanel({
       page_type: page.page_type as PreviewPage["page_type"],
       layout_type: layoutType,
       text_content: text || null,
+      text_size: textSize,
       image_url:
         page.images.find((i) => i.slot === 1)?.image_url ??
         null,
@@ -261,6 +279,16 @@ function PageEditorPanel({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ layout_type: newLayout }),
+    });
+    onSaved();
+  }
+
+  async function handleTextSizeChange(newSize: TextSize) {
+    setTextSize(newSize);
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_size: newSize }),
     });
     onSaved();
   }
@@ -331,13 +359,13 @@ function PageEditorPanel({
   const previewPage = buildPreviewPage();
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[180px_1fr] gap-6 pt-1">
+    <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 pt-1">
       {/* Live mini-preview */}
       <div>
         <p className="text-xs text-muted-foreground mb-2">
           תצוגה מקדימה — עמוד {page.page_number}
         </p>
-        <div className="w-full max-w-[180px]">
+        <div className="w-full max-w-[240px]">
           <AlbumPageView page={previewPage} personName={personName} />
         </div>
       </div>
@@ -370,6 +398,26 @@ function PageEditorPanel({
               {savingText ? "שומר..." : "שמור טקסט ←"}
             </button>
           )}
+        </div>
+
+        {/* Text size */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">גודל טקסט</p>
+          <div className="flex gap-1.5">
+            {TEXT_SIZES.map((sz) => (
+              <button
+                key={sz}
+                onClick={() => handleTextSizeChange(sz)}
+                className={`rounded-md px-3 py-1.5 text-xs border transition-colors ${
+                  textSize === sz
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {TEXT_SIZE_LABELS[sz]}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Layout picker */}
@@ -513,13 +561,13 @@ function SpecialPagePanel({
   const previewPage = buildPreviewPage();
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[180px_1fr] gap-6 pt-1">
+    <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 pt-1">
       {/* Live mini-preview */}
       <div>
         <p className="text-xs text-muted-foreground mb-2">
           {pageLabel} — עמוד {page.page_number}
         </p>
-        <div className="w-full max-w-[180px]">
+        <div className="w-full max-w-[240px]">
           <AlbumPageView page={previewPage} personName={personName} />
         </div>
       </div>
@@ -724,10 +772,10 @@ function ImageSlotEditor({
       {/* Image frame / drag canvas */}
       {hasImage ? (
         <div className="space-y-3">
-          {/* Drag-to-pan frame */}
+          {/* Drag-to-pan frame — larger for easier positioning */}
           <div
             ref={frameRef}
-            className="relative aspect-square w-32 overflow-hidden rounded-lg border border-border bg-muted"
+            className="relative aspect-square w-48 overflow-hidden rounded-lg border border-border bg-muted"
             style={{
               cursor:
                 scale > 1
@@ -758,8 +806,8 @@ function ImageSlotEditor({
               }}
             />
             {scale > 1 && (
-              <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
-                <span className="text-white/60 text-[9px] bg-black/30 rounded px-1">
+              <div className="absolute inset-0 flex items-end justify-center pb-1.5 pointer-events-none">
+                <span className="text-white/70 text-[10px] bg-black/40 rounded px-1.5 py-0.5">
                   גרור להזזה
                 </span>
               </div>
@@ -768,29 +816,75 @@ function ImageSlotEditor({
 
           {/* Zoom slider */}
           <div className="flex items-center gap-3">
-            <span className="text-[10px] text-muted-foreground w-10 shrink-0">
+            <span className="text-[10px] text-muted-foreground w-12 shrink-0 tabular-nums">
               זום {scale.toFixed(1)}×
             </span>
             <input
               type="range"
               min={1}
-              max={3}
-              step={0.1}
+              max={4}
+              step={0.05}
               value={scale}
               onChange={(e) => handleScaleChange(Number(e.target.value))}
-              className="flex-1 h-1 appearance-none bg-border rounded accent-primary"
+              className="flex-1 h-1.5 appearance-none bg-border rounded accent-primary"
             />
           </div>
 
+          {/* Fine-grained nudge controls */}
+          {scale > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground shrink-0">כיוון:</span>
+              <div className="grid grid-cols-3 gap-0.5">
+                {/* Row 1 */}
+                <div />
+                <NudgeButton
+                  label="↑"
+                  onClick={() => {
+                    const next = Math.max(0, cropY - 0.05);
+                    setCropY(next);
+                    latestCropRef.current = { crop_x: cropX, crop_y: next };
+                    onCropSave(cropX, next, scale);
+                  }}
+                />
+                <div />
+                {/* Row 2 */}
+                <NudgeButton
+                  label="←"
+                  onClick={() => {
+                    const next = Math.max(0, cropX - 0.05);
+                    setCropX(next);
+                    latestCropRef.current = { crop_x: next, crop_y: cropY };
+                    onCropSave(next, cropY, scale);
+                  }}
+                />
+                <div />
+                <NudgeButton
+                  label="→"
+                  onClick={() => {
+                    const next = Math.min(1, cropX + 0.05);
+                    setCropX(next);
+                    latestCropRef.current = { crop_x: next, crop_y: cropY };
+                    onCropSave(next, cropY, scale);
+                  }}
+                />
+                {/* Row 3 */}
+                <div />
+                <NudgeButton
+                  label="↓"
+                  onClick={() => {
+                    const next = Math.min(1, cropY + 0.05);
+                    setCropY(next);
+                    latestCropRef.current = { crop_x: cropX, crop_y: next };
+                    onCropSave(cropX, next, scale);
+                  }}
+                />
+                <div />
+              </div>
+            </div>
+          )}
+
           {/* Replace buttons */}
           <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
-            >
-              {uploading ? "מעלה..." : "החלף בתמונה ידנית"}
-            </button>
             {!hidePhotoPicker && (
               <button
                 onClick={() => setShowPicker(true)}
@@ -799,26 +893,33 @@ function ImageSlotEditor({
                 החלף מאיורים
               </button>
             )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
+            >
+              {uploading ? "מעלה..." : "החלף בתמונה ידנית"}
+            </button>
           </div>
         </div>
       ) : (
-        /* No image: show upload + picker options */
+        /* No image: picker first (priority), then upload */
         <div className="space-y-2">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="w-full rounded-lg border-2 border-dashed border-primary/40 hover:border-primary/70 bg-primary/5 aspect-video flex items-center justify-center text-xs text-primary/70 transition-colors disabled:opacity-50"
-          >
-            {uploading ? "מעלה תמונה..." : "↑ העלה תמונה מהמחשב"}
-          </button>
           {!hidePhotoPicker && (
             <button
               onClick={() => setShowPicker(true)}
-              className="w-full rounded-lg border-2 border-dashed border-border hover:border-primary/40 aspect-video flex items-center justify-center text-xs text-muted-foreground transition-colors"
+              className="w-full rounded-lg border-2 border-dashed border-primary/40 hover:border-primary/70 bg-primary/5 aspect-video flex items-center justify-center text-xs text-primary/70 transition-colors"
             >
               + בחר מאיורים שנוצרו
             </button>
           )}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="w-full rounded-lg border-2 border-dashed border-border hover:border-primary/40 aspect-video flex items-center justify-center text-xs text-muted-foreground transition-colors disabled:opacity-50"
+          >
+            {uploading ? "מעלה תמונה..." : "↑ העלה תמונה מהמחשב"}
+          </button>
         </div>
       )}
 
@@ -884,5 +985,18 @@ function ImageSlotEditor({
         </Dialog>
       )}
     </div>
+  );
+}
+
+// ─── NudgeButton ──────────────────────────────────────────────────────────────
+
+function NudgeButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="h-7 w-7 rounded border border-border bg-muted hover:bg-muted/60 text-xs font-mono flex items-center justify-center transition-colors"
+    >
+      {label}
+    </button>
   );
 }

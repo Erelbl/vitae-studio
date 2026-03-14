@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { LAYOUT_TYPES } from "@/types/page";
+import { LAYOUT_TYPES, TEXT_SIZES } from "@/types/page";
 
 export async function PUT(
   req: NextRequest,
@@ -19,7 +19,7 @@ export async function PUT(
 
   const { orderId, pageId } = await params;
 
-  let body: { text_content?: string | null; layout_type?: string };
+  let body: { text_content?: string | null; layout_type?: string; text_size?: string };
   try {
     body = await req.json();
   } catch {
@@ -31,7 +31,7 @@ export async function PUT(
   // Verify page belongs to this order
   const { data: page } = await adminClient
     .from("pages")
-    .select("id, text_content, text_version, layout_type")
+    .select("id, text_content, text_version, layout_type, text_size")
     .eq("id", pageId)
     .eq("order_id", orderId)
     .single();
@@ -47,6 +47,17 @@ export async function PUT(
   ) {
     return NextResponse.json(
       { error: `Invalid layout_type: ${body.layout_type}` },
+      { status: 400 }
+    );
+  }
+
+  // Validate text_size if provided
+  if (
+    body.text_size !== undefined &&
+    !TEXT_SIZES.includes(body.text_size as (typeof TEXT_SIZES)[number])
+  ) {
+    return NextResponse.json(
+      { error: `Invalid text_size: ${body.text_size}` },
       { status: 400 }
     );
   }
@@ -69,6 +80,11 @@ export async function PUT(
   // Handle layout_type change (no versioning needed)
   if (body.layout_type !== undefined && body.layout_type !== page.layout_type) {
     updates.layout_type = body.layout_type;
+  }
+
+  // Handle text_size change
+  if (body.text_size !== undefined && body.text_size !== page.text_size) {
+    updates.text_size = body.text_size;
   }
 
   if (Object.keys(updates).length === 0) {

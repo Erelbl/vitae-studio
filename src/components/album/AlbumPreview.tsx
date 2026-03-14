@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PreviewData, PreviewPage } from "@/types/page";
 import { AlbumPageView } from "./AlbumPageView";
 
 interface AlbumPreviewProps {
   data: PreviewData;
+  /** When set by a parent, jump the preview to this spread index. */
+  focusedSpreadIndex?: number;
 }
 
 /** Groups a flat page list into consecutive pairs (spreads). */
@@ -17,13 +19,21 @@ function buildSpreads(pages: PreviewPage[]): [PreviewPage, PreviewPage | null][]
   return spreads;
 }
 
-export function AlbumPreview({ data }: AlbumPreviewProps) {
+export function AlbumPreview({ data, focusedSpreadIndex }: AlbumPreviewProps) {
   const { pages, personName } = data;
   const spreads = buildSpreads(pages);
   const totalSpreads = spreads.length;
 
   const [spreadIndex, setSpreadIndex] = useState(0);
   const [animKey, setAnimKey] = useState(0);
+
+  // Sync with external navigation requests (e.g. editor page selection)
+  useEffect(() => {
+    if (focusedSpreadIndex === undefined) return;
+    const clamped = Math.max(0, Math.min(focusedSpreadIndex, totalSpreads - 1));
+    setSpreadIndex(clamped);
+    setAnimKey((k) => k + 1);
+  }, [focusedSpreadIndex, totalSpreads]);
 
   function navigate(next: number) {
     setSpreadIndex(next);

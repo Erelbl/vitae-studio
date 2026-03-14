@@ -30,9 +30,15 @@ export const LAYOUT_TYPES = [
   "IMAGE_TOP_TEXT_BOTTOM",
   "TEXT_TOP_IMAGE_BOTTOM",
   "IMAGE_LEFT_TEXT_RIGHT",
+  "IMAGE_RIGHT_TEXT_LEFT",
   "TWO_IMAGES",
+  "FULL_IMAGE_TEXT_TOP",
+  "FULL_IMAGE_TEXT_CENTER",
 ] as const;
 export type LayoutType = (typeof LAYOUT_TYPES)[number];
+
+export const TEXT_SIZES = ["sm", "md", "lg", "xl"] as const;
+export type TextSize = (typeof TEXT_SIZES)[number];
 
 export const VERSION_TYPES = ["text", "illustration"] as const;
 export type VersionType = (typeof VERSION_TYPES)[number];
@@ -66,6 +72,7 @@ export interface AlbumPage {
   admin_text_override: boolean;
   page_type: PageType;
   layout_type: LayoutType;
+  text_size: TextSize | null;
   narration_audio_path: string | null;
   narration_duration_ms: number | null;
   transition_type: string;
@@ -118,6 +125,8 @@ export interface PreviewPage {
   image_url: string | null;
   /** Where the text sits (only used by FULL_IMAGE overlay). Defaults to "overlay". */
   text_position?: TextPosition;
+  /** Display font size for page text. Defaults to "md" (15 px). */
+  text_size?: TextSize | null;
   /**
    * New slot-based image assignments from page_images table.
    * Slot 1 = primary image, Slot 2 = secondary (TWO_IMAGES layout only).

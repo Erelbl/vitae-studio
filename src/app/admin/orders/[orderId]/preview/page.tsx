@@ -3,12 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPreviewData } from "@/lib/preview/loader";
-import { AlbumPreview } from "@/components/album/AlbumPreview";
-import { AlbumPageEditor } from "@/components/admin/AlbumPageEditor";
+import { AlbumEditorLayout } from "@/components/admin/AlbumEditorLayout";
 import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
 import { STATUS_LABELS } from "@/lib/state-machine";
 import { Badge } from "@/components/ui/badge";
 import type { OrderStatus } from "@/types/order";
+import type { TextSize } from "@/types/page";
 
 const BUCKET = "illustrations";
 
@@ -48,7 +48,7 @@ export default async function AdminOrderPreviewPage({
   // Include all page types so admins can upload images to cover/dedication/etc.
   const { data: editorPagesRaw } = await adminClient
     .from("pages")
-    .select("id, page_number, page_type, layout_type, text_content, text_version")
+    .select("id, page_number, page_type, layout_type, text_content, text_version, text_size")
     .eq("order_id", orderId)
     .order("page_number");
 
@@ -160,11 +160,12 @@ export default async function AdminOrderPreviewPage({
     layout_type: (p.layout_type as string | null) ?? "FULL_IMAGE",
     text_content: (p.text_content as string | null) ?? null,
     text_version: (p.text_version as number) ?? 1,
+    text_size: ((p as { text_size?: string | null }).text_size as TextSize | null) ?? null,
     images: pageImagesMap.get(p.id as string) ?? [],
   }));
 
   return (
-    <div className="max-w-5xl mx-auto py-10 px-4 space-y-8">
+    <div className="max-w-6xl mx-auto py-10 px-4 space-y-8">
       {/* Back + status bar */}
       <div className="flex items-center justify-between gap-3">
         <Link
@@ -191,32 +192,14 @@ export default async function AdminOrderPreviewPage({
         תצוגה פנימית בלבד — הלקוח אינו יכול לראות את האלבום עד לאחר פרסום
       </div>
 
-      {/* Album preview — centered */}
-      <div className="max-w-3xl mx-auto">
-        <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold mb-3 text-center">
-          תצוגה מקדימה
-        </p>
-        <h1 className="text-2xl font-semibold text-center mb-6">
-          סיפורו של {personName}
-        </h1>
-        <AlbumPreview data={previewData} />
-      </div>
-
-      {/* Album page editor */}
-      <section className="rounded-xl border bg-card p-5 space-y-4">
-        <div>
-          <h2 className="text-base font-semibold">עריכת עמודים</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            ערוך טקסט, פריסה ואיורים לכל עמוד. טקסט נשמר עם ניהול גרסאות.
-          </p>
-        </div>
-        <AlbumPageEditor
-          orderId={orderId}
-          pages={editorPages}
-          completedPhotos={completedPhotos}
-          personName={personName}
-        />
-      </section>
+      {/* Album preview + editor — connected via AlbumEditorLayout client wrapper */}
+      <AlbumEditorLayout
+        previewData={previewData}
+        editorPages={editorPages}
+        completedPhotos={completedPhotos}
+        orderId={orderId}
+        personName={personName}
+      />
     </div>
   );
 }
