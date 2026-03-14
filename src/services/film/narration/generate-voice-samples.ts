@@ -2,7 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { filmEnv } from "@/lib/film-env";
 import { textToSpeech } from "./elevenlabs";
 import { uploadVoiceSample } from "../storage/film-storage";
-import type { FilmProject } from "@/types/film";
+import { applyTtsOverrides } from "../utils/apply-tts-overrides";
+import type { FilmProject, TtsOverride } from "@/types/film";
 
 /** Max characters to use from page text for the voice sample */
 const MAX_SAMPLE_CHARS = 250;
@@ -110,7 +111,11 @@ export async function generateVoiceSamples(
   const orderId = filmProject.order_id as string;
 
   // ── Get sample text from album pages ────────────────────────────────────
-  const sampleText = await resolveSampleText(adminClient, orderId);
+  const rawSampleText = await resolveSampleText(adminClient, orderId);
+
+  // Apply pronunciation overrides — TTS only, never mutates stored text
+  const overrides = (filmProject.tts_overrides_json as TtsOverride[] | null) ?? [];
+  const sampleText = applyTtsOverrides(rawSampleText, overrides);
 
   // ── Generate both samples in parallel ───────────────────────────────────
   const [resultA, resultB] = await Promise.all([

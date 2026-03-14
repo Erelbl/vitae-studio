@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { TtsOverridesEditor } from "@/components/admin/TtsOverridesEditor";
 import type {
   FilmProject,
   FilmProjectStatus,
   FilmScene,
+  TtsOverride,
   VoiceChoiceStatus,
 } from "@/types/film";
 
@@ -285,6 +287,17 @@ export function FilmPanel({
               </p>
             )}
         </div>
+      )}
+
+      {/* ── TTS pronunciation overrides ───────────────────────────────────── */}
+      {filmProject.narration_mode !== "none" && (
+        <TtsOverridesEditor
+          orderId={orderId}
+          initialOverrides={
+            (filmProject.tts_overrides_json as TtsOverride[] | null) ?? []
+          }
+          onSaved={router.refresh}
+        />
       )}
 
       {/* ── Other actions (placeholder stubs) ────────────────────────────── */}

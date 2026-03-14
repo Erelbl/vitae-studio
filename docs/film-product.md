@@ -110,6 +110,36 @@ films/{orderId}/{filmProjectId}/voice-samples/sample-b.mp3
 ### Duration estimates
 ElevenLabs does not return audio duration in the TTS response. Duration is estimated at ~2.5 words/second. This is refined later when scene rendering computes actual audio lengths.
 
+## TTS Pronunciation Overrides (implemented)
+
+Admin can define per-project pronunciation fixes to correct how names and places are spoken in the film narration, without changing the printed album text.
+
+### Key rule
+TTS overrides **never modify** `source_text`, `narration_text`, or any album page content. They are applied only when text is passed to ElevenLabs at TTS generation time.
+
+### Storage
+- Column: `film_projects.tts_overrides_json` (JSONB, nullable)
+- Shape: `[{ "original": "בארי", "spoken": "בְּאֵרִי" }, ...]`
+- Migration: `00026_add_tts_overrides.sql`
+
+### Application point
+`src/services/film/utils/apply-tts-overrides.ts` — `applyTtsOverrides(text, overrides)`. Uses exact string replacement (no regex) to avoid injection risks and accidental substitutions. Empty `original` values are silently skipped.
+
+Currently wired into voice sample generation (`generate-voice-samples.ts`). Future scene narration generation should also call `applyTtsOverrides` before any TTS call.
+
+### API routes
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/admin/orders/[orderId]/film/tts-overrides` | GET | Fetch current overrides |
+| `/api/admin/orders/[orderId]/film/tts-overrides` | PATCH | Save overrides `{ overrides: TtsOverride[] }` |
+
+### Admin UI
+The **"תיקוני הגייה"** section in the Film panel (`FilmPanel.tsx` + `TtsOverridesEditor.tsx`):
+- Shows editable rows: Original term → Spoken form
+- "הוסף תיקון" adds a blank row
+- "שמור תיקונים" calls PATCH; empty `original` rows are stripped before saving
+- Saves first, then regenerate voice samples to hear the corrected pronunciation
+
 ## Intended Pipeline (future)
 
 1. **Create film project** — admin clicks button, creates `film_projects` row

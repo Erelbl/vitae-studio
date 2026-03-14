@@ -25,6 +25,25 @@ export type VoiceChoiceStatus = (typeof VOICE_CHOICE_STATUSES)[number];
 export const MOTION_STYLES = ["gentle", "dynamic", "none"] as const;
 export type MotionStyle = (typeof MOTION_STYLES)[number];
 
+// ── TTS Overrides ─────────────────────────────────────────────────────────────
+
+/**
+ * A single pronunciation override applied at TTS generation time only.
+ * Never modifies the stored album or narration text.
+ */
+export interface TtsOverride {
+  /** The exact string to find in the narration text */
+  original: string;
+  /** The phonetic replacement sent to ElevenLabs */
+  spoken: string;
+}
+
+export interface TtsOverridesPayload {
+  overrides: TtsOverride[];
+}
+
+// ── Film Project ──────────────────────────────────────────────────────────────
+
 export interface FilmProject {
   id: string;
   order_id: string;
@@ -46,6 +65,8 @@ export interface FilmProject {
   last_rendered_at: string | null;
   render_version: number;
   error_message: string | null;
+  /** Pronunciation overrides applied at TTS time only. Never modifies album text. */
+  tts_overrides_json: TtsOverride[] | null;
   created_at: string;
   updated_at: string;
 }
