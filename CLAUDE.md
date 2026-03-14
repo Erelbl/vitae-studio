@@ -112,11 +112,22 @@ Premium web app for creating personalized "life story in rhymes" illustrated alb
 - **Add new order status**: Update `src/lib/state-machine.ts` + `src/types/order.ts`, add migration for check constraint
 - **Add shadcn component**: `npx shadcn@latest add [component]`
 
+## Film Product (Foundation)
+- **Tables**: `film_projects` (one per order) + `film_scenes` (many per film project). Migration: `00025_add_film_tables.sql`
+- **Types**: `src/types/film.ts` — `FilmProject`, `FilmScene`, status/mode/style enums
+- **Env helper**: `src/lib/film-env.ts` — server-only, lazy access, fail-fast for required vars
+- **Services**: `src/services/film/` — project, narration, render, storage, utils modules (skeletons with TODOs)
+- **Admin UI**: `FilmPanel` component on admin order detail page. Only "Create film project" is wired to API
+- **API route**: `POST /api/admin/orders/[orderId]/film` — creates film project
+- **Docs**: `docs/film-product.md` — full technical reference for the Film foundation
+- No changes to existing order statuses or album flow
+
 ## Environment Variables
 See `.env.example` for all required variables. Key ones:
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - `ANTHROPIC_API_KEY`, `GOOGLE_AI_API_KEY`
 - `STORY_PROVIDER` (claude), `ILLUSTRATION_PROVIDER` (gemini)
+- Film-specific: `ELEVENLABS_API_KEY`, `FILM_DEFAULT_FPS`, `FILM_DEFAULT_WIDTH`, `FILM_DEFAULT_HEIGHT`, `FILM_STORAGE_BUCKET` (see `src/lib/film-env.ts`)
 
 ## Testing the PDF
 Visit `/api/pdf-test` to generate a test Hebrew PDF. This is the proof-of-concept for Hebrew RTL rendering.

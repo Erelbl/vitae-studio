@@ -14,7 +14,9 @@ import { StoryEvaluationDisplay } from "@/components/admin/StoryEvaluationDispla
 import { DraftStatusPoller } from "@/components/admin/DraftStatusPoller";
 import { AdminPhotosGallery } from "@/components/admin/AdminPhotosGallery";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
+import { FilmPanel } from "@/components/admin/FilmPanel";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
+import type { FilmProject, FilmScene } from "@/types/film";
 
 function fmtDate(ts: string) {
   return new Date(ts).toLocaleString("he-IL", {
@@ -244,6 +246,25 @@ export default async function AdminOrderDetailPage({
             .filter((v): v is number => v != null)
         )
       : 0;
+
+  // ── Fetch film project (if exists) ──
+  const { data: filmProjectRow } = await adminClient
+    .from("film_projects")
+    .select("*")
+    .eq("order_id", orderId)
+    .maybeSingle();
+
+  const filmProject = filmProjectRow as unknown as FilmProject | null;
+
+  let filmScenes: FilmScene[] = [];
+  if (filmProject) {
+    const { data: scenesData } = await adminClient
+      .from("film_scenes")
+      .select("*")
+      .eq("film_project_id", filmProject.id)
+      .order("scene_order");
+    filmScenes = (scenesData ?? []) as unknown as FilmScene[];
+  }
 
   // ── Extract story evaluation from order ──
   interface RhymeEvaluation {
@@ -491,6 +512,15 @@ export default async function AdminOrderDetailPage({
           </dl>
         </section>
       </div>
+
+      {/* ── Film section ── */}
+      <Section title="סרט">
+        <FilmPanel
+          orderId={orderId}
+          filmProject={filmProject}
+          scenes={filmScenes}
+        />
+      </Section>
 
       {/* ── Photos + Illustration generation ── */}
       <Section title={`תמונות (${photosForGallery.length})`}>
