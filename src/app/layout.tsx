@@ -9,10 +9,43 @@ const assistant = Assistant({
   weight: ["300", "400", "500", "600", "700"],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://vitaestudio.co.il";
+const OG_IMAGE = `${SITE_URL}/icon-512.png`; // replace with a dedicated 1200×630 social image when available
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Vitae Studio - סיפור חיים בחרוזים",
   description: "אלבום סיפור חיים מאויר בחרוזים - מתנה אישית ומרגשת",
-  // Favicon is served from src/app/icon.png — Next.js App Router auto-detects it
+
+  // Open Graph — controls how the link looks when shared on WhatsApp, Facebook, etc.
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Vitae Studio",
+    title: "Vitae Studio - סיפור חיים בחרוזים",
+    description: "הופכים סיפור חיים לאלבום מאויר בחרוזים — מתנה שנשמרת לדורות",
+    locale: "he_IL",
+    images: [
+      {
+        url: OG_IMAGE,
+        width: 512,
+        height: 512,
+        alt: "Vitae Studio לוגו",
+      },
+    ],
+  },
+
+  // Twitter / X card
+  twitter: {
+    card: "summary",
+    title: "Vitae Studio - סיפור חיים בחרוזים",
+    description: "הופכים סיפור חיים לאלבום מאויר בחרוזים — מתנה שנשמרת לדורות",
+    images: [OG_IMAGE],
+  },
+
+  // Favicon + icons are served automatically from src/app/favicon.ico and src/app/icon.png
+  // Apple touch icon from src/app/apple-icon.png
+  // Web app manifest from src/app/manifest.ts
 };
 
 export default function RootLayout({
