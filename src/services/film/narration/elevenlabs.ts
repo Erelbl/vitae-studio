@@ -1,13 +1,19 @@
 import { filmEnv } from "@/lib/film-env";
 
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1";
-const DEFAULT_MODEL_ID = "eleven_multilingual_v2";
+// eleven_turbo_v2_5 accepts an explicit language_code, which prevents the model
+// from defaulting to the voice's training language (e.g. Arabic or English)
+// when the input text is Hebrew. eleven_multilingual_v2 ignores language_code
+// and relies on auto-detection, which is the root cause of this bug.
+const DEFAULT_MODEL_ID = "eleven_turbo_v2_5";
 
 export interface TextToSpeechInput {
   text: string;
   voiceId: string;
-  /** Optional model override. Defaults to "eleven_multilingual_v2" */
+  /** Optional model override. Defaults to "eleven_turbo_v2_5" */
   modelId?: string;
+  /** ISO 639-1 language code. Defaults to "he" (Hebrew). */
+  languageCode?: string;
 }
 
 export interface TextToSpeechResult {
@@ -26,6 +32,7 @@ export async function textToSpeech(
 ): Promise<TextToSpeechResult> {
   const apiKey = filmEnv.elevenLabsApiKey; // throws if missing
   const modelId = input.modelId ?? DEFAULT_MODEL_ID;
+  const languageCode = input.languageCode ?? "he";
 
   const response = await fetch(
     `${ELEVENLABS_BASE_URL}/text-to-speech/${input.voiceId}`,
@@ -39,6 +46,7 @@ export async function textToSpeech(
       body: JSON.stringify({
         text: input.text,
         model_id: modelId,
+        language_code: languageCode,
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,

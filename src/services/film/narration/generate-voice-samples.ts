@@ -5,12 +5,62 @@ import { uploadVoiceSample } from "../storage/film-storage";
 import type { FilmProject } from "@/types/film";
 
 /** Max characters to use from page text for the voice sample */
-const MAX_SAMPLE_CHARS = 300;
+const MAX_SAMPLE_CHARS = 250;
 
 /** Fallback sample text when no album pages exist yet */
 const FALLBACK_SAMPLE_TEXT =
   "ספר חיים מלא, שנה אחר שנה, כל רגע חקוק בלב לעדי עד. " +
   "ימים של אהבה וחום, ורגעים שנשארים בזיכרון לנצח.";
+
+// Hebrew Unicode block: U+0590–U+05FF
+const HEBREW_CHAR_RE = /[\u0590-\u05FF]/g;
+
+/**
+ * Returns true if at least 40% of non-whitespace characters are Hebrew.
+ * Used to catch cases where the album has no usable Hebrew text yet.
+ */
+function isLikelyHebrew(text: string): boolean {
+  const nonSpace = text.replace(/\s/g, "");
+  if (nonSpace.length === 0) return false;
+  const hebrewCount = (text.match(HEBREW_CHAR_RE) ?? []).length;
+  return hebrewCount / nonSpace.length >= 0.4;
+}
+
+/**
+ * Cleans raw album text for use as a TTS sample:
+ * - Strips markdown bold/italic markers and header prefixes
+ * - Strips URLs
+ * - Drops lines with very few Hebrew characters
+ * - Trims to MAX_SAMPLE_CHARS at a word boundary (not mid-word)
+ */
+function sanitizeHebrewSampleText(raw: string): string {
+  const lines = raw.split(/\r?\n/);
+
+  const cleaned = lines
+    .map((line) =>
+      line
+        .replace(/https?:\/\/\S+/g, "")     // strip URLs
+        .replace(/\*{1,3}([^*]*)\*{1,3}/g, "$1") // strip markdown bold/italic
+        .replace(/^#+\s*/, "")              // strip markdown headers
+        .trim()
+    )
+    .filter((line) => {
+      if (line.length < 3) return false;
+      // Drop lines that are predominantly non-Hebrew (e.g. English metadata)
+      const nonSpace = line.replace(/\s/g, "");
+      const hebrewCount = (line.match(HEBREW_CHAR_RE) ?? []).length;
+      return nonSpace.length === 0 || hebrewCount / nonSpace.length >= 0.3;
+    });
+
+  const joined = cleaned.join(" ").replace(/\s{2,}/g, " ").trim();
+
+  if (joined.length <= MAX_SAMPLE_CHARS) return joined;
+
+  // Trim at the last space before the limit — never cut mid-word
+  const truncated = joined.slice(0, MAX_SAMPLE_CHARS);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return lastSpace > 0 ? truncated.slice(0, lastSpace).trim() : truncated.trim();
+}
 
 export interface GenerateVoiceSamplesInput {
   filmProjectId: string;
@@ -115,22 +165,37 @@ async function resolveSampleText(
     .eq("order_id", orderId)
     .not("text_content", "is", null)
     .order("page_number")
-    .limit(3);
+    .limit(5);
 
   if (!pages || pages.length === 0) {
     return FALLBACK_SAMPLE_TEXT;
   }
 
-  // Concatenate first page(s) up to MAX_SAMPLE_CHARS
-  let combined = "";
+  // Collect raw text from pages
+  const rawParts: string[] = [];
   for (const page of pages) {
     const text = (page.text_content as string).trim();
-    if (!text) continue;
-    combined = combined ? `${combined}\n${text}` : text;
-    if (combined.length >= MAX_SAMPLE_CHARS) break;
+    if (text) rawParts.push(text);
   }
 
-  if (!combined) return FALLBACK_SAMPLE_TEXT;
+  if (rawParts.length === 0) return FALLBACK_SAMPLE_TEXT;
 
-  return combined.slice(0, MAX_SAMPLE_CHARS).trim();
+  const sanitized = sanitizeHebrewSampleText(rawParts.join("\n"));
+
+  if (!sanitized || sanitized.length < 10) {
+    console.warn(
+      `[voice-samples] Sanitized sample text too short for order ${orderId} — using fallback`
+    );
+    return FALLBACK_SAMPLE_TEXT;
+  }
+
+  if (!isLikelyHebrew(sanitized)) {
+    console.error(
+      `[voice-samples] Sample text for order ${orderId} does not appear to be Hebrew ` +
+        `(first 60 chars: "${sanitized.slice(0, 60)}") — using fallback`
+    );
+    return FALLBACK_SAMPLE_TEXT;
+  }
+
+  return sanitized;
 }
