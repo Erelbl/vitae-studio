@@ -5,6 +5,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { useAlbumFont } from "./album-font";
 
 export interface SceneCompositionProps {
   /** Signed image URLs for the scene's pages (1 or 2). */
@@ -65,6 +66,11 @@ export function SceneComposition({
   transitionIn,
   transitionOut,
 }: SceneCompositionProps) {
+  // Load the album font before any frame is rendered.
+  // globals.css @font-face is not available in the Remotion bundle — the font
+  // must be injected explicitly here. See src/remotion/album-font.ts.
+  useAlbumFont();
+
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
 
@@ -129,9 +135,9 @@ export function SceneComposition({
             style={{
               color: "white",
               fontSize: 38,
-              // Hebrew-compatible font stack (no external font loading needed for rendering)
-              fontFamily:
-                '"Arial Hebrew", "David", "Heebo", Arial, sans-serif',
+              // YardenAlbum is loaded via useAlbumFont() above (see src/remotion/album-font.ts).
+              // Falls back to system Hebrew fonts if the font fails to load.
+              fontFamily: '"YardenAlbum", "Arial Hebrew", "David", Arial, serif',
               direction: "rtl",
               lineHeight: 1.7,
               textShadow: "0 2px 8px rgba(0,0,0,0.85)",

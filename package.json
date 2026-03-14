@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "remotion bundle src/remotion/index.ts --out .remotion-bundle && next build",
+    "build": "remotion bundle src/remotion/index.ts --out-dir .remotion-bundle && next build",
     "start": "next start",
     "lint": "eslint",
-    "bundle:remotion": "remotion bundle src/remotion/index.ts --out .remotion-bundle",
+    "bundle:remotion": "remotion bundle src/remotion/index.ts --out-dir .remotion-bundle",
     "render-worker": "tsx scripts/render-worker.ts",
     "render-worker:watch": "tsx scripts/render-worker.ts --poll 30",
     "render-worker:poll": "tsx scripts/render-worker.ts --poll 30"
