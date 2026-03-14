@@ -46,13 +46,37 @@ export default async function AdminOrderPreviewPage({
 
   // ── Editor data: all pages with text, layout, page_images ────────────────
   // Include all page types so admins can upload images to cover/dedication/etc.
-  const { data: editorPagesRaw } = await adminClient
+  //
+  // NOTE: text_size is intentionally excluded from this query.
+  // It requires migration 00027 (ADD COLUMN text_size) which may not be applied yet.
+  // A failed query would return data:null and silently make editorPages empty,
+  // causing the "no pages to edit" empty state even when pages exist.
+  // text_size is loaded separately below with a graceful null fallback.
+  const { data: editorPagesRaw, error: editorPagesError } = await adminClient
     .from("pages")
-    .select("id, page_number, page_type, layout_type, text_content, text_version, text_size")
+    .select("id, page_number, page_type, layout_type, text_content, text_version")
     .eq("order_id", orderId)
     .order("page_number");
 
+  if (editorPagesError) {
+    console.error("[preview] Failed to load editor pages:", editorPagesError.message);
+  }
+
   const editorPageIds = (editorPagesRaw ?? []).map((p) => p.id as string);
+
+  // Optional: load text_size separately — silently falls back to null if
+  // migration 00027 hasn't been applied yet (column does not exist).
+  const textSizeMap = new Map<string, TextSize | null>();
+  if (editorPageIds.length > 0) {
+    const { data: textSizeRows } = await adminClient
+      .from("pages")
+      .select("id, text_size")
+      .in("id", editorPageIds);
+    for (const r of textSizeRows ?? []) {
+      const ts = (r as Record<string, unknown>).text_size as TextSize | null | undefined;
+      if (ts) textSizeMap.set(r.id as string, ts);
+    }
+  }
 
   const { data: pageImagesRaw } =
     editorPageIds.length > 0
@@ -160,7 +184,7 @@ export default async function AdminOrderPreviewPage({
     layout_type: (p.layout_type as string | null) ?? "FULL_IMAGE",
     text_content: (p.text_content as string | null) ?? null,
     text_version: (p.text_version as number) ?? 1,
-    text_size: ((p as { text_size?: string | null }).text_size as TextSize | null) ?? null,
+    text_size: textSizeMap.get(p.id as string) ?? null,
     images: pageImagesMap.get(p.id as string) ?? [],
   }));
 

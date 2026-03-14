@@ -37,10 +37,16 @@ export function AlbumEditorLayout({
     setFocusedSpreadIndex(pageToSpreadIndex(pageNumber, previewData.pages));
   }
 
+  // Diagnostic: preview has real pages but editor failed to load them.
+  // This happens when a migration-dependent column is in the SELECT query and the
+  // migration hasn't been applied yet — the query fails silently, editorPages = [].
+  const previewHasRealPages = !previewData.isMock && previewData.pages.length > 0;
+  const editorLoadFailed = previewHasRealPages && editorPages.length === 0;
+
   return (
     <>
-      {/* Album preview */}
-      <div className="max-w-4xl mx-auto">
+      {/* Album preview — fills the outer max-w-6xl container for maximum size on desktop */}
+      <div className="w-full">
         <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold mb-3 text-center">
           תצוגה מקדימה
         </p>
@@ -58,13 +64,23 @@ export function AlbumEditorLayout({
             ערוך טקסט, פריסה ואיורים לכל עמוד. טקסט נשמר עם ניהול גרסאות.
           </p>
         </div>
-        <AlbumPageEditor
-          orderId={orderId}
-          pages={editorPages}
-          completedPhotos={completedPhotos}
-          personName={personName}
-          onPageSelect={handlePageSelect}
-        />
+
+        {editorLoadFailed ? (
+          <div className="rounded-xl border border-amber-200/70 bg-amber-50/80 px-4 py-4 text-sm text-amber-800 space-y-1">
+            <p className="font-medium">עמודים קיימים בתצוגה אך לא נטענו לעורך.</p>
+            <p className="text-xs opacity-80">
+              ייתכן שיש עדכון ממתין למסד הנתונים. נסה לרענן את הדף.
+            </p>
+          </div>
+        ) : (
+          <AlbumPageEditor
+            orderId={orderId}
+            pages={editorPages}
+            completedPhotos={completedPhotos}
+            personName={personName}
+            onPageSelect={handlePageSelect}
+          />
+        )}
       </section>
     </>
   );

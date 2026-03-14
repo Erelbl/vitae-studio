@@ -28,10 +28,14 @@ export async function PUT(
 
   const adminClient = createAdminClient();
 
-  // Verify page belongs to this order
+  // Verify page belongs to this order.
+  // NOTE: text_size is NOT included here — it requires migration 00027 which may not
+  // be applied yet. Including it would cause this query to fail silently (data:null)
+  // and incorrectly return 404 for every text/layout edit. text_size is updated
+  // unconditionally below when provided; the DB update handles the absent-column case.
   const { data: page } = await adminClient
     .from("pages")
-    .select("id, text_content, text_version, layout_type, text_size")
+    .select("id, text_content, text_version, layout_type")
     .eq("id", pageId)
     .eq("order_id", orderId)
     .single();
@@ -82,8 +86,9 @@ export async function PUT(
     updates.layout_type = body.layout_type;
   }
 
-  // Handle text_size change
-  if (body.text_size !== undefined && body.text_size !== page.text_size) {
+  // Handle text_size change (always apply if provided — column may not exist yet,
+  // in which case the DB update will simply ignore the unknown column without error)
+  if (body.text_size !== undefined) {
     updates.text_size = body.text_size;
   }
 
