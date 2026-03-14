@@ -53,6 +53,8 @@ export type VersionCreatedBy = (typeof VERSION_CREATED_BY)[number];
 export const SETTING_TYPES = ["story", "illustration", "followup"] as const;
 export type SettingType = (typeof SETTING_TYPES)[number];
 
+export type TextAlign = "left" | "center" | "right";
+
 export interface AlbumPage {
   id: string;
   order_id: string;
@@ -73,6 +75,14 @@ export interface AlbumPage {
   page_type: PageType;
   layout_type: LayoutType;
   text_size: TextSize | null;
+  /** Numeric font size in px. Overrides text_size when set. */
+  font_size_px: number | null;
+  /** Text alignment for page text. Defaults to 'center'. */
+  text_align: TextAlign | null;
+  /** Free-position text X (0–1). Null = use layout-default position. */
+  text_x: number | null;
+  /** Free-position text Y (0–1). Null = use layout-default position. */
+  text_y: number | null;
   narration_audio_path: string | null;
   narration_duration_ms: number | null;
   transition_type: string;
@@ -125,8 +135,16 @@ export interface PreviewPage {
   image_url: string | null;
   /** Where the text sits (only used by FULL_IMAGE overlay). Defaults to "overlay". */
   text_position?: TextPosition;
-  /** Display font size for page text. Defaults to "md" (15 px). */
+  /** Display font size for page text (legacy enum). Defaults to "md" (15 px). */
   text_size?: TextSize | null;
+  /** Numeric font size in px. Overrides text_size when set. */
+  font_size_px?: number | null;
+  /** Text alignment. Defaults to 'center'. */
+  text_align?: TextAlign | null;
+  /** Free-position text X (0–1). Null = use layout-default gradient position. */
+  text_x?: number | null;
+  /** Free-position text Y (0–1). Null = use layout-default gradient position. */
+  text_y?: number | null;
   /**
    * New slot-based image assignments from page_images table.
    * Slot 1 = primary image, Slot 2 = secondary (TWO_IMAGES layout only).

@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { LayoutType, PageImageSlot, PreviewPage, TextSize } from "@/types/page";
-import { LAYOUT_TYPES, TEXT_SIZES } from "@/types/page";
+import type { LayoutType, PageImageSlot, PreviewPage, TextAlign } from "@/types/page";
+import { LAYOUT_TYPES } from "@/types/page";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,7 +21,16 @@ export type EditorPage = {
   layout_type: string;
   text_content: string | null;
   text_version: number;
-  text_size: TextSize | null;
+  /** Legacy text size enum — used as initial fallback for the font-size slider. */
+  text_size: "sm" | "md" | "lg" | "xl" | null;
+  /** Numeric font size in px. Takes priority over text_size when set. */
+  font_size_px: number | null;
+  /** Text alignment. Defaults to 'center'. */
+  text_align: TextAlign | null;
+  /** Free-position text X (0–1). Null = layout default. */
+  text_x: number | null;
+  /** Free-position text Y (0–1). Null = layout default. */
+  text_y: number | null;
   images: Array<{
     slot: number;
     photo_id: string | null;
@@ -66,12 +75,22 @@ const LAYOUT_SLOTS: Record<LayoutType, number[]> = {
   FULL_IMAGE_TEXT_CENTER: [1],
 };
 
-const TEXT_SIZE_LABELS: Record<TextSize, string> = {
-  sm: "קטן",
-  md: "בינוני",
-  lg: "גדול",
-  xl: "גדול מאוד",
-};
+/** Layouts where the text overlays the image — text dragging makes sense here. */
+const OVERLAY_LAYOUTS: LayoutType[] = [
+  "FULL_IMAGE",
+  "FULL_IMAGE_TEXT_TOP",
+  "FULL_IMAGE_TEXT_CENTER",
+];
+
+/** Derive a numeric px value from the legacy text_size enum. */
+function legacyTextSizeToPx(ts: EditorPage["text_size"]): number {
+  switch (ts) {
+    case "sm": return 12;
+    case "lg": return 18;
+    case "xl": return 22;
+    default:   return 15;
+  }
+}
 
 const LIFE_STAGE_LABELS: Record<string, string> = {
   baby: "תינוקות",
@@ -205,7 +224,14 @@ function PageEditorPanel({
   const [layoutType, setLayoutType] = useState<LayoutType>(
     (page.layout_type as LayoutType) ?? "FULL_IMAGE"
   );
-  const [textSize, setTextSize] = useState<TextSize>(page.text_size ?? "md");
+  const [fontSizePx, setFontSizePx] = useState<number>(
+    page.font_size_px ?? legacyTextSizeToPx(page.text_size)
+  );
+  const [textAlign, setTextAlign] = useState<TextAlign>(page.text_align ?? "center");
+  const [textX, setTextX] = useState<number | null>(page.text_x ?? null);
+  const [textY, setTextY] = useState<number | null>(page.text_y ?? null);
+  const [textDragMode, setTextDragMode] = useState(false);
+
   const [slots, setSlots] = useState<Record<number, SlotState>>(() => {
     const m: Record<number, SlotState> = {};
     for (const img of page.images) {
@@ -223,10 +249,17 @@ function PageEditorPanel({
   const [savingText, setSavingText] = useState(false);
   const [textDirty, setTextDirty] = useState(false);
 
+  // Refs for text drag on preview
+  const dragOverlayRef = useRef<HTMLDivElement>(null);
+  const isTextDraggingRef = useRef(false);
+  const fontSizePxRef = useRef(fontSizePx);
+  fontSizePxRef.current = fontSizePx;
+
+  const canDragText = OVERLAY_LAYOUTS.includes(layoutType) && Boolean(text);
+
   /** Build a PreviewPage for the live mini-preview */
   function buildPreviewPage(): PreviewPage {
     const images: PageImageSlot[] = Object.entries(slots)
-      // Include slot if it has an image URL (works for both photo and manual)
       .filter(([, s]) => s.image_url !== null)
       .map(([slot, s]) => ({
         id: `local-slot-${slot}`,
@@ -244,10 +277,12 @@ function PageEditorPanel({
       page_type: page.page_type as PreviewPage["page_type"],
       layout_type: layoutType,
       text_content: text || null,
-      text_size: textSize,
+      font_size_px: fontSizePx,
+      text_align: textAlign,
+      text_x: textX,
+      text_y: textY,
       image_url:
-        page.images.find((i) => i.slot === 1)?.image_url ??
-        null,
+        page.images.find((i) => i.slot === 1)?.image_url ?? null,
       images,
     };
   }
@@ -275,6 +310,10 @@ function PageEditorPanel({
 
   async function handleLayoutChange(newLayout: LayoutType) {
     setLayoutType(newLayout);
+    // Clear drag mode & position when switching away from overlay layouts
+    if (!OVERLAY_LAYOUTS.includes(newLayout)) {
+      setTextDragMode(false);
+    }
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -283,14 +322,23 @@ function PageEditorPanel({
     onSaved();
   }
 
-  async function handleTextSizeChange(newSize: TextSize) {
-    setTextSize(newSize);
+  async function handleFontSizeCommit(newSize: number) {
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text_size: newSize }),
+      body: JSON.stringify({ font_size_px: newSize }),
     });
-    onSaved();
+    // Don't call onSaved() — mini-preview already reflects the change,
+    // and refreshing would force all signed images to reload.
+  }
+
+  async function handleTextAlignChange(newAlign: TextAlign) {
+    setTextAlign(newAlign);
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_align: newAlign }),
+    });
   }
 
   async function handleSlotAssign(
@@ -300,7 +348,6 @@ function PageEditorPanel({
     const photoId = photo?.id ?? null;
     const imageUrl = photo?.illustrationUrl ?? null;
 
-    // Optimistic update
     const prevSlots = slots;
     setSlots((prev) => ({
       ...prev,
@@ -314,7 +361,6 @@ function PageEditorPanel({
     });
 
     if (!res.ok) {
-      // Roll back optimistic update
       setSlots(prevSlots);
       const body = await res.json().catch(() => ({}));
       alert(body.error ?? "שגיאה בשמירת האיור");
@@ -335,7 +381,6 @@ function PageEditorPanel({
       [slot]: { ...(prev[slot] ?? { photo_id: null, image_url: null }), crop_x, crop_y, scale },
     }));
 
-    // Skip API call if slot has no image (works for both photo and manual)
     const currentSlot = slots[slot];
     if (!currentSlot?.image_url) return;
 
@@ -344,7 +389,9 @@ function PageEditorPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot, crop_x, crop_y, scale }),
     });
-    onSaved();
+    // Intentionally NOT calling onSaved() here — crop is shown live in the mini-preview.
+    // Calling router.refresh() on every drag-end forces all signed image URLs to
+    // regenerate, causing the browser to re-download every image on the page.
   }
 
   function handleManualUpload(slot: 1 | 2, imageUrl: string) {
@@ -355,18 +402,102 @@ function PageEditorPanel({
     onSaved();
   }
 
+  // ── Text-drag handlers on the mini-preview ────────────────────────────────
+
+  function getOverlayRelativePos(e: React.PointerEvent): { x: number; y: number } | null {
+    if (!dragOverlayRef.current) return null;
+    const rect = dragOverlayRef.current.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
+    };
+  }
+
+  const handleDragOverlayPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    isTextDraggingRef.current = true;
+    const pos = getOverlayRelativePos(e);
+    if (pos) { setTextX(pos.x); setTextY(pos.y); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDragOverlayPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isTextDraggingRef.current) return;
+    const pos = getOverlayRelativePos(e);
+    if (pos) { setTextX(pos.x); setTextY(pos.y); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDragOverlayPointerUp = useCallback(async (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isTextDraggingRef.current) return;
+    isTextDraggingRef.current = false;
+    const pos = getOverlayRelativePos(e);
+    if (!pos) return;
+    setTextX(pos.x);
+    setTextY(pos.y);
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_x: pos.x, text_y: pos.y }),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, page.id]);
+
+  async function clearTextPosition() {
+    setTextX(null);
+    setTextY(null);
+    setTextDragMode(false);
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_x: null, text_y: null }),
+    });
+  }
+
   const activeSlots = LAYOUT_SLOTS[layoutType] ?? [];
   const previewPage = buildPreviewPage();
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 pt-1">
-      {/* Live mini-preview */}
+      {/* Live mini-preview with optional text-drag overlay */}
       <div>
         <p className="text-xs text-muted-foreground mb-2">
           תצוגה מקדימה — עמוד {page.page_number}
         </p>
         <div className="w-full max-w-[240px]">
-          <AlbumPageView page={previewPage} personName={personName} />
+          <div className="relative">
+            <AlbumPageView page={previewPage} personName={personName} />
+            {/* Drag overlay — sits above the preview, captures pointer events only when active */}
+            {textDragMode && (
+              <div
+                ref={dragOverlayRef}
+                className="absolute inset-0 cursor-crosshair"
+                style={{ zIndex: 20 }}
+                onPointerDown={handleDragOverlayPointerDown}
+                onPointerMove={handleDragOverlayPointerMove}
+                onPointerUp={handleDragOverlayPointerUp}
+                onPointerLeave={handleDragOverlayPointerUp}
+              >
+                {/* Position indicator dot */}
+                {textX !== null && textY !== null && (
+                  <div
+                    className="absolute w-2.5 h-2.5 rounded-full bg-white border-2 border-primary pointer-events-none shadow-sm"
+                    style={{
+                      left: `${textX * 100}%`,
+                      top: `${textY * 100}%`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+          {/* Drag-mode hint */}
+          {textDragMode && (
+            <p className="text-[10px] text-primary/70 mt-1.5 text-center">
+              לחץ או גרור כדי למקם את הטקסט
+            </p>
+          )}
         </div>
       </div>
 
@@ -400,25 +531,84 @@ function PageEditorPanel({
           )}
         </div>
 
-        {/* Text size */}
+        {/* Font size slider */}
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">גודל טקסט</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-muted-foreground">גודל טקסט</p>
+            <span className="text-xs tabular-nums text-muted-foreground/70">{fontSizePx}px</span>
+          </div>
+          <input
+            type="range"
+            min={10}
+            max={36}
+            step={1}
+            value={fontSizePx}
+            onChange={(e) => setFontSizePx(Number(e.target.value))}
+            onPointerUp={(e) => handleFontSizeCommit(Number((e.target as HTMLInputElement).value))}
+            className="w-full h-1.5 appearance-none bg-border rounded accent-primary"
+          />
+          <div className="flex justify-between text-[10px] text-muted-foreground/50 select-none">
+            <span>קטן (10)</span>
+            <span>גדול (36)</span>
+          </div>
+        </div>
+
+        {/* Text alignment */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">יישור טקסט</p>
           <div className="flex gap-1.5">
-            {TEXT_SIZES.map((sz) => (
+            {(["right", "center", "left"] as TextAlign[]).map((align) => {
+              const label = align === "right" ? "ימין" : align === "center" ? "מרכז" : "שמאל";
+              const icon  = align === "right" ? "▶" : align === "center" ? "◉" : "◀";
+              return (
+                <button
+                  key={align}
+                  onClick={() => handleTextAlignChange(align)}
+                  title={label}
+                  className={`flex-1 rounded-md py-1.5 text-xs border transition-colors flex items-center justify-center gap-1 ${
+                    textAlign === align
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span className="text-[10px]">{icon}</span> {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Text position (drag) — only for full-image overlay layouts */}
+        {canDragText && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">מיקום טקסט</p>
+            <div className="flex gap-2 flex-wrap">
               <button
-                key={sz}
-                onClick={() => handleTextSizeChange(sz)}
+                onClick={() => setTextDragMode((v) => !v)}
                 className={`rounded-md px-3 py-1.5 text-xs border transition-colors ${
-                  textSize === sz
+                  textDragMode
                     ? "bg-primary text-primary-foreground border-primary"
                     : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {TEXT_SIZE_LABELS[sz]}
+                {textDragMode ? "✓ מצב הזזה פעיל" : "הזז טקסט"}
               </button>
-            ))}
+              {(textX !== null || textY !== null) && (
+                <button
+                  onClick={clearTextPosition}
+                  className="rounded-md px-3 py-1.5 text-xs border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive transition-colors"
+                >
+                  איפוס מיקום
+                </button>
+              )}
+            </div>
+            {textDragMode && (
+              <p className="text-[10px] text-muted-foreground/60">
+                גרור את הטקסט על התצוגה המקדימה למיקום הרצוי. הרקע ישאר שקוף.
+              </p>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Layout picker */}
         <div className="space-y-2">
@@ -541,6 +731,7 @@ function SpecialPagePanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot: 1, crop_x, crop_y, scale }),
     });
+    // Intentionally NOT calling onSaved() — see note in PageEditorPanel.handleCropSave
   }
 
   async function handleRemove() {
@@ -659,7 +850,6 @@ function ImageSlotEditor({
 
   const imageUrl = slotState?.image_url ?? null;
   const hasImage = Boolean(imageUrl);
-  // If photo_id is null but image_url is set, this slot has a manual upload
   const isManual = hasImage && !slotState?.photo_id;
 
   const handlePointerDown = useCallback(
@@ -716,7 +906,6 @@ function ImageSlotEditor({
       { method: "POST", body: fd }
     );
     setUploading(false);
-    // Reset file input so the same file can be re-selected later
     e.target.value = "";
 
     if (res.ok) {
@@ -772,7 +961,7 @@ function ImageSlotEditor({
       {/* Image frame / drag canvas */}
       {hasImage ? (
         <div className="space-y-3">
-          {/* Drag-to-pan frame — larger for easier positioning */}
+          {/* Drag-to-pan frame */}
           <div
             ref={frameRef}
             className="relative aspect-square w-48 overflow-hidden rounded-lg border border-border bg-muted"
@@ -835,7 +1024,6 @@ function ImageSlotEditor({
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-muted-foreground shrink-0">כיוון:</span>
               <div className="grid grid-cols-3 gap-0.5">
-                {/* Row 1 */}
                 <div />
                 <NudgeButton
                   label="↑"
@@ -847,7 +1035,6 @@ function ImageSlotEditor({
                   }}
                 />
                 <div />
-                {/* Row 2 */}
                 <NudgeButton
                   label="←"
                   onClick={() => {
@@ -867,7 +1054,6 @@ function ImageSlotEditor({
                     onCropSave(next, cropY, scale);
                   }}
                 />
-                {/* Row 3 */}
                 <div />
                 <NudgeButton
                   label="↓"

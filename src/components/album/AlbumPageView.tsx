@@ -1,4 +1,4 @@
-import type { LayoutType, PageImageSlot, PreviewPage, TextSize } from "@/types/page";
+import type { LayoutType, PageImageSlot, PreviewPage, TextAlign, TextSize } from "@/types/page";
 
 interface AlbumPageViewProps {
   page: PreviewPage;
@@ -145,12 +145,16 @@ function ContentPage({ page }: { page: PreviewPage }) {
   const slot1 = resolveSlot(page, 1);
   const slot2 = resolveSlot(page, 2);
   const ts = page.text_size;
+  const fspx = page.font_size_px ?? null;
+  const align = (page.text_align ?? "center") as TextAlign;
+  const tx = page.text_x ?? null;
+  const ty = page.text_y ?? null;
 
   switch (layout) {
     case "TEXT_ONLY":
       return (
         <PageShell className="bg-card border border-border/60">
-          <TextCenter content={page.text_content} textSize={ts} />
+          <TextCenter content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
           <PageNumber number={page.page_number} />
         </PageShell>
       );
@@ -163,7 +167,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               <ImageFill url={slot1.url} crop={slot1.crop} />
             </div>
             <div className="flex items-center justify-center flex-1 px-5 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -175,7 +179,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
         <PageShell className="bg-card border border-border/60">
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-[40%] px-5 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
             </div>
             <div className="relative flex-1">
               <ImageFill url={slot1.url} crop={slot1.crop} />
@@ -194,7 +198,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               <ImageFill url={slot1.url} crop={slot1.crop} />
             </div>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -206,7 +210,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
         <PageShell className="bg-card border border-border/60">
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
             </div>
             <div className="relative w-[55%]">
               <ImageFill url={slot1.url} crop={slot1.crop} />
@@ -230,11 +234,12 @@ function ContentPage({ page }: { page: PreviewPage }) {
           {/* Optional caption at bottom */}
           {page.text_content && (
             <div
-              className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-center px-3 py-1"
+              className="absolute inset-x-0 bottom-0 bg-black/55 text-white px-3 py-1"
               style={{
                 fontFamily: "YardenAlbum, serif",
-                fontSize: resolveTextSize(ts),
+                fontSize: resolveTextSize(ts, fspx),
                 textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                textAlign: align,
               }}
             >
               {page.text_content}
@@ -248,7 +253,16 @@ function ContentPage({ page }: { page: PreviewPage }) {
       return (
         <PageShell className="bg-secondary">
           <ImageFill url={slot1.url} crop={slot1.crop} />
-          {page.text_content && <TextOverlayTop text={page.text_content} textSize={ts} />}
+          {page.text_content && (
+            <TextOverlayTop
+              text={page.text_content}
+              textSize={ts}
+              fontSizePx={fspx}
+              textAlign={align}
+              textX={tx}
+              textY={ty}
+            />
+          )}
           <PageNumber number={page.page_number} light />
         </PageShell>
       );
@@ -257,7 +271,16 @@ function ContentPage({ page }: { page: PreviewPage }) {
       return (
         <PageShell className="bg-secondary">
           <ImageFill url={slot1.url} crop={slot1.crop} />
-          {page.text_content && <TextOverlayCenter text={page.text_content} textSize={ts} />}
+          {page.text_content && (
+            <TextOverlayCenter
+              text={page.text_content}
+              textSize={ts}
+              fontSizePx={fspx}
+              textAlign={align}
+              textX={tx}
+              textY={ty}
+            />
+          )}
           <PageNumber number={page.page_number} light />
         </PageShell>
       );
@@ -267,7 +290,16 @@ function ContentPage({ page }: { page: PreviewPage }) {
       return (
         <PageShell className="bg-secondary">
           <ImageFill url={slot1.url} crop={slot1.crop} />
-          {page.text_content && <TextOverlay text={page.text_content} textSize={ts} />}
+          {page.text_content && (
+            <TextOverlay
+              text={page.text_content}
+              textSize={ts}
+              fontSizePx={fspx}
+              textAlign={align}
+              textX={tx}
+              textY={ty}
+            />
+          )}
           <PageNumber number={page.page_number} light />
         </PageShell>
       );
@@ -387,7 +419,12 @@ function ImageFill({
 
 // ─── Text-size helper ─────────────────────────────────────────────────────────
 
-function resolveTextSize(textSize?: TextSize | null): string {
+/**
+ * Resolve the final CSS font-size string.
+ * fontSizePx (numeric, from migration 00028) takes priority over the legacy enum.
+ */
+function resolveTextSize(textSize?: TextSize | null, fontSizePx?: number | null): string {
+  if (fontSizePx != null && fontSizePx > 0) return `${fontSizePx}px`;
   switch (textSize) {
     case "sm": return "12px";
     case "lg": return "18px";
@@ -397,15 +434,85 @@ function resolveTextSize(textSize?: TextSize | null): string {
   }
 }
 
+// ─── Free-position text (no background) ──────────────────────────────────────
+
+/**
+ * Renders text at an absolute position (0–1 coords) without any background/gradient.
+ * Used when the admin has dragged the text to a custom position.
+ */
+function PositionedText({
+  text,
+  fontSize,
+  textAlign,
+}: {
+  text: string;
+  fontSize: string;
+  textAlign: TextAlign;
+}) {
+  return (
+    <p
+      style={{
+        fontFamily: "YardenAlbum, serif",
+        fontSize,
+        textAlign,
+        color: "white",
+        textShadow: "0 1px 6px rgba(0,0,0,0.95), 0 2px 12px rgba(0,0,0,0.8)",
+        whiteSpace: "pre-line",
+        lineHeight: 1.6,
+        maxWidth: "84%",
+      }}
+    >
+      {text}
+    </p>
+  );
+}
+
+// ─── Overlay text components ──────────────────────────────────────────────────
+
+interface OverlayTextProps {
+  text: string;
+  textSize?: TextSize | null;
+  fontSizePx?: number | null;
+  textAlign?: TextAlign;
+  textX?: number | null;
+  textY?: number | null;
+}
+
 /** Gradient text overlay at bottom — no opaque background box. */
-function TextOverlay({ text, textSize }: { text: string; textSize?: TextSize | null }) {
+function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+  const fontSize = resolveTextSize(textSize, fontSizePx);
+  const align = textAlign ?? "center";
+
+  if (textX != null && textY != null) {
+    return (
+      <div
+        className="absolute inset-0 pointer-events-none flex items-center justify-center"
+        style={{ zIndex: 10 }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: `${textX * 100}%`,
+            top: `${textY * 100}%`,
+            transform: "translate(-50%, -50%)",
+            width: "84%",
+            textAlign: align,
+          }}
+        >
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/72 via-black/40 to-transparent px-5 pb-6 pt-16">
       <p
-        className="text-white text-center leading-relaxed whitespace-pre-line"
+        className="text-white leading-relaxed whitespace-pre-line"
         style={{
           fontFamily: "YardenAlbum, serif",
-          fontSize: resolveTextSize(textSize),
+          fontSize,
+          textAlign: align,
           textShadow: "0 1px 4px rgba(0,0,0,0.6)",
         }}
       >
@@ -416,14 +523,40 @@ function TextOverlay({ text, textSize }: { text: string; textSize?: TextSize | n
 }
 
 /** Gradient text overlay at top. */
-function TextOverlayTop({ text, textSize }: { text: string; textSize?: TextSize | null }) {
+function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+  const fontSize = resolveTextSize(textSize, fontSizePx);
+  const align = textAlign ?? "center";
+
+  if (textX != null && textY != null) {
+    return (
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ zIndex: 10 }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: `${textX * 100}%`,
+            top: `${textY * 100}%`,
+            transform: "translate(-50%, -50%)",
+            width: "84%",
+            textAlign: align,
+          }}
+        >
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/72 via-black/40 to-transparent px-5 pt-6 pb-16">
       <p
-        className="text-white text-center leading-relaxed whitespace-pre-line"
+        className="text-white leading-relaxed whitespace-pre-line"
         style={{
           fontFamily: "YardenAlbum, serif",
-          fontSize: resolveTextSize(textSize),
+          fontSize,
+          textAlign: align,
           textShadow: "0 1px 4px rgba(0,0,0,0.6)",
         }}
       >
@@ -434,18 +567,43 @@ function TextOverlayTop({ text, textSize }: { text: string; textSize?: TextSize 
 }
 
 /** Centered text overlay with a frosted-glass pill — elegant for long verses. */
-function TextOverlayCenter({ text, textSize }: { text: string; textSize?: TextSize | null }) {
+function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+  const fontSize = resolveTextSize(textSize, fontSizePx);
+  const align = textAlign ?? "center";
+
+  if (textX != null && textY != null) {
+    return (
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ zIndex: 10 }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: `${textX * 100}%`,
+            top: `${textY * 100}%`,
+            transform: "translate(-50%, -50%)",
+            width: "84%",
+            textAlign: align,
+          }}
+        >
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none">
       <div
-        className="rounded-2xl px-5 py-4 max-w-[86%] text-center"
-        style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+        className="rounded-2xl px-5 py-4 max-w-[86%]"
+        style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", textAlign: align }}
       >
         <p
           className="text-white leading-relaxed whitespace-pre-line"
           style={{
             fontFamily: "YardenAlbum, serif",
-            fontSize: resolveTextSize(textSize),
+            fontSize,
             textShadow: "0 1px 4px rgba(0,0,0,0.8)",
           }}
         >
@@ -457,13 +615,27 @@ function TextOverlayCenter({ text, textSize }: { text: string; textSize?: TextSi
 }
 
 /** Centered text block used in split layouts. */
-function AlbumTextBlock({ content, textSize }: { content: string | null; textSize?: TextSize | null }) {
+function AlbumTextBlock({
+  content,
+  textSize,
+  fontSizePx,
+  textAlign,
+}: {
+  content: string | null;
+  textSize?: TextSize | null;
+  fontSizePx?: number | null;
+  textAlign?: TextAlign;
+}) {
   if (!content)
     return <PlaceholderText label="הטקסט יווצר בקרוב" />;
   return (
     <p
-      className="text-foreground text-center leading-relaxed whitespace-pre-line"
-      style={{ fontFamily: "YardenAlbum, serif", fontSize: resolveTextSize(textSize) }}
+      className="text-foreground leading-relaxed whitespace-pre-line"
+      style={{
+        fontFamily: "YardenAlbum, serif",
+        fontSize: resolveTextSize(textSize, fontSizePx),
+        textAlign: textAlign ?? "center",
+      }}
     >
       {content}
     </p>
@@ -471,14 +643,28 @@ function AlbumTextBlock({ content, textSize }: { content: string | null; textSiz
 }
 
 /** Text-only centered layout (for TEXT_ONLY layout type on content pages). */
-function TextCenter({ content, textSize }: { content: string | null; textSize?: TextSize | null }) {
+function TextCenter({
+  content,
+  textSize,
+  fontSizePx,
+  textAlign,
+}: {
+  content: string | null;
+  textSize?: TextSize | null;
+  fontSizePx?: number | null;
+  textAlign?: TextAlign;
+}) {
   return (
     <div className="flex h-full flex-col items-center justify-center p-10">
       <Ornament className="mb-7" />
       {content ? (
         <p
-          className="leading-loose text-foreground text-center whitespace-pre-line"
-          style={{ fontFamily: "YardenAlbum, serif", fontSize: resolveTextSize(textSize ?? "lg") }}
+          className="leading-loose text-foreground whitespace-pre-line"
+          style={{
+            fontFamily: "YardenAlbum, serif",
+            fontSize: resolveTextSize(textSize ?? "lg", fontSizePx),
+            textAlign: textAlign ?? "center",
+          }}
         >
           {content}
         </p>

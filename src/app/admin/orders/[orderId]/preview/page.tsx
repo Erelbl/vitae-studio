@@ -8,7 +8,7 @@ import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEdi
 import { STATUS_LABELS } from "@/lib/state-machine";
 import { Badge } from "@/components/ui/badge";
 import type { OrderStatus } from "@/types/order";
-import type { TextSize } from "@/types/page";
+import type { TextAlign, TextSize } from "@/types/page";
 
 const BUCKET = "illustrations";
 
@@ -64,17 +64,30 @@ export default async function AdminOrderPreviewPage({
 
   const editorPageIds = (editorPagesRaw ?? []).map((p) => p.id as string);
 
-  // Optional: load text_size separately — silently falls back to null if
-  // migration 00027 hasn't been applied yet (column does not exist).
-  const textSizeMap = new Map<string, TextSize | null>();
+  // Load style columns separately — graceful fallback to null if migrations
+  // 00027/00028 haven't been applied yet (columns may not exist).
+  type PageStyleRow = {
+    text_size: TextSize | null;
+    font_size_px: number | null;
+    text_align: TextAlign | null;
+    text_x: number | null;
+    text_y: number | null;
+  };
+  const pageStyleMap = new Map<string, PageStyleRow>();
   if (editorPageIds.length > 0) {
-    const { data: textSizeRows } = await adminClient
+    const { data: styleRows } = await adminClient
       .from("pages")
-      .select("id, text_size")
+      .select("id, text_size, font_size_px, text_align, text_x, text_y")
       .in("id", editorPageIds);
-    for (const r of textSizeRows ?? []) {
-      const ts = (r as Record<string, unknown>).text_size as TextSize | null | undefined;
-      if (ts) textSizeMap.set(r.id as string, ts);
+    for (const r of styleRows ?? []) {
+      const row = r as Record<string, unknown>;
+      pageStyleMap.set(r.id as string, {
+        text_size: (row.text_size as TextSize | null) ?? null,
+        font_size_px: (row.font_size_px as number | null) ?? null,
+        text_align: (row.text_align as TextAlign | null) ?? null,
+        text_x: (row.text_x as number | null) ?? null,
+        text_y: (row.text_y as number | null) ?? null,
+      });
     }
   }
 
@@ -177,16 +190,23 @@ export default async function AdminOrderPreviewPage({
   }
 
   // Build editor pages array
-  const editorPages: EditorPage[] = (editorPagesRaw ?? []).map((p) => ({
-    id: p.id as string,
-    page_number: p.page_number as number,
-    page_type: p.page_type as string,
-    layout_type: (p.layout_type as string | null) ?? "FULL_IMAGE",
-    text_content: (p.text_content as string | null) ?? null,
-    text_version: (p.text_version as number) ?? 1,
-    text_size: textSizeMap.get(p.id as string) ?? null,
-    images: pageImagesMap.get(p.id as string) ?? [],
-  }));
+  const editorPages: EditorPage[] = (editorPagesRaw ?? []).map((p) => {
+    const style = pageStyleMap.get(p.id as string);
+    return {
+      id: p.id as string,
+      page_number: p.page_number as number,
+      page_type: p.page_type as string,
+      layout_type: (p.layout_type as string | null) ?? "FULL_IMAGE",
+      text_content: (p.text_content as string | null) ?? null,
+      text_version: (p.text_version as number) ?? 1,
+      text_size: style?.text_size ?? null,
+      font_size_px: style?.font_size_px ?? null,
+      text_align: style?.text_align ?? null,
+      text_x: style?.text_x ?? null,
+      text_y: style?.text_y ?? null,
+      images: pageImagesMap.get(p.id as string) ?? [],
+    };
+  });
 
   return (
     <div className="max-w-6xl mx-auto py-10 px-4 space-y-8">
