@@ -59,6 +59,7 @@ export class ClaudeStoryProvider implements StoryGenerationProvider {
       temperature: 0.9,
       system: `אתה משורר עברי. כתוב 2–4 שורות שירה חמה ומחורזת לעמוד האלבום המבוקש.
 לפני כתיבת השורות — בחר תחילה משפחת חרוז ובנה את המשפטים סביבה.
+אל תשתמש במקפים ארוכים (—) — העדף פסיקים, נקודות, או שבירת שורה.
 החזר רק את הטקסט.`,
       messages: [
         {

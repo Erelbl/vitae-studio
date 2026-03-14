@@ -3,19 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OrderStatus } from "@/types/order";
-import type { PageType } from "@/types/page";
-
-const PAGE_TYPE_LABELS: Record<PageType, string> = {
-  cover: "כריכה קדמית",
-  dedication: "הקדשה",
-  illustration_and_text: "תוכן",
-  text_only: "טקסט בלבד",
-  back_cover: "כריכה אחורית",
-};
+import { DraftPageCard } from "@/components/admin/DraftPageCard";
 
 // Displays the current text content of all pages for an order.
+// Each page card allows inline editing (saves as a new version via the edit API).
 // Uses the real schema: pages table (one row per page per order, queried by order_id).
-// No story_drafts, no draftId params.
 export default async function DraftTextPage({
   params,
 }: {
@@ -41,10 +33,10 @@ export default async function DraftTextPage({
 
   if (!order) notFound();
 
-  // Load all current pages for this order — always by order_id
+  // Load all current pages — include id for the inline editor
   const { data: pages, error: pagesError } = await adminClient
     .from("pages")
-    .select("page_number, page_type, text_content, text_version")
+    .select("id, page_number, page_type, text_content, text_version")
     .eq("order_id", orderId)
     .order("page_number");
 
@@ -56,7 +48,7 @@ export default async function DraftTextPage({
   const currentStatus = order.status as OrderStatus;
   const hasPages = pages && pages.length > 0;
 
-  // Current text version = max text_version across all pages (indicates generation round)
+  // Current text version = max text_version across all pages
   const maxTextVersion = hasPages
     ? Math.max(
         0,
@@ -69,19 +61,30 @@ export default async function DraftTextPage({
   return (
     <div className="max-w-2xl mx-auto py-10 px-4 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <Link
           href={`/admin/orders/${orderId}`}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           ← חזרה לפרטי הזמנה
         </Link>
-        <Link
-          href={`/admin/orders/${orderId}/preview`}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          צפייה בתצוגת האלבום ←
-        </Link>
+        <div className="flex items-center gap-3">
+          {hasPages && (
+            <a
+              href={`/api/admin/orders/${orderId}/export-text`}
+              download
+              className="text-sm text-primary hover:underline underline-offset-2"
+            >
+              ↓ ייצוא כטקסט
+            </a>
+          )}
+          <Link
+            href={`/admin/orders/${orderId}/preview`}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            צפייה בתצוגת האלבום ←
+          </Link>
+        </div>
       </div>
 
       <div>
@@ -97,6 +100,11 @@ export default async function DraftTextPage({
           סטטוס: {currentStatus}
           {hasPages ? ` · ${pages.length} עמודים` : " · אין עמודים עדיין"}
         </p>
+        {hasPages && (
+          <p className="text-xs text-muted-foreground mt-1">
+            לחץ על &ldquo;ערוך&rdquo; בכל עמוד כדי לערוך את הטקסט ולשמור אותו כגרסה חדשה.
+          </p>
+        )}
       </div>
 
       {!hasPages && (
@@ -107,36 +115,15 @@ export default async function DraftTextPage({
 
       {hasPages &&
         pages.map((page) => (
-          <div
-            key={page.page_number as number}
-            className="rounded-xl border bg-card p-5 space-y-2"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-mono bg-muted px-2 py-0.5 rounded text-muted-foreground">
-                עמוד {page.page_number}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {PAGE_TYPE_LABELS[page.page_type as PageType] ?? page.page_type}
-              </span>
-              {(page.text_version as number | null) != null &&
-                (page.text_version as number) > 0 && (
-                  <span className="text-xs text-muted-foreground opacity-60">
-                    v{page.text_version}
-                  </span>
-                )}
-            </div>
-
-            {page.text_content ? (
-              <p className="text-sm leading-loose whitespace-pre-line font-serif">
-                {page.text_content}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                אין טקסט (עמוד{" "}
-                {PAGE_TYPE_LABELS[page.page_type as PageType] ?? page.page_type})
-              </p>
-            )}
-          </div>
+          <DraftPageCard
+            key={page.id as string}
+            orderId={orderId}
+            pageId={page.id as string}
+            pageNumber={page.page_number as number}
+            pageType={page.page_type as string}
+            textContent={(page.text_content as string | null) ?? null}
+            textVersion={(page.text_version as number | null) ?? null}
+          />
         ))}
     </div>
   );

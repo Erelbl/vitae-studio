@@ -8,6 +8,16 @@ import type { OrderStatus } from "@/types/order";
 import type { QuestionnaireResponses, FollowUpQA } from "@/types/questionnaire";
 import type { GenerationSettings } from "@/types/page";
 
+/**
+ * Removes em-dashes (—) from generated page text, replacing them with a
+ * comma+space. This is a belt-and-suspenders guard: the system prompt already
+ * instructs the model to avoid em-dashes, but LLMs occasionally ignore it.
+ */
+function sanitizeEmDash(text: string | null): string | null {
+  if (!text) return text;
+  return text.replace(/ ?— ?/g, ", ").replace(/^,\s*/, "").replace(/,\s*$/, "");
+}
+
 export interface GenerationPipelineParams {
   orderId: string;
   responses: Partial<QuestionnaireResponses>;
@@ -124,7 +134,7 @@ export async function runGenerationPipeline(
       ...finalPages.map((p) => ({
         page_number: p.page_number,
         page_type: p.page_type,
-        text_content: p.text_content,
+        text_content: sanitizeEmDash(p.text_content),
         text_generation_model:
           generationSettings?.model_id ?? "claude-sonnet-4-6",
       })),
