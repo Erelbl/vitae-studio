@@ -116,14 +116,36 @@ Premium web app for creating personalized "life story in rhymes" illustrated alb
 - **Tables**: `film_projects` (one per order) + `film_scenes` (many per film project). Migration: `00025_add_film_tables.sql`
 - **Types**: `src/types/film.ts` — `FilmProject`, `FilmScene`, status/mode/style enums
 - **Env helper**: `src/lib/film-env.ts` — server-only, lazy access, fail-fast for required vars
-- **Services**: `src/services/film/` — project, narration, render, storage, utils modules (skeletons with TODOs)
-- **Admin UI**: `FilmPanel` component on admin order detail page. Only "Create film project" is wired to API
-- **API routes**: `POST /api/admin/orders/[orderId]/film` (create), `/film/voice-samples` (generate A/B samples), `/film/select-voice` (persist choice)
+- **Services**: `src/services/film/` — project, narration, render, storage, utils modules
+- **Admin UI**: `FilmPanel` component on admin order detail page — full UI for project, voice, audio, scenes
+- **API routes**: `POST /api/admin/orders/[orderId]/film` (create), `/film/voice-samples` (A/B samples), `/film/select-voice` (persist choice), `/film/generate-audio` (scene audio generation)
 - **ElevenLabs TTS**: `src/services/film/narration/elevenlabs.ts` — real implementation using `eleven_v3`
 - **TTS overrides**: `film_projects.tts_overrides_json` (JSONB) + `src/services/film/utils/apply-tts-overrides.ts`. Applied at TTS time only — never modifies stored album/narration text. Admin edits via "תיקוני הגייה" section in Film panel
 - **Voice samples**: `src/services/film/narration/generate-voice-samples.ts` — fetches album text as sample, generates 2 MP3s, uploads to `films/{orderId}/{filmProjectId}/voice-samples/`
 - **Docs**: `docs/film-product.md` — full technical reference for the Film foundation
 - No changes to existing order statuses or album flow
+
+## Film Scene Audio Generation
+
+Scene-level narration audio is generated via `POST /api/admin/orders/[orderId]/film/generate-audio`.
+
+**Prerequisites**: film project must exist, a voice must be selected (`selected_voice_id`).
+
+**Service**: `src/services/film/narration/generate-scene-audio.ts`
+
+**Flow per scene**:
+1. Fetch `narration_text` from `film_scenes`
+2. Fetch `selected_voice_id` + `tts_overrides_json` from `film_projects`
+3. Apply TTS pronunciation overrides via `applyTtsOverrides()` — **non-mutating**, narration_text in DB is never touched
+4. Call ElevenLabs TTS (`eleven_v3`) → MP3 buffer
+5. Upload to `films/{orderId}/{filmProjectId}/scenes/{sceneId}/narration.mp3`
+6. Update `film_scenes`: `audio_path`, `audio_duration_ms`, `duration_ms`, `status = narration_ready`
+
+**Duration update**: `audio_duration_ms` is estimated from MP3 buffer size (~128kbps ≈ 16000 bytes/sec). `duration_ms = max(3000, audio_duration_ms + 1500ms padding)`. This overrides the coarser word-count estimate set during scene building and is passed to Remotion for narration-synced text reveal.
+
+**Batch**: pass `{ sceneIds: string[] }` to generate for specific scenes; omit for all. Sequential execution to respect ElevenLabs rate limits. Failures are per-scene (captured in `error_message`, do not stop the batch).
+
+**Admin UI**: `FilmPanel` shows 🎙 per-scene audio button, batch "🎙 צור שמע ל-N" button, 🔊 audio duration when audio exists, count of scenes with audio in stats bar. Requires voice to be selected first (buttons disabled if not).
 
 ## Film Render Worker
 

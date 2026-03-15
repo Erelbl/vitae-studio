@@ -114,6 +114,54 @@ export function FilmPanel({
     });
   }
 
+  async function handleGenerateSceneAudio(sceneId: string) {
+    await runAction(`audio-${sceneId}`, async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/generate-audio`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sceneIds: [sceneId] }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ביצירת שמע");
+      }
+      const data = await res.json();
+      if (data.failed > 0 && data.errors?.length > 0) {
+        throw new Error(data.errors[0]);
+      }
+      router.refresh();
+    });
+  }
+
+  async function handleGenerateAudioSelected() {
+    const ids = [...selectedSceneIds];
+    await runAction("generate-audio-selected", async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/generate-audio`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sceneIds: ids }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ביצירת שמע לסצנות");
+      }
+      const data = await res.json();
+      if (data.failed > 0) {
+        throw new Error(
+          `${data.generated} הצליחו, ${data.failed} נכשלו. ${data.errors?.[0] ?? ""}`
+        );
+      }
+      setSelectedSceneIds(new Set());
+      router.refresh();
+    });
+  }
+
   async function handleRenderScene(sceneId: string) {
     await runAction(`render-${sceneId}`, async () => {
       const res = await fetch(
@@ -252,6 +300,8 @@ export function FilmPanel({
 
   const errorSceneCount = scenes.filter((s) => s.status === "error").length;
   const pendingSceneCount = scenes.filter((s) => s.status === "pending").length;
+  const audioReadyCount = scenes.filter((s) => s.audio_path != null).length;
+  const voiceChosen = Boolean(filmProject.selected_voice_id);
   const totalDurationSec = Math.round(
     scenes.reduce((sum, s) => sum + (s.duration_ms ?? 0), 0) / 1000
   );
@@ -300,6 +350,9 @@ export function FilmPanel({
             )}
             {errorSceneCount > 0 && (
               <span className="text-red-600">{errorSceneCount} שגיאות</span>
+            )}
+            {audioReadyCount > 0 && (
+              <span className="text-blue-600">🔊 {audioReadyCount} עם שמע</span>
             )}
             <span>{totalDurationSec} שניות (אומדן)</span>
             {filmProject.final_duration_seconds != null && (
@@ -479,6 +532,19 @@ export function FilmPanel({
                 </label>
               </div>
               <Button
+                variant={selectedSceneIds.size > 0 && voiceChosen ? "default" : "outline"}
+                size="sm"
+                disabled={isLoading || selectedSceneIds.size === 0 || !voiceChosen}
+                onClick={handleGenerateAudioSelected}
+                title={!voiceChosen ? "בחר קול תחילה" : undefined}
+              >
+                {loadingAction === "generate-audio-selected"
+                  ? "מייצר שמע..."
+                  : selectedSceneIds.size > 0
+                  ? `🎙 צור שמע ל-${selectedSceneIds.size}`
+                  : "🎙 צור שמע"}
+              </Button>
+              <Button
                 variant={selectedSceneIds.size > 0 ? "default" : "outline"}
                 size="sm"
                 disabled={isLoading || selectedSceneIds.size === 0}
@@ -499,9 +565,9 @@ export function FilmPanel({
               <span className="shrink-0 w-5 text-center">#</span>
               <span className="shrink-0 w-20">פריסה</span>
               <span className="flex-1">טקסט</span>
-              <span className="shrink-0 w-12 text-end">משך</span>
+              <span className="shrink-0 w-14 text-end">שמע / משך</span>
               <span className="shrink-0 w-16 text-end">סטטוס</span>
-              <span className="shrink-0 w-[52px]" />
+              <span className="shrink-0 w-[76px]" />
             </div>
 
             {/* Scene rows */}
@@ -515,7 +581,10 @@ export function FilmPanel({
                   isSelected={selectedSceneIds.has(scene.id)}
                   onToggleSelect={() => toggleSceneSelection(scene.id)}
                   onRender={() => handleRenderScene(scene.id)}
+                  onGenerateAudio={() => handleGenerateSceneAudio(scene.id)}
                   isRendering={loadingAction === `render-${scene.id}`}
+                  isGeneratingAudio={loadingAction === `audio-${scene.id}`}
+                  canGenerateAudio={voiceChosen}
                   disabled={isLoading}
                 />
               ))}
@@ -563,7 +632,10 @@ function SceneRow({
   isSelected,
   onToggleSelect,
   onRender,
+  onGenerateAudio,
   isRendering,
+  isGeneratingAudio,
+  canGenerateAudio,
   disabled,
 }: {
   scene: FilmScene;
@@ -572,7 +644,10 @@ function SceneRow({
   isSelected: boolean;
   onToggleSelect: () => void;
   onRender: () => void;
+  onGenerateAudio: () => void;
   isRendering: boolean;
+  isGeneratingAudio: boolean;
+  canGenerateAudio: boolean;
   disabled: boolean;
 }) {
   const textPreview = scene.narration_text
@@ -581,6 +656,11 @@ function SceneRow({
       : scene.narration_text
     : "—";
 
+  const hasAudio = Boolean(scene.audio_path);
+  const audioDurationSec =
+    scene.audio_duration_ms != null
+      ? (scene.audio_duration_ms / 1000).toFixed(1)
+      : null;
   const durationSec =
     scene.duration_ms != null ? (scene.duration_ms / 1000).toFixed(1) : "—";
 
@@ -633,18 +713,44 @@ function SceneRow({
         {textPreview}
       </span>
 
-      {/* Duration */}
-      <span className="text-muted-foreground shrink-0 w-12 text-end tabular-nums">
-        {durationSec}s
-      </span>
+      {/* Audio duration / estimated duration */}
+      <div className="shrink-0 w-14 text-end tabular-nums leading-tight">
+        {hasAudio ? (
+          <span className="text-blue-600 font-medium text-[11px]" title="משך שמע בפועל">
+            🔊 {audioDurationSec}s
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-[11px]" title="משך מוערך">
+            ~{durationSec}s
+          </span>
+        )}
+      </div>
 
       {/* Status */}
       <span className={`shrink-0 w-16 text-end font-medium ${statusColor}`}>
         {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
       </span>
 
-      {/* Queue + Video buttons */}
+      {/* Audio + Queue + Video buttons */}
       <div className="shrink-0 flex items-center gap-1">
+        {/* Generate audio */}
+        <button
+          type="button"
+          onClick={onGenerateAudio}
+          disabled={disabled || isGeneratingAudio || !canGenerateAudio}
+          className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title={
+            !canGenerateAudio
+              ? "בחר קול תחילה"
+              : hasAudio
+              ? "צור שמע מחדש"
+              : "צור שמע"
+          }
+        >
+          {isGeneratingAudio ? "…" : hasAudio ? "🔊" : "🎙"}
+        </button>
+
+        {/* Queue for render */}
         <button
           type="button"
           onClick={onRender}
