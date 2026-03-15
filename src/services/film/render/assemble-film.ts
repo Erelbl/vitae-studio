@@ -9,23 +9,19 @@
  * page data, still images, or thumbnails. Each scene clip already contains
  * the full Remotion animation (image reveal, text reveal, Ken Burns,
  * narration-synced timing). The assembly's job is strictly:
- *   download clips → mux narration audio → sequence with Remotion → upload
+ *   sign URLs → sequence with Remotion → upload
  *
  * STRATEGY: Remotion FinalFilmComposition.
  *
- * Previous approaches (monolithic ffmpeg xfade chain, pairwise iterative merge)
- * both failed because ffmpeg xfade requires precise duration-offset math that
- * breaks when actual clip durations diverge from expected values. Remotion
- * handles timeline sequencing natively via <Sequence> and <OffthreadVideo> —
- * no offset calculations, no filter chains.
- *
- * The FinalFilmComposition receives an array of clip entries (local file://
- * URLs + duration in frames) and renders them in sequence with wipeleft
- * page-turn transitions between scenes.
+ * Remotion handles timeline sequencing natively via <Sequence> + <OffthreadVideo>.
+ * No offset calculations, no filter chains. Sources are signed HTTPS URLs from
+ * Supabase Storage — Chrome (Remotion's renderer) can load these directly.
+ * Narration audio is handled via Remotion's <Audio> component alongside
+ * <OffthreadVideo>, so no ffmpeg mux step is needed.
  *
  * ⚠️  ENVIRONMENT REQUIREMENTS
  * - Chrome installed (Remotion uses headless Chrome)
- * - ffmpeg + ffprobe installed (for audio muxing + thumbnail extraction)
+ * - ffmpeg installed (for thumbnail extraction only)
  * - Remotion bundle built: npm run bundle:remotion
  * - Node.js environment (not Vercel serverless)
  *
@@ -39,7 +35,6 @@ import * as os from "os";
 import * as path from "path";
 import * as fsSync from "fs";
 import { spawn } from "child_process";
-import { pathToFileURL } from "url";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
@@ -76,11 +71,14 @@ const TRANSITION_DURATION_SEC = 0.8;
 /** Default FPS — matches scene rendering. */
 const FPS = 30;
 
-/** Timeout for individual ffmpeg operations (3 minutes). */
-const FFMPEG_TIMEOUT_MS = 3 * 60 * 1000;
+/** Timeout for ffmpeg operations (thumbnail extraction). */
+const FFMPEG_TIMEOUT_MS = 2 * 60 * 1000;
 
-/** Timeout for individual scene mux operations (2 minutes). */
-const MUX_TIMEOUT_MS = 2 * 60 * 1000;
+/**
+ * Signed URL expiry in seconds. Must exceed the total assembly render time.
+ * 40 scenes × ~2 min/scene = ~80 min; use 3 hours to be safe.
+ */
+const SIGNED_URL_EXPIRY_SEC = 3 * 60 * 60;
 
 // ── Preview export mode ──────────────────────────────────────────────────────
 //
@@ -174,91 +172,28 @@ async function checkFfmpeg(): Promise<void> {
         "  Windows: download from https://ffmpeg.org/download.html"
     );
   }
-  try {
-    await runFfmpeg("ffprobe", ["-version"], 10_000);
-  } catch {
-    throw new Error(
-      "[film-assemble] ffprobe not found. It is usually installed alongside ffmpeg."
-    );
-  }
-}
-
-async function downloadStorageFile(
-  storagePath: string,
-  localPath: string,
-  bucket: string
-): Promise<void> {
-  const adminClient = createAdminClient();
-  const { data, error } = await adminClient.storage
-    .from(bucket)
-    .createSignedUrl(storagePath, 3600);
-
-  if (error || !data?.signedUrl) {
-    throw new Error(
-      `Failed to get signed URL for ${storagePath}: ${error?.message ?? "no URL"}`
-    );
-  }
-
-  const response = await fetch(data.signedUrl);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to download ${storagePath}: HTTP ${response.status}`
-    );
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(localPath, buffer);
 }
 
 /**
- * Mux narration audio into a scene video.
- * If no audio, adds a silent audio track (required for consistent playback).
- *
- * Video stream is copied without re-encoding — Remotion animations
- * are preserved bit-for-bit.
+ * Generate a signed HTTPS URL for a storage object.
+ * Remotion's Chrome renderer can load these directly — no local download needed.
  */
-async function muxAudioIntoVideo(
-  videoPath: string,
-  audioPath: string | null,
-  outputPath: string
-): Promise<void> {
-  if (!audioPath) {
-    // No narration — add silent audio track. -shortest limits the infinite
-    // anullsrc generator to the video length.
-    await runFfmpeg(
-      "ffmpeg",
-      [
-        "-y",
-        "-i", videoPath,
-        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-shortest",
-        outputPath,
-      ],
-      MUX_TIMEOUT_MS
-    );
-  } else {
-    // With narration audio — do NOT use -shortest.
-    // Video is longer than audio by design (2500ms breathing pause padding).
-    await runFfmpeg(
-      "ffmpeg",
-      [
-        "-y",
-        "-i", videoPath,
-        "-i", audioPath,
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        outputPath,
-      ],
-      MUX_TIMEOUT_MS
+async function getSignedUrl(storagePath: string, bucket: string): Promise<string> {
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient.storage
+    .from(bucket)
+    .createSignedUrl(storagePath, SIGNED_URL_EXPIRY_SEC);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(
+      `[film-assemble] Failed to sign URL for ${storagePath}: ${error?.message ?? "no URL returned"}`
     );
   }
+
+  return data.signedUrl;
 }
 
-/** Measure actual duration of a media file via ffprobe. */
+/** Measure duration of a local media file via ffprobe. */
 async function getClipDuration(filePath: string): Promise<number> {
   const { stdout } = await runFfmpeg(
     "ffprobe",
@@ -324,7 +259,7 @@ export async function assembleFilm(
     );
   }
 
-  // ── Prepare temp directory ──────────────────────────────────────────────
+  // ── Prepare temp directory (for final.mp4 + thumbnail only) ────────────
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vitae-assemble-"));
   const storageBucket = filmEnv.storageBucket!;
@@ -338,16 +273,20 @@ export async function assembleFilm(
         `for project ${filmProjectId}`
     );
     console.log(
-      `[film-assemble] Strategy: Remotion FinalFilmComposition (no ffmpeg stitching)`
+      `[film-assemble] Strategy: Remotion FinalFilmComposition (signed HTTPS URLs)`
     );
     console.log(
-      `[film-assemble] Source: rendered_scene_path MP4 files ONLY (no page data, no stills)`
+      `[film-assemble] Source: rendered_scene_path MP4s via Supabase signed URLs`
     );
     console.log(
       `[film-assemble] ═══════════════════════════════════════════════════════`
     );
 
-    // ── Download + mux audio into each scene clip ─────────────────────────
+    // ── Build clip entries from signed HTTPS URLs ─────────────────────────
+    //
+    // Remotion's Chrome renderer loads video/audio directly from HTTPS URLs.
+    // No local download or ffmpeg mux step needed — Remotion's <OffthreadVideo>
+    // handles the silent scene clip and <Audio> handles narration in parallel.
 
     const clips: ClipEntry[] = [];
 
@@ -358,67 +297,37 @@ export async function assembleFilm(
       const audioStoragePath = scene.audio_path as string | null;
       const spreadKey = (scene.page_spread_key as string | null) ?? `scene_${i}`;
 
-      console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] Downloading ` +
-          `scene=${sceneId} key=${spreadKey} path=${videoStoragePath}`
-      );
-
-      // Download pre-rendered scene clip (SOLE visual source)
-      const videoLocal = path.join(tmpDir, `scene-${i}-video.mp4`);
-      await downloadStorageFile(videoStoragePath, videoLocal, storageBucket);
-
-      // Validate file is not empty/corrupt
-      const videoStat = await fs.stat(videoLocal);
-      if (videoStat.size < 1024) {
+      // Validate storage path before signing
+      if (!videoStoragePath) {
         throw new Error(
-          `Scene ${i + 1} (${sceneId}) clip is only ${videoStat.size} bytes — ` +
-            `likely corrupt. Path: ${videoStoragePath}`
+          `[film-assemble] Scene ${i + 1} (${sceneId}) has no rendered_scene_path`
         );
       }
-      console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] Downloaded ` +
-          `${(videoStat.size / 1024 / 1024).toFixed(1)} MB`
-      );
 
-      // Download narration audio if exists
-      let audioLocal: string | null = null;
+      // Sign video URL — Remotion's OffthreadVideo loads this via Chrome
+      const videoSignedUrl = await getSignedUrl(videoStoragePath, storageBucket);
+
+      // Sign audio URL — Remotion's Audio component loads this via Chrome
+      let audioSignedUrl: string | null = null;
       if (audioStoragePath) {
-        audioLocal = path.join(tmpDir, `scene-${i}-audio.mp3`);
-        await downloadStorageFile(audioStoragePath, audioLocal, storageBucket);
+        audioSignedUrl = await getSignedUrl(audioStoragePath, storageBucket);
       }
 
-      // Mux audio into the rendered clip (video copied without re-encoding)
-      const muxedPath = path.join(tmpDir, `scene-${i}-muxed.mp4`);
+      // Duration from DB — set accurately by renderScene() as
+      // Math.round((durationInFrames / fps) * 1000), matching what was rendered.
+      const durationMs = (scene.duration_ms as number | null) ?? 5000;
+      const durationInFrames = Math.max(1, Math.round((durationMs / 1000) * FPS));
+
       console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] Muxing ` +
-          `${audioLocal ? "narration audio" : "silent track"} into clip`
+        `[film-assemble] [${i + 1}/${scenes.length}] ✓ Signed URLs ready: ` +
+          `key=${spreadKey} duration=${(durationMs / 1000).toFixed(2)}s ` +
+          `(${durationInFrames} frames) audio=${audioSignedUrl ? "yes" : "none"} ` +
+          `video=HTTPS audio=${audioSignedUrl ? "HTTPS" : "none"}`
       );
-      await muxAudioIntoVideo(videoLocal, audioLocal, muxedPath);
-
-      // Measure actual duration via ffprobe (the source of truth for timing)
-      const actualDurationSec = await getClipDuration(muxedPath);
-      if (actualDurationSec <= 0) {
-        throw new Error(
-          `Scene ${i + 1} (${sceneId}) has zero duration after muxing. ` +
-            `Re-render this scene.`
-        );
-      }
-
-      const durationInFrames = Math.round(actualDurationSec * FPS);
-
-      const dbDur = ((scene.duration_ms as number | null) ?? 5000) / 1000;
-      console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] ✓ Duration: ` +
-          `${actualDurationSec.toFixed(2)}s (${durationInFrames} frames) ` +
-          `(db: ${dbDur.toFixed(2)}s) key=${spreadKey} ` +
-          `audio=${audioLocal ? "yes" : "silent"}`
-      );
-
-      // Convert local path to file:// URL for Remotion's OffthreadVideo
-      const fileUrl = pathToFileURL(muxedPath).href;
 
       clips.push({
-        src: fileUrl,
+        src: videoSignedUrl,
+        audioSrc: audioSignedUrl,
         durationInFrames,
       });
     }
@@ -480,7 +389,7 @@ export async function assembleFilm(
 
     console.log(`[film-assemble] Remotion render complete → ${outputPath}`);
 
-    // ── Thumbnail ─────────────────────────────────────────────────────────
+    // ── Thumbnail (ffmpeg extract from rendered output) ───────────────────
 
     const finalThumbLocal = path.join(tmpDir, "thumbnail.jpg");
     const finalDurSec = await getClipDuration(outputPath);
@@ -495,7 +404,7 @@ export async function assembleFilm(
         "-q:v", "3",
         finalThumbLocal,
       ],
-      MUX_TIMEOUT_MS
+      FFMPEG_TIMEOUT_MS
     );
 
     // ── Upload ────────────────────────────────────────────────────────────

@@ -5,18 +5,19 @@
  * This replaces the fragile ffmpeg xfade assembly. Remotion handles timeline
  * sequencing natively — no duration-sensitive offset math, no filter chains.
  *
- * Each scene clip already contains the full Remotion animation (image reveal,
- * text reveal, Ken Burns, etc.) with audio muxed in. This composition simply
- * plays them in order with wipeleft transitions between scenes.
+ * Each scene clip is a pre-rendered silent MP4. Narration audio is placed
+ * alongside the video via a separate <Audio> component within the same
+ * <Sequence> — no ffmpeg muxing required.
  *
- * Props are passed by the assembly function in assemble-film.ts — clips are
- * local file:// URLs pointing to temp-directory muxed MP4 files.
+ * Sources: signed HTTPS URLs from Supabase Storage (NOT file:// paths).
+ * Chrome (Remotion's renderer) can load HTTPS URLs natively.
  */
 
 import {
   AbsoluteFill,
   Sequence,
   OffthreadVideo,
+  Audio,
   useCurrentFrame,
   interpolate,
 } from "remotion";
@@ -24,9 +25,17 @@ import {
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface ClipEntry {
-  /** Video source — file:// URL or http URL accessible to the renderer. */
+  /**
+   * Signed HTTPS URL for the pre-rendered scene MP4 (silent video).
+   * Must be an HTTP/HTTPS URL — file:// paths are rejected by Chrome.
+   */
   src: string;
-  /** Duration of this clip in frames. */
+  /**
+   * Signed HTTPS URL for the narration MP3, or null if this scene has no audio.
+   * Played via <Audio> alongside <OffthreadVideo> within the same Sequence.
+   */
+  audioSrc: string | null;
+  /** Duration of this clip in frames (derived from film_scenes.duration_ms). */
   durationInFrames: number;
 }
 
@@ -207,6 +216,11 @@ export function FinalFilmComposition({
           durationInFrames={clip.durationInFrames}
           layout="none"
         >
+          {/* Narration audio — plays at volume 1 within the scene's time window.
+              Placed outside ClipWithTransition so transitions don't affect audio. */}
+          {clip.audioSrc && (
+            <Audio src={clip.audioSrc} volume={1} />
+          )}
           <ClipWithTransition
             clip={clip}
             clipIndex={i}
