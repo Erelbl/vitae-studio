@@ -67,6 +67,12 @@ interface FilmPanelProps {
   sceneThumbnailUrls?: Record<string, string | null>;
   /** Pre-resolved signed video URLs keyed by scene id (1-hour expiry). */
   sceneVideoUrls?: Record<string, string | null>;
+  /**
+   * Pre-resolved signed audio URLs keyed by scene id (1-hour expiry).
+   * null means either no audio_path on the scene OR signed URL generation failed.
+   * Distinguish the two cases by checking scene.audio_path.
+   */
+  sceneAudioUrls?: Record<string, string | null>;
   /** Pre-resolved signed URL for the final assembled film (1-hour expiry). */
   finalVideoUrl?: string | null;
   /** Pre-resolved signed URL for the final film thumbnail (1-hour expiry). */
@@ -81,6 +87,7 @@ export function FilmPanel({
   sampleBUrl,
   sceneThumbnailUrls = {},
   sceneVideoUrls = {},
+  sceneAudioUrls = {},
   finalVideoUrl = null,
   finalThumbnailUrl = null,
 }: FilmPanelProps) {
@@ -616,6 +623,7 @@ export function FilmPanel({
                   scene={scene}
                   thumbnailUrl={sceneThumbnailUrls[scene.id] ?? null}
                   videoUrl={sceneVideoUrls[scene.id] ?? null}
+                  audioUrl={sceneAudioUrls[scene.id] ?? null}
                   isSelected={selectedSceneIds.has(scene.id)}
                   onToggleSelect={() => toggleSceneSelection(scene.id)}
                   onRender={() => handleRenderScene(scene.id)}
@@ -740,6 +748,7 @@ function SceneRow({
   scene,
   thumbnailUrl,
   videoUrl,
+  audioUrl,
   isSelected,
   onToggleSelect,
   onRender,
@@ -752,6 +761,8 @@ function SceneRow({
   scene: FilmScene;
   thumbnailUrl: string | null;
   videoUrl: string | null;
+  /** Signed URL for scene narration audio. null = no audio OR URL generation failed. */
+  audioUrl: string | null;
   isSelected: boolean;
   onToggleSelect: () => void;
   onRender: () => void;
@@ -827,9 +838,24 @@ function SceneRow({
       {/* Audio duration / estimated duration */}
       <div className="shrink-0 w-14 text-end tabular-nums leading-tight">
         {hasAudio ? (
-          <span className="text-blue-600 font-medium text-[11px]" title="משך שמע בפועל">
-            🔊 {audioDurationSec}s
-          </span>
+          audioUrl ? (
+            <a
+              href={audioUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 font-medium text-[11px] hover:underline"
+              title="האזן לשמע (נפתח בטאב חדש)"
+            >
+              🔊 {audioDurationSec}s
+            </a>
+          ) : (
+            <span
+              className="text-red-500 text-[11px] cursor-help"
+              title="שמע קיים אך לא ניתן היה ליצור קישור. רענן את הדף."
+            >
+              🔊 ⚠
+            </span>
+          )
         ) : (
           <span className="text-muted-foreground text-[11px]" title="משך מוערך">
             ~{durationSec}s

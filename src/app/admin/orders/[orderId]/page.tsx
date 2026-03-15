@@ -271,10 +271,11 @@ export default async function AdminOrderDetailPage({
 
   const sceneThumbnailUrls: Record<string, string | null> = {};
   const sceneVideoUrls: Record<string, string | null> = {};
+  const sceneAudioUrls: Record<string, string | null> = {};
   if (filmScenes.length > 0) {
     await Promise.all(
       filmScenes.map(async (scene) => {
-        const [thumbResult, videoResult] = await Promise.all([
+        const [thumbResult, videoResult, audioResult] = await Promise.all([
           scene.thumbnail_path
             ? adminClient.storage
                 .from(filmBucket)
@@ -285,9 +286,16 @@ export default async function AdminOrderDetailPage({
                 .from(filmBucket)
                 .createSignedUrl(scene.rendered_scene_path, 3600)
             : Promise.resolve({ data: null }),
+          scene.audio_path
+            ? adminClient.storage
+                .from(filmBucket)
+                .createSignedUrl(scene.audio_path, 3600)
+            : Promise.resolve({ data: null }),
         ]);
         sceneThumbnailUrls[scene.id] = thumbResult.data?.signedUrl ?? null;
         sceneVideoUrls[scene.id] = videoResult.data?.signedUrl ?? null;
+        // null means either no audio_path, or URL generation failed (distinguished by scene.audio_path)
+        sceneAudioUrls[scene.id] = audioResult.data?.signedUrl ?? null;
       })
     );
   }
@@ -576,6 +584,7 @@ export default async function AdminOrderDetailPage({
           sampleBUrl={filmSampleBUrl}
           sceneThumbnailUrls={sceneThumbnailUrls}
           sceneVideoUrls={sceneVideoUrls}
+          sceneAudioUrls={sceneAudioUrls}
           finalVideoUrl={finalVideoUrl}
           finalThumbnailUrl={finalThumbnailUrl}
         />
