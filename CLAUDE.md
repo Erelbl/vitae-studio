@@ -268,7 +268,21 @@ The system assembles all rendered scene videos into a single final film with pag
 
 **Key concept**: Scenes represent **open album spreads** (two pages side-by-side), not individual pages. The final film looks like a storybook being flipped through.
 
-**Source of truth**: The final film is assembled **exclusively** from the pre-rendered scene MP4 clips (`rendered_scene_path`). The assembly never re-renders from page data, still images, or thumbnails. Each scene clip already contains the full Remotion animation (image reveal, text reveal, Ken Burns, transitions, narration-synced timing). The assembly's job is strictly: download clips → mux audio → concatenate with transitions → upload.
+**Source of truth**: The final film is assembled **exclusively** from the pre-rendered scene MP4 clips (`rendered_scene_path`). The assembly NEVER re-renders from page data, still images, or thumbnails. Each scene clip already contains the full Remotion animation (image reveal, text reveal, Ken Burns, transitions, narration-synced timing). The assembly's only job is: download clips → mux audio → stitch with transitions → upload.
+
+### Assembly strategy — pairwise iterative merge
+
+The assembly uses **pairwise iterative xfade merging** — NOT a monolithic ffmpeg filter chain.
+
+**Why**: The previous monolithic approach built a single `filter_complex` with N-1 chained xfade filters. Offset errors accumulated across the chain; by clip 8-10 (~45s) the drift caused ffmpeg to read past clip boundaries → black frames / freeze while audio continued.
+
+**How pairwise merge works**:
+1. Start with clip[0] (the first muxed scene)
+2. Merge clip[0] + clip[1] → intermediate_1 (offset = ffprobe duration of clip[0] − 0.8s)
+3. Merge intermediate_1 + clip[2] → intermediate_2 (offset = ffprobe duration of intermediate_1 − 0.8s)
+4. ...repeat until all clips are merged
+
+Each merge step is a single, isolated 2-input xfade. The offset is always computed fresh from the ffprobe-measured duration of the left-hand input. No accumulated offsets. No chain. If any clip has a timing issue, the error is contained to that single merge step with a clear diagnostic.
 
 ### How it works
 
@@ -278,9 +292,9 @@ The system assembles all rendered scene videos into a single final film with pag
    - Downloads all **pre-rendered scene MP4s** (the sole visual source) and narration MP3s from storage
    - Validates each clip file is non-empty (fails fast if corrupt)
    - Muxes audio into each scene video with `-c:v copy` (no re-encoding — preserves animations bit-for-bit). Scenes without narration get a silent audio track
-   - Measures actual clip durations via ffprobe (prevents xfade offset mismatches)
-   - Validates all xfade offsets are positive (fails fast if any clip is too short)
-   - Concatenates all scenes with **wipeleft** transitions (0.8s) — simulates page turning right-to-left (Hebrew reading direction)
+   - Measures actual clip durations via ffprobe
+   - Stitches scenes using pairwise iterative xfade merges (each merge: 2 inputs, 1 wipeleft transition, 1 output)
+   - Each merge offset is computed from the ffprobe-measured duration of the left clip — no accumulated offsets
    - Extracts thumbnail, measures final duration via ffprobe
    - Uploads final film to `films/{orderId}/{filmProjectId}/final/film.mp4`
    - Sets `film_projects.status = 'assembled'`
@@ -306,11 +320,11 @@ npm run render-worker:watch
 - Audio crossfade (acrossfade, tri curve) matches visual transition timing. Narration naturally ends well before scene tail (2500ms padding), so no audio overlap during transitions
 - Single scene films have no transitions
 
-### Audio mux — no `-shortest`
-When muxing narration audio into scene video, `-shortest` is NOT used. Scene video is always longer than audio by design (2500ms padding from `computeSceneDuration`). Using `-shortest` would truncate the video to audio length, cutting off the breathing pause, fade-out transitions, text reveal tails, and Ken Burns completion. This was the root cause of the "freeze" bug: truncated clips caused xfade offsets to exceed actual clip durations, making ffmpeg hold the last frame indefinitely.
-
-### Duration accuracy
-After muxing each scene, actual clip duration is measured via ffprobe and used for xfade offset calculations. DB `duration_ms` is not trusted for assembly — codec frame alignment and rounding can cause small discrepancies that compound across many scenes.
+### Audio handling
+- Scene clips are rendered **silent** by Remotion (video only, no audio track)
+- Narration MP3 is muxed into each scene clip during assembly with `-c:v copy` (video is NOT re-encoded — all animations preserved bit-for-bit)
+- Scenes without narration get a silent audio track via `anullsrc` (required for consistent streams during xfade)
+- When muxing audio, `-shortest` is NOT used. Scene video is always longer than audio by design (2500ms breathing pause padding). Using `-shortest` would truncate the video, cutting off animations and breathing pauses
 
 ### Storage paths
 - Final film: `films/{orderId}/{filmProjectId}/final/film.mp4`
@@ -323,8 +337,8 @@ After muxing each scene, actual clip duration is measured via ffprobe and used f
 ### Current limitations
 - No background music mixing yet (architecture ready)
 - No advanced audio normalization across scenes
-- Assembly re-encodes video (libx264 crf=20) for transition compositing
-- Very long films (40+ scenes) may take several minutes to assemble
+- Pairwise merges re-encode at each step (libx264 crf=18). For N scenes there are N-1 merge steps. This is more encode work than the monolithic approach but eliminates the freeze/drift problem completely
+- Preview export mode further re-encodes to 960×540 at the end (set `PREVIEW_EXPORT_MODE = false` for production 1080p)
 
 ## Environment Variables
 See `.env.example` for all required variables. Key ones:

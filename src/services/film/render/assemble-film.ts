@@ -1,27 +1,39 @@
 /**
- * Final Film Assembly
+ * Final Film Assembly — Pairwise Merge Strategy
  *
  * Assembles all rendered scene videos into a single final film with
- * page-turn transitions between scenes. Scenes represent open album spreads
- * (two pages side-by-side) — the assembly preserves this layout.
+ * page-turn transitions between scenes.
  *
- * SOURCE OF TRUTH: the only visual input for the final film is the pre-rendered
- * scene MP4 files stored at each scene's `rendered_scene_path`. The assembly
- * never re-renders from page data, still images, or thumbnails. Each scene clip
- * already contains the full animation (image reveal, text reveal, Ken Burns,
- * transitions, narration-synced timing) exactly as produced by Remotion. The
- * assembly's job is strictly: download clips → mux narration audio → concatenate
- * with page-turn transitions → upload.
+ * SOURCE OF TRUTH: the ONLY visual input is the pre-rendered scene MP4 files
+ * at each scene's `rendered_scene_path`. The assembly NEVER re-renders from
+ * page data, still images, or thumbnails. Each scene clip already contains
+ * the full Remotion animation (image reveal, text reveal, Ken Burns,
+ * narration-synced timing). The assembly's job is strictly:
+ *   download clips → mux narration audio → stitch with transitions → upload
+ *
+ * STRATEGY: Pairwise iterative merging.
+ *
+ * Previous approach (monolithic xfade filter chain) built a single ffmpeg
+ * filter_complex with N-1 chained xfade filters. This is fragile:
+ *   - Offset calculation: offset_i = sum(durations[0..i]) - (i+1)*td
+ *   - Floating-point rounding errors accumulate across the chain
+ *   - By clip 8-10 (~45s), the accumulated drift causes ffmpeg to read past
+ *     clip boundaries → black frames / freeze while audio continues
+ *   - The filter graph is opaque — impossible to isolate which transition broke
+ *
+ * New approach: iterative pairwise merges.
+ *   Step 1: merge clip[0] + clip[1] → intermediate_1  (offset = dur(clip[0]) - td)
+ *   Step 2: merge intermediate_1 + clip[2] → intermediate_2  (offset = dur(intermediate_1) - td)
+ *   ...and so on.
+ *
+ * Each merge is a single, isolated 2-input xfade with exactly ONE offset value
+ * computed from the ffprobe-measured duration of the left-hand input. No offset
+ * accumulation. No chain. If any clip has a timing issue, the error is isolated
+ * to that merge step with a clear diagnostic.
  *
  * ⚠️  ENVIRONMENT REQUIREMENTS
- * - ffmpeg + ffprobe must be installed (for video concatenation + transitions)
+ * - ffmpeg + ffprobe must be installed
  * - Node.js environment (not Vercel serverless)
- * - Same machine requirements as the render worker
- *
- * Audio handling:
- * - Scene narration audio (MP3) is muxed into each scene's silent MP4
- * - Scenes without audio get a silent audio track (required for concat)
- * - Audio crossfades match visual transitions
  *
  * Storage paths (relative to "films" bucket — no bucket-name prefix):
  *   {orderId}/{filmProjectId}/final/film.mp4
@@ -55,12 +67,9 @@ export interface AssembleFilmResult {
 /**
  * Duration of page-turn transition between scenes, in seconds.
  *
- * At 0.8s the wipeleft is deliberate enough to read as a page-turn
- * without feeling sluggish.
- *
- * Breathing pause timing (see compute-scene-duration.ts for constants):
+ * Breathing pause timing (see compute-scene-duration.ts):
  *   Scene duration = audio_ms + AUDIO_TAIL_MS(500) + BREATHING_PAUSE_MS(2000)
- *   Visible stillness = (500 + 2000) - TRANSITION_DURATION(800) = 1700ms
+ *   Visible stillness = (500 + 2000) - TRANSITION_DURATION(800) ≈ 1700ms
  *
  * Flow: narration ends → ~1.7s still spread → page turn (0.8s) → next spread
  */
@@ -68,49 +77,34 @@ const TRANSITION_DURATION = 0.8;
 
 /**
  * ffmpeg xfade transition type.
- * "wipeleft" simulates pages turning right-to-left (Hebrew reading direction):
- * the current spread wipes away to the left as the next spread appears from
- * the right, mimicking physically flipping pages in a real album.
+ * "wipeleft" simulates pages turning right-to-left (Hebrew reading direction).
  */
 const TRANSITION_TYPE = "wipeleft";
 
-/** Timeout for the full assembly ffmpeg process (10 minutes). */
-const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1000;
+/** Timeout for a single ffmpeg merge operation (3 minutes). */
+const MERGE_TIMEOUT_MS = 3 * 60 * 1000;
 
 /** Timeout for individual scene mux operations (2 minutes). */
 const MUX_TIMEOUT_MS = 2 * 60 * 1000;
 
-// ── ⚠️  TEMPORARY PREVIEW EXPORT MODE ────────────────────────────────────────
+// ── Preview export mode ──────────────────────────────────────────────────────
 //
-// The Supabase free plan has a storage cap that blocks large final film uploads.
-// When PREVIEW_EXPORT_MODE is true, the assembled film is re-encoded at
-// lower resolution and bitrate — enough to test transitions, spreads,
-// animations, timing, and narration, but not production quality.
-//
-// TO RESTORE HIGH-QUALITY EXPORT: set PREVIEW_EXPORT_MODE to false.
-// Production settings: crf=20, preset=medium, 1920×1080, 192k audio.
+// Supabase free plan storage cap blocks large final film uploads.
+// When true, the final re-encode uses lower resolution/bitrate.
+// TO RESTORE PRODUCTION QUALITY: set to false.
 //
 const PREVIEW_EXPORT_MODE = true;
-
-/** Preview: scale to 960×540 (quarter the pixels of 1080p). */
 const PREVIEW_SCALE = "960:540";
-/** Preview: CRF 30 — visibly lower quality than CRF 20 but ~3–5× smaller files. */
 const PREVIEW_CRF = "30";
-/** Preview: fast preset — less compression efficiency, faster encode. */
 const PREVIEW_PRESET = "fast";
-/** Preview: audio at 96 kbps (vs 192 kbps production). */
 const PREVIEW_AUDIO_BITRATE = "96k";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Run an ffmpeg/ffprobe command and return { stdout, stderr }.
- * Uses spawn to avoid buffer overflow on large stderr output.
- */
 function runFfmpeg(
   command: string,
   args: string[],
-  timeoutMs = ASSEMBLY_TIMEOUT_MS
+  timeoutMs = MERGE_TIMEOUT_MS
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, { stdio: "pipe" });
@@ -131,7 +125,7 @@ function runFfmpeg(
       const stderr = Buffer.concat(stderrChunks).toString();
 
       if (code !== 0) {
-        const lastLines = stderr.split("\n").filter(Boolean).slice(-5).join("\n");
+        const lastLines = stderr.split("\n").filter(Boolean).slice(-8).join("\n");
         reject(
           new Error(`${command} exited with code ${code}:\n${lastLines}`)
         );
@@ -147,9 +141,6 @@ function runFfmpeg(
   });
 }
 
-/**
- * Check that ffmpeg and ffprobe are available on the system.
- */
 async function checkFfmpeg(): Promise<void> {
   try {
     await runFfmpeg("ffmpeg", ["-version"], 10_000);
@@ -161,7 +152,6 @@ async function checkFfmpeg(): Promise<void> {
         "  Windows: download from https://ffmpeg.org/download.html"
     );
   }
-
   try {
     await runFfmpeg("ffprobe", ["-version"], 10_000);
   } catch {
@@ -171,9 +161,6 @@ async function checkFfmpeg(): Promise<void> {
   }
 }
 
-/**
- * Download a file from Supabase storage to a local path.
- */
 async function downloadStorageFile(
   storagePath: string,
   localPath: string,
@@ -203,16 +190,10 @@ async function downloadStorageFile(
 
 /**
  * Mux narration audio into a scene video.
- * If no audio, adds a silent audio track (required for concat with xfade).
+ * If no audio, adds a silent audio track (required for concat).
  *
- * IMPORTANT: When audio exists, we do NOT use -shortest. The scene video is
- * always longer than the audio by design (1500ms padding from computeSceneDuration).
- * Using -shortest would truncate the video to audio length, cutting off:
- *   - The fade-out transition at the end of the scene
- *   - The tail of the text reveal animation
- *   - Ken Burns zoom completion
- * This was the root cause of the "freeze" bug: truncated clips caused xfade
- * offsets to exceed actual durations, making ffmpeg hold the last frame.
+ * Video stream is copied without re-encoding — Remotion animations
+ * are preserved bit-for-bit.
  */
 async function muxAudioIntoVideo(
   videoPath: string,
@@ -220,8 +201,8 @@ async function muxAudioIntoVideo(
   outputPath: string
 ): Promise<void> {
   if (!audioPath) {
-    // No narration — add silent audio track so all scenes have matching streams.
-    // -shortest is needed here to limit anullsrc (infinite) to the video length.
+    // No narration — add silent audio track. -shortest limits the infinite
+    // anullsrc generator to the video length.
     await runFfmpeg(
       "ffmpeg",
       [
@@ -237,8 +218,7 @@ async function muxAudioIntoVideo(
     );
   } else {
     // With narration audio — do NOT use -shortest.
-    // Video duration > audio duration by design (1500ms padding).
-    // We want the full video so all animations complete naturally.
+    // Video is longer than audio by design (2500ms breathing pause padding).
     await runFfmpeg(
       "ffmpeg",
       [
@@ -256,10 +236,7 @@ async function muxAudioIntoVideo(
   }
 }
 
-/**
- * Measure actual duration of a video/audio file via ffprobe.
- * Used after muxing to get accurate clip durations for xfade offset calculation.
- */
+/** Measure actual duration of a media file via ffprobe. */
 async function getClipDuration(filePath: string): Promise<number> {
   const { stdout } = await runFfmpeg(
     "ffprobe",
@@ -274,29 +251,79 @@ async function getClipDuration(filePath: string): Promise<number> {
   return parseFloat(stdout.trim()) || 0;
 }
 
-// ── Main assembly function ───────────────────────────────────────────────────
+// ── Pairwise xfade merge ─────────────────────────────────────────────────────
 
 /**
- * Assemble all rendered scenes for a film project into a single final film.
+ * Merge two video clips with a single xfade transition.
  *
- * Flow:
- * 1. Validate all scenes are rendered
- * 2. Download scene videos + audio to temp directory
- * 3. Mux audio into each scene video
- * 4. Concatenate with page-turn (wipeleft) transitions via ffmpeg xfade
- * 5. Upload final MP4 + thumbnail to storage
- * 6. Update film_projects row
+ * This is the atomic building block: exactly 2 inputs, 1 xfade, 1 output.
+ * The offset is simply `duration_of_left_clip - transition_duration`.
+ * No chaining, no accumulated offsets, no filter graph complexity.
+ *
+ * @param leftPath  - Left (earlier) video file
+ * @param rightPath - Right (later) video file
+ * @param outputPath - Output merged file
+ * @param leftDuration - Measured duration of leftPath (from ffprobe)
+ * @param stepLabel - Human-readable label for logging
  */
+async function mergeTwoClips(
+  leftPath: string,
+  rightPath: string,
+  outputPath: string,
+  leftDuration: number,
+  stepLabel: string
+): Promise<void> {
+  const td = TRANSITION_DURATION;
+  const offset = leftDuration - td;
+
+  if (offset <= 0) {
+    throw new Error(
+      `[${stepLabel}] Left clip duration (${leftDuration.toFixed(2)}s) ≤ ` +
+        `transition duration (${td}s). Cannot compute valid xfade offset.`
+    );
+  }
+
+  console.log(
+    `[film-assemble] ${stepLabel}: xfade offset=${offset.toFixed(3)}s ` +
+      `(left=${leftDuration.toFixed(2)}s, transition=${td}s ${TRANSITION_TYPE})`
+  );
+
+  const filterComplex =
+    `[0:v][1:v]xfade=transition=${TRANSITION_TYPE}:duration=${td}:offset=${offset.toFixed(3)}[vout];` +
+    `[0:a][1:a]acrossfade=d=${td}:c1=tri:c2=tri[aout]`;
+
+  await runFfmpeg(
+    "ffmpeg",
+    [
+      "-y",
+      "-i", leftPath,
+      "-i", rightPath,
+      "-filter_complex", filterComplex,
+      "-map", "[vout]",
+      "-map", "[aout]",
+      "-c:v", "libx264",
+      "-preset", "fast",
+      "-crf", "18",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      outputPath,
+    ],
+    MERGE_TIMEOUT_MS
+  );
+}
+
+// ── Main assembly function ───────────────────────────────────────────────────
+
 export async function assembleFilm(
   input: AssembleFilmInput
 ): Promise<AssembleFilmResult> {
   const { orderId, filmProjectId } = input;
   const adminClient = createAdminClient();
 
-  // 1. Check ffmpeg availability
   await checkFfmpeg();
 
-  // 2. Fetch film project
+  // ── Fetch project + scenes ──────────────────────────────────────────────
+
   const { data: project, error: projErr } = await adminClient
     .from("film_projects")
     .select("*")
@@ -307,7 +334,6 @@ export async function assembleFilm(
     throw new Error(`Film project not found: ${filmProjectId}`);
   }
 
-  // 3. Fetch all scenes sorted by scene_order
   const { data: scenes, error: scenesErr } = await adminClient
     .from("film_scenes")
     .select("*")
@@ -318,7 +344,8 @@ export async function assembleFilm(
     throw new Error("No scenes found for this film project");
   }
 
-  // 4. Validate all scenes are rendered with video paths
+  // ── Validate all scenes are rendered ────────────────────────────────────
+
   const notRendered = scenes.filter((s) => s.status !== "rendered");
   if (notRendered.length > 0) {
     const ids = notRendered
@@ -332,25 +359,36 @@ export async function assembleFilm(
   const missingVideo = scenes.filter((s) => !s.rendered_scene_path);
   if (missingVideo.length > 0) {
     throw new Error(
-      `Cannot assemble: ${missingVideo.length} scene(s) missing rendered video`
+      `Cannot assemble: ${missingVideo.length} scene(s) missing rendered_scene_path`
     );
   }
 
-  // 5. Create temp directory for all intermediate files
+  // ── Prepare temp directory ──────────────────────────────────────────────
+
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vitae-assemble-"));
   const storageBucket = filmEnv.storageBucket!;
 
   try {
     console.log(
-      `[film-assemble] Assembling ${scenes.length} scenes for project ${filmProjectId}`
+      `[film-assemble] ═══════════════════════════════════════════════════════`
+    );
+    console.log(
+      `[film-assemble] Assembling ${scenes.length} rendered scene clips ` +
+        `for project ${filmProjectId}`
+    );
+    console.log(
+      `[film-assemble] Strategy: pairwise iterative merge (no monolithic filter chain)`
+    );
+    console.log(
+      `[film-assemble] Source: rendered_scene_path MP4 files ONLY (no page data, no stills)`
+    );
+    console.log(
+      `[film-assemble] ═══════════════════════════════════════════════════════`
     );
 
-    // 6. Download all rendered scene MP4s + narration audio, mux audio into each.
-    //    SOURCE OF TRUTH: each scene's rendered_scene_path is the ONLY visual input.
-    //    These clips already contain the full Remotion animation (image reveal, text
-    //    reveal, Ken Burns, transitions). The assembly never rebuilds from page data.
+    // ── Download + mux audio into each scene clip ─────────────────────────
+
     const muxedPaths: string[] = [];
-    const sceneDurations: number[] = [];
 
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
@@ -360,117 +398,159 @@ export async function assembleFilm(
       const spreadKey = (scene.page_spread_key as string | null) ?? `scene_${i}`;
 
       console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] Downloading rendered clip ` +
-          `(scene=${sceneId}, key=${spreadKey}, video=${videoStoragePath})`
+        `[film-assemble] [${i + 1}/${scenes.length}] Downloading ` +
+          `scene=${sceneId} key=${spreadKey} path=${videoStoragePath}`
       );
 
-      // Download the pre-rendered scene video (the sole visual source)
+      // Download pre-rendered scene clip (SOLE visual source)
       const videoLocal = path.join(tmpDir, `scene-${i}-video.mp4`);
       await downloadStorageFile(videoStoragePath, videoLocal, storageBucket);
 
-      // Validate the downloaded clip is a real file, not empty/corrupt
+      // Validate file is not empty/corrupt
       const videoStat = await fs.stat(videoLocal);
       if (videoStat.size < 1024) {
         throw new Error(
-          `Scene ${i + 1} (${sceneId}) rendered clip is too small ` +
-            `(${videoStat.size} bytes) — likely corrupt or empty. ` +
-            `Storage path: ${videoStoragePath}`
+          `Scene ${i + 1} (${sceneId}) clip is only ${videoStat.size} bytes — ` +
+            `likely corrupt. Path: ${videoStoragePath}`
         );
       }
+      console.log(
+        `[film-assemble] [${i + 1}/${scenes.length}] Downloaded ` +
+          `${(videoStat.size / 1024 / 1024).toFixed(1)} MB`
+      );
 
-      // Download narration audio if this scene has it
+      // Download narration audio if exists
       let audioLocal: string | null = null;
       if (audioStoragePath) {
         audioLocal = path.join(tmpDir, `scene-${i}-audio.mp3`);
         await downloadStorageFile(audioStoragePath, audioLocal, storageBucket);
       }
 
-      // Mux narration audio into the rendered scene clip (or add a silent track).
-      // Video stream is copied without re-encoding — all Remotion animations are
-      // preserved bit-for-bit.
+      // Mux audio into the rendered clip (video copied without re-encoding)
       const muxedPath = path.join(tmpDir, `scene-${i}-muxed.mp4`);
       console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] Muxing audio ` +
-          `(${audioLocal ? "narration" : "silent"}) into rendered clip`
+        `[film-assemble] [${i + 1}/${scenes.length}] Muxing ` +
+          `${audioLocal ? "narration audio" : "silent track"} into clip`
       );
       await muxAudioIntoVideo(videoLocal, audioLocal, muxedPath);
 
-      // Measure ACTUAL clip duration via ffprobe — critical for correct xfade offsets.
-      // DB duration_ms may differ from actual clip duration due to codec frame alignment
-      // or rounding. Using actual durations prevents the freeze bug where a negative
-      // xfade offset causes ffmpeg to hold the last frame indefinitely.
-      const actualDuration = await getClipDuration(muxedPath);
-      const dbDurationSec = ((scene.duration_ms as number | null) ?? 5000) / 1000;
-
-      if (actualDuration <= 0) {
+      // Verify muxed clip duration
+      const dur = await getClipDuration(muxedPath);
+      if (dur <= 0) {
         throw new Error(
-          `Scene ${i + 1} (${sceneId}) has zero/negative duration after muxing ` +
-            `(${actualDuration}s). This would cause ffmpeg xfade to freeze. ` +
-            `Re-render this scene before assembling.`
+          `Scene ${i + 1} (${sceneId}) has zero duration after muxing. ` +
+            `Re-render this scene.`
         );
       }
 
-      // Always log every scene's duration for assembly diagnostics
+      const dbDur = ((scene.duration_ms as number | null) ?? 5000) / 1000;
       console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] Duration: ` +
-          `actual=${actualDuration.toFixed(2)}s, db=${dbDurationSec.toFixed(2)}s ` +
-          `(key=${spreadKey}, audio=${audioLocal ? "yes" : "silent"})`
+        `[film-assemble] [${i + 1}/${scenes.length}] ✓ Duration: ` +
+          `${dur.toFixed(2)}s (db: ${dbDur.toFixed(2)}s) key=${spreadKey} ` +
+          `audio=${audioLocal ? "yes" : "silent"}`
       );
 
       muxedPaths.push(muxedPath);
-      sceneDurations.push(actualDuration);
     }
 
-    // 7. Assemble final film
-    const finalVideoLocal = path.join(tmpDir, "final.mp4");
+    // ── Stitch clips with pairwise merges ─────────────────────────────────
+
+    let finalVideoLocal: string;
 
     if (muxedPaths.length === 1) {
-      if (PREVIEW_EXPORT_MODE) {
-        // In preview mode, re-encode to apply the same scale + CRF reduction
-        // even for single-scene films (no xfade filter path to piggyback on).
-        console.log(
-          `[film-assemble] ⚠️  Preview export mode — re-encoding single scene at ${PREVIEW_SCALE} CRF ${PREVIEW_CRF}`
-        );
-        await runFfmpeg(
-          "ffmpeg",
-          [
-            "-y",
-            "-i", muxedPaths[0],
-            "-vf", `scale=${PREVIEW_SCALE}`,
-            "-c:v", "libx264",
-            "-preset", PREVIEW_PRESET,
-            "-crf", PREVIEW_CRF,
-            "-c:a", "aac",
-            "-b:a", PREVIEW_AUDIO_BITRATE,
-            "-movflags", "+faststart",
-            finalVideoLocal,
-          ],
-          MUX_TIMEOUT_MS
-        );
-      } else {
-        // Production: single scene — just copy, no transitions or re-encoding needed
-        await fs.copyFile(muxedPaths[0], finalVideoLocal);
-        console.log(
-          "[film-assemble] Single scene — copied directly (no transitions)"
-        );
-      }
+      // Single scene — no transitions needed
+      finalVideoLocal = muxedPaths[0];
+      console.log("[film-assemble] Single scene — no transitions needed");
     } else {
-      // Multiple scenes — concatenate with page-turn transitions
-      await concatenateWithTransitions(
-        muxedPaths,
-        sceneDurations,
-        finalVideoLocal
+      console.log(
+        `[film-assemble] ─── Pairwise merge: ${muxedPaths.length} clips, ` +
+          `${muxedPaths.length - 1} transitions ───`
+      );
+
+      // Start with the first muxed clip
+      let currentPath = muxedPaths[0];
+      let currentDuration = await getClipDuration(currentPath);
+
+      for (let i = 1; i < muxedPaths.length; i++) {
+        const nextPath = muxedPaths[i];
+        const outputPath = path.join(tmpDir, `merge-${i}.mp4`);
+        const stepLabel = `merge ${i}/${muxedPaths.length - 1}`;
+
+        await mergeTwoClips(
+          currentPath,
+          nextPath,
+          outputPath,
+          currentDuration,
+          stepLabel
+        );
+
+        // Measure the output — this becomes the "left" input for the next merge
+        currentDuration = await getClipDuration(outputPath);
+
+        if (currentDuration <= 0) {
+          throw new Error(
+            `${stepLabel} produced zero-duration output. ` +
+              `Assembly cannot continue.`
+          );
+        }
+
+        console.log(
+          `[film-assemble] ${stepLabel}: ✓ output duration=${currentDuration.toFixed(2)}s`
+        );
+
+        currentPath = outputPath;
+      }
+
+      finalVideoLocal = currentPath;
+      console.log(
+        `[film-assemble] ─── All merges complete. Pre-final duration: ` +
+          `${currentDuration.toFixed(2)}s ───`
       );
     }
 
-    // 8. Extract thumbnail from the final film
+    // ── Preview mode re-encode (optional) ─────────────────────────────────
+
+    const outputPath = path.join(tmpDir, "final.mp4");
+
+    if (PREVIEW_EXPORT_MODE) {
+      console.log(
+        `[film-assemble] ⚠️  Preview export mode — re-encoding to ` +
+          `${PREVIEW_SCALE} CRF ${PREVIEW_CRF}`
+      );
+      await runFfmpeg(
+        "ffmpeg",
+        [
+          "-y",
+          "-i", finalVideoLocal,
+          "-vf", `scale=${PREVIEW_SCALE}`,
+          "-c:v", "libx264",
+          "-preset", PREVIEW_PRESET,
+          "-crf", PREVIEW_CRF,
+          "-c:a", "aac",
+          "-b:a", PREVIEW_AUDIO_BITRATE,
+          "-movflags", "+faststart",
+          outputPath,
+        ],
+        10 * 60 * 1000
+      );
+    } else if (finalVideoLocal !== muxedPaths[0]) {
+      // Multi-scene: the last merge output IS the final film, just rename
+      await fs.rename(finalVideoLocal, outputPath);
+    } else {
+      // Single-scene production: copy directly
+      await fs.copyFile(finalVideoLocal, outputPath);
+    }
+
+    // ── Thumbnail ─────────────────────────────────────────────────────────
+
     const finalThumbLocal = path.join(tmpDir, "thumbnail.jpg");
-    const thumbTimeSec = Math.min(2, sceneDurations[0] * 0.5);
+    const firstDur = await getClipDuration(outputPath);
+    const thumbTimeSec = Math.min(2, firstDur * 0.5);
     await runFfmpeg(
       "ffmpeg",
       [
         "-y",
-        "-i", finalVideoLocal,
+        "-i", outputPath,
         "-ss", thumbTimeSec.toFixed(2),
         "-vframes", "1",
         "-q:v", "3",
@@ -479,34 +559,28 @@ export async function assembleFilm(
       MUX_TIMEOUT_MS
     );
 
-    // 9. Get actual final duration via ffprobe
-    const { stdout: probeOut } = await runFfmpeg(
-      "ffprobe",
-      [
-        "-v", "quiet",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        finalVideoLocal,
-      ],
-      30_000
-    );
-    const finalDurationSec = parseFloat(probeOut.trim()) || 0;
+    // ── Final duration ────────────────────────────────────────────────────
 
-    // 10. Upload final film + thumbnail to storage
-    const videoBuffer = await fs.readFile(finalVideoLocal);
+    const finalDurationSec = await getClipDuration(outputPath);
+
+    // ── Upload ────────────────────────────────────────────────────────────
+
+    const videoBuffer = await fs.readFile(outputPath);
     const thumbBuffer = await fs.readFile(finalThumbLocal);
 
-    // Paths relative to the "films" bucket — no bucket-name prefix
     const finalVideoStoragePath = `${orderId}/${filmProjectId}/final/film.mp4`;
     const finalThumbStoragePath = `${orderId}/${filmProjectId}/final/thumbnail.jpg`;
 
     console.log(
-      `[film-assemble] Uploading final film (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)`
+      `[film-assemble] Uploading final film ` +
+        `(${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB, ` +
+        `${Math.round(finalDurationSec)}s)`
     );
     await uploadFilmAsset(finalVideoStoragePath, videoBuffer, "video/mp4");
     await uploadFilmAsset(finalThumbStoragePath, thumbBuffer, "image/jpeg");
 
-    // 11. Update film_projects
+    // ── Update DB ─────────────────────────────────────────────────────────
+
     await adminClient
       .from("film_projects")
       .update({
@@ -521,9 +595,22 @@ export async function assembleFilm(
       .eq("id", filmProjectId);
 
     console.log(
-      `[film-assemble] Assembly complete (source: rendered scene clips). ` +
-        `Duration: ${Math.round(finalDurationSec)}s, ` +
-        `Scenes: ${scenes.length}, Transitions: ${Math.max(0, scenes.length - 1)}`
+      `[film-assemble] ═══════════════════════════════════════════════════════`
+    );
+    console.log(
+      `[film-assemble] ✓ Assembly complete (pairwise merge, rendered clips only)`
+    );
+    console.log(
+      `[film-assemble]   Duration: ${Math.round(finalDurationSec)}s`
+    );
+    console.log(
+      `[film-assemble]   Scenes: ${scenes.length}`
+    );
+    console.log(
+      `[film-assemble]   Transitions: ${Math.max(0, scenes.length - 1)} × ${TRANSITION_TYPE}`
+    );
+    console.log(
+      `[film-assemble] ═══════════════════════════════════════════════════════`
     );
 
     return {
@@ -546,140 +633,6 @@ export async function assembleFilm(
 
     throw err;
   } finally {
-    // Clean up temp directory (best-effort)
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
-}
-
-// ── Concatenation with transitions ───────────────────────────────────────────
-
-/**
- * Concatenate multiple scene videos with page-turn transitions.
- *
- * Uses ffmpeg's xfade filter for video and acrossfade for audio.
- * Each transition overlaps by TRANSITION_DURATION seconds.
- *
- * Breathing pause between spreads:
- *   Each scene has AUDIO_TAIL_MS(500) + BREATHING_PAUSE_MS(2000) = 2500ms
- *   of silent video after narration audio ends (set in compute-scene-duration).
- *   The xfade transition starts TRANSITION_DURATION(0.8s) before the scene
- *   video ends, leaving 2500 - 800 = ~1700ms of visible still spread.
- *
- *   Timeline: narration ends → 1.7s still image → page turn (0.8s wipeleft) → next spread
- *
- *   This creates a deliberate pacing rhythm where the viewer can absorb each
- *   illustration before the album "turns the page."
- */
-async function concatenateWithTransitions(
-  videoPaths: string[],
-  durations: number[],
-  outputPath: string
-): Promise<void> {
-  const n = videoPaths.length;
-  const td = TRANSITION_DURATION;
-
-  // Build ffmpeg input arguments
-  const inputs: string[] = [];
-  for (const p of videoPaths) {
-    inputs.push("-i", p);
-  }
-
-  // Pre-validate: every clip must be longer than the transition duration,
-  // otherwise the xfade offset would go negative and ffmpeg freezes.
-  for (let i = 0; i < n; i++) {
-    if (durations[i] <= td) {
-      throw new Error(
-        `Scene ${i + 1} duration (${durations[i].toFixed(2)}s) is ≤ transition ` +
-          `duration (${td}s). This would produce a negative xfade offset and ` +
-          `cause ffmpeg to freeze. Re-render or extend this scene.`
-      );
-    }
-  }
-
-  // Build xfade filter chain for video + acrossfade for audio.
-  // Each xfade uses the pre-rendered scene clips as-is — no still-image fallback.
-  const videoFilters: string[] = [];
-  const audioFilters: string[] = [];
-
-  console.log(
-    `[film-assemble] Xfade offset table (transition=${td}s, type=${TRANSITION_TYPE}):`
-  );
-
-  for (let i = 0; i < n - 1; i++) {
-    // Video xfade
-    const vPrev = i === 0 ? `[${i}:v]` : `[v${i}]`;
-    const vNext = `[${i + 1}:v]`;
-    const vOut = i === n - 2 ? "[vout]" : `[v${i + 1}]`;
-
-    // offset_i = sum(durations[0..i]) - (i + 1) * td
-    const offset =
-      durations.slice(0, i + 1).reduce((a, b) => a + b, 0) - (i + 1) * td;
-
-    // Guard: negative offset means prior clips are too short for the transitions.
-    if (offset < 0) {
-      throw new Error(
-        `Negative xfade offset (${offset.toFixed(3)}s) at transition ${i + 1}. ` +
-          `Clip durations: [${durations.map((d) => d.toFixed(2)).join(", ")}]. ` +
-          `This would cause ffmpeg to freeze. Check that all scene clips have ` +
-          `sufficient duration (> ${td}s each).`
-      );
-    }
-
-    console.log(
-      `[film-assemble]   transition ${i + 1}: offset=${offset.toFixed(3)}s ` +
-        `(clip ${i + 1}=${durations[i].toFixed(2)}s → clip ${i + 2}=${durations[i + 1].toFixed(2)}s)`
-    );
-
-    videoFilters.push(
-      `${vPrev}${vNext}xfade=transition=${TRANSITION_TYPE}:duration=${td}:offset=${offset.toFixed(3)}${vOut}`
-    );
-
-    // Audio acrossfade (matches transition timing)
-    const aPrev = i === 0 ? `[${i}:a]` : `[a${i}]`;
-    const aNext = `[${i + 1}:a]`;
-    const aOut = i === n - 2 ? "[aout]" : `[a${i + 1}]`;
-
-    audioFilters.push(
-      `${aPrev}${aNext}acrossfade=d=${td}:c1=tri:c2=tri${aOut}`
-    );
-  }
-
-  // In preview mode, add a scale filter before the final output stream.
-  // This halves both dimensions (1920×1080 → 960×540), reducing file size ~4×.
-  let videoOutLabel = "[vout]";
-  if (PREVIEW_EXPORT_MODE) {
-    videoFilters.push(`[vout]scale=${PREVIEW_SCALE}[vscaled]`);
-    videoOutLabel = "[vscaled]";
-  }
-
-  const filterComplex = [...videoFilters, ...audioFilters].join(";");
-
-  const args = [
-    "-y",
-    ...inputs,
-    "-filter_complex", filterComplex,
-    "-map", videoOutLabel,
-    "-map", "[aout]",
-    "-c:v", "libx264",
-    "-preset", PREVIEW_EXPORT_MODE ? PREVIEW_PRESET : "medium",
-    "-crf", PREVIEW_EXPORT_MODE ? PREVIEW_CRF : "20",
-    "-c:a", "aac",
-    "-b:a", PREVIEW_EXPORT_MODE ? PREVIEW_AUDIO_BITRATE : "192k",
-    "-movflags", "+faststart",
-    outputPath,
-  ];
-
-  if (PREVIEW_EXPORT_MODE) {
-    console.log(
-      `[film-assemble] ⚠️  Preview export mode — ${PREVIEW_SCALE} @ CRF ${PREVIEW_CRF} (set PREVIEW_EXPORT_MODE=false for production quality)`
-    );
-  }
-
-  console.log(
-    `[film-assemble] Assembling final film from ${n} rendered scene clips ` +
-      `with ${n - 1} ${TRANSITION_TYPE} transitions (${td}s each). ` +
-      `Total clip time: ${durations.reduce((a, b) => a + b, 0).toFixed(2)}s`
-  );
-
-  await runFfmpeg("ffmpeg", args, ASSEMBLY_TIMEOUT_MS);
 }
