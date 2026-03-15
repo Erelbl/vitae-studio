@@ -116,8 +116,13 @@ const KB_ZOOM_END = 1.05;
 const TEXT_REVEAL_START_FRAC = 0.15;
 /** Text fully visible at this fraction. */
 const TEXT_REVEAL_END_FRAC = 0.65;
-/** Narration typically starts after a brief visual intro. */
-const NARRATION_START_OFFSET_FRAC = 0.08;
+/**
+ * Narration text reveal offset from scene start.
+ * Audio is muxed at t=0 in the assembled film, so text must start near-immediately.
+ * A tiny 2% offset (~0.15s) avoids the very first frame hard-pop while keeping
+ * text synced with the narrator's voice.
+ */
+const NARRATION_START_OFFSET_FRAC = 0.02;
 
 // ── Cinematic polish constants ────────────────────────────────────────────────
 
@@ -146,10 +151,15 @@ const TEXT_PARALLAX_PX = 6;
 
 /**
  * Spread timing coordination: left page image reveal starts this fraction
- * of scene duration later than right page. Creates a unified "book opening"
- * feel — the right page (read first in Hebrew) leads, left page follows.
+ * of scene duration later than right page. Creates a clear "right page first,
+ * left page follows" sequencing — the right page (read first in Hebrew) is
+ * well into its reveal before the left page begins.
+ *
+ * At 0.18, for a 7.5s scene the left page image starts ~1.35s after the right,
+ * giving a distinctly staggered feel while both pages still finish within the
+ * same scene duration.
  */
-const SPREAD_IMAGE_DELAY_FRAC = 0.06;
+const SPREAD_IMAGE_DELAY_FRAC = 0.18;
 
 /**
  * Intra-spread text reveal gap (seconds).
@@ -1301,7 +1311,14 @@ export function SceneComposition({
     );
   }
 
-  // Single-page mode (cover, dedication, back_cover, or odd trailing page)
+  // Single-page mode (cover, dedication, back_cover, or odd trailing page).
+  // Render as a centered square matching the album's square page aspect ratio,
+  // not stretched to 16:9. This ensures cover/dedication scenes look faithful
+  // to the actual album — a square page centered on a dark background.
+  const singlePageSize = Math.min(height, width);
+  const singleTopMargin = Math.floor((height - singlePageSize) / 2);
+  const singleLeftMargin = Math.floor((width - singlePageSize) / 2);
+
   return (
     <AbsoluteFill style={{ backgroundColor: "#1a1a1a", opacity }}>
       <div
@@ -1312,20 +1329,31 @@ export function SceneComposition({
           transform: slideTransform,
         }}
       >
-        <PageContent
-          slot1={slot1}
-          slot2={slot2}
-          layoutType={layoutType}
-          textContent={textContent}
-          textSize={textSize}
-          fontSizePx={fontSizePx}
-          textAlign={textAlign}
-          textX={textX}
-          textY={textY}
-          kbScale={kbScale}
-          narrationDurationMs={narrationDurationMs}
-          textParallaxPx={textParallaxPx}
-        />
+        <div
+          style={{
+            position: "absolute",
+            left: singleLeftMargin,
+            top: singleTopMargin,
+            width: singlePageSize,
+            height: singlePageSize,
+            overflow: "hidden",
+          }}
+        >
+          <PageContent
+            slot1={slot1}
+            slot2={slot2}
+            layoutType={layoutType}
+            textContent={textContent}
+            textSize={textSize}
+            fontSizePx={fontSizePx}
+            textAlign={textAlign}
+            textX={textX}
+            textY={textY}
+            kbScale={kbScale}
+            narrationDurationMs={narrationDurationMs}
+            textParallaxPx={textParallaxPx}
+          />
+        </div>
       </div>
     </AbsoluteFill>
   );

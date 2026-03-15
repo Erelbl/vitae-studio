@@ -188,13 +188,13 @@ npx tsx scripts/render-worker.ts --poll 60
 ### Scene rendering — spreads vs single pages
 Normal content scenes render as **open-album spreads**: two square pages side by side (right page = lower page number, left page = higher — Hebrew reading order). The spread is centred in the 1920×1080 frame with a thin spine shadow between pages. Each page in the spread uses its own layout, text, and images from the album.
 
-Single-page scenes (cover, dedication, back_cover, or an odd trailing page) render as a single full-frame page — unchanged from previous behaviour.
+Single-page scenes (cover, dedication, back_cover, or an odd trailing page) render as a **centered square** on a dark background — matching the album's square page aspect ratio. The square fills the frame height (1080×1080 in a 1920×1080 frame) with dark bars on the sides. This ensures cover and dedication scenes look faithful to the actual album.
 
 The composition receives `secondPage: ScenePageData | null`. When non-null the spread path is taken. `render-scene.ts` fetches data for **all** page IDs in `page_ids_json`, not just the first.
 
 **Spread timing coordination**: spreads are treated as one unified scene, not two sequential slides. A `PageTimingCtx` React context provides per-page timing overrides to `AnimatedP` (text reveal) and `ImageFill` (image reveal) without prop threading:
 - **Text reveal**: the narration window is split between pages proportional to word count. Right page text reveals first (Hebrew reading order), then left page text — both flow continuously as one unified narrative
-- **Image reveal**: right page starts immediately, left page starts with a 6% delay (`SPREAD_IMAGE_DELAY_FRAC`) so the spread "opens" right-to-left like a real album
+- **Image reveal**: right page starts immediately, left page starts with an 18% delay (`SPREAD_IMAGE_DELAY_FRAC = 0.18`) — the right page is well into its reveal before the left page begins, creating a distinctly visible right-then-left sequencing
 - **No intra-spread pause**: `SPREAD_BREATH_SECONDS` is 0. The two pages of a spread flow as one continuous scene. Breathing pauses happen BETWEEN scenes (in the assembly), not inside spreads
 
 **Known limitation**: no word-level timestamps from TTS yet — text sync uses uniform word distribution across narration duration.
@@ -216,7 +216,7 @@ The image reveals progressively, simulating an illustration being created live. 
 - Words overlap slightly (0.8 word-units each) for a smooth flowing reveal
 - Whitespace/newlines always visible so the text block never shifts during reveal
 - RTL-safe: inline `<span>`s flow naturally in Hebrew reading order
-- **Narration sync**: when `narrationDurationMs` is available (from `audio_duration_ms` on the scene), text reveal is timed to match narration pacing — words distributed across the narration window starting at 8% into the scene. Falls back to visual-only timing (15%–65% of scene) when no narration data exists
+- **Narration sync**: when `narrationDurationMs` is available (from `audio_duration_ms` on the scene), text reveal is timed to match narration pacing — words distributed across the narration window starting at 2% into the scene (`NARRATION_START_OFFSET_FRAC = 0.02`, nearly immediate since audio starts at t=0 in the assembled film). Falls back to visual-only timing (15%–65% of scene) when no narration data exists
 - Works with all text overlay types (bottom/top/center gradient, split block, text-only)
 
 **Ken Burns**: subtle 5% zoom over full scene duration (reduced from 8% for premium feel)
@@ -295,8 +295,9 @@ npm run render-worker:watch
 - **ffmpeg + ffprobe** must be installed (in addition to Chrome for scene rendering)
 - Same environment as the render worker (not Vercel serverless)
 
-### Transition style
-- **fadeblack** xfade transition (1.0s) between scenes — outgoing spread fades to black (~0.5s), incoming spread fades from black (~0.5s). Creates a natural breathing pause + page-turn feel between spreads
+### Transition style and breathing pause
+- **wipeleft** xfade transition (0.8s) between scenes — simulates physically turning a page right-to-left (Hebrew reading direction). The current spread wipes away to the left as the next spread appears from the right
+- **Breathing pause**: each scene has 1500ms of silent video padding after narration ends. The transition starts 0.8s before scene end, leaving ~0.7s of still album (silent) before the page starts turning. Flow: narration ends → brief stillness → page turns → next spread appears
 - Audio crossfade (acrossfade, tri curve) matches visual transition timing. Narration naturally ends before scene tail (1500ms padding), so no audio overlap during transitions
 - Single scene films have no transitions
 

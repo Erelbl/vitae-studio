@@ -46,19 +46,20 @@ export interface AssembleFilmResult {
 
 /**
  * Duration of page-turn transition between scenes, in seconds.
- * At 1.0s with fadeblack, the outgoing scene fades to black over ~0.5s
- * and the incoming scene fades from black over ~0.5s, creating a natural
- * breathing pause between spreads.
+ * At 0.8s the wipeleft is deliberate enough to read as a page-turn
+ * without feeling sluggish. The breathing pause comes from the scene's
+ * own 1500ms audio padding — narration ends, there's ~0.7s of still
+ * album image, then the page turns.
  */
-const TRANSITION_DURATION = 1.0;
+const TRANSITION_DURATION = 0.8;
 
 /**
  * ffmpeg xfade transition type.
- * "fadeblack" creates a page-turn feel: the outgoing spread gracefully
- * fades to black, holds briefly, then the next spread fades in from black.
- * This provides both a visual page-turn and a breathing pause between scenes.
+ * "wipeleft" simulates pages turning right-to-left (Hebrew reading direction):
+ * the current spread wipes away to the left as the next spread appears from
+ * the right, mimicking physically flipping pages in a real album.
  */
-const TRANSITION_TYPE = "fadeblack";
+const TRANSITION_TYPE = "wipeleft";
 
 /** Timeout for the full assembly ffmpeg process (10 minutes). */
 const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -512,14 +513,16 @@ export async function assembleFilm(
 // ── Concatenation with transitions ───────────────────────────────────────────
 
 /**
- * Concatenate multiple scene videos with page-turn (wipeleft) transitions.
+ * Concatenate multiple scene videos with page-turn transitions.
  *
  * Uses ffmpeg's xfade filter for video and acrossfade for audio.
  * Each transition overlaps by TRANSITION_DURATION seconds.
  *
- * The wipeleft transition reinforces the album-flipping feeling:
- * the current spread wipes away to the left as the next spread appears,
- * mimicking pages turning right-to-left (Hebrew reading direction).
+ * Breathing pause between spreads: each scene has 1500ms of silent video
+ * padding after the narration audio ends. The transition starts 0.8s before
+ * the scene ends, so there's ~0.7s of still album (no audio) before the
+ * page starts turning. This creates the natural pacing: narration ends →
+ * brief stillness → page turns → next spread appears.
  */
 async function concatenateWithTransitions(
   videoPaths: string[],
