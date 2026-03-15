@@ -67,6 +67,10 @@ interface FilmPanelProps {
   sceneThumbnailUrls?: Record<string, string | null>;
   /** Pre-resolved signed video URLs keyed by scene id (1-hour expiry). */
   sceneVideoUrls?: Record<string, string | null>;
+  /** Pre-resolved signed URL for the final assembled film (1-hour expiry). */
+  finalVideoUrl?: string | null;
+  /** Pre-resolved signed URL for the final film thumbnail (1-hour expiry). */
+  finalThumbnailUrl?: string | null;
 }
 
 export function FilmPanel({
@@ -77,6 +81,8 @@ export function FilmPanel({
   sampleBUrl,
   sceneThumbnailUrls = {},
   sceneVideoUrls = {},
+  finalVideoUrl = null,
+  finalThumbnailUrl = null,
 }: FilmPanelProps) {
   const router = useRouter();
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -196,6 +202,20 @@ export function FilmPanel({
         throw new Error(body.error ?? "שגיאה ברינדור הסצנות");
       }
       setSelectedSceneIds(new Set());
+      router.refresh();
+    });
+  }
+
+  async function handleAssembleFilm() {
+    await runAction("assemble", async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/assemble`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה בהרכבת הסרט");
+      }
       router.refresh();
     });
   }
@@ -490,12 +510,30 @@ export function FilmPanel({
                 : "בנה סצנות"}
             </Button>
             <Button
-              variant="outline"
+              variant={renderedSceneCount === scenes.length && scenes.length > 0 ? "default" : "outline"}
               size="sm"
-              disabled={isLoading || renderedSceneCount === 0}
-              onClick={() => setError("הרכבת סרט עדיין לא מחוברת")}
+              disabled={
+                isLoading ||
+                renderedSceneCount === 0 ||
+                renderedSceneCount < scenes.length ||
+                status === "rendering"
+              }
+              onClick={handleAssembleFilm}
+              title={
+                renderedSceneCount < scenes.length
+                  ? `${scenes.length - renderedSceneCount} סצנות עדיין לא מרונדרות`
+                  : status === "rendering"
+                  ? "הרכבה בתהליך..."
+                  : undefined
+              }
             >
-              הרכב סרט
+              {loadingAction === "assemble"
+                ? "מתזמן הרכבה..."
+                : status === "rendering"
+                ? "⏳ ממתין להרכבה"
+                : status === "assembled"
+                ? "הרכב מחדש"
+                : "הרכב סרט"}
             </Button>
           </div>
         </div>
@@ -599,6 +637,79 @@ export function FilmPanel({
           </>
         )}
       </div>
+
+      {/* ── Final film section ──────────────────────────────────────────── */}
+      {(status === "assembled" || status === "rendering" || filmProject.final_video_path) && (
+        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
+          <p className="text-sm font-medium">סרט סופי</p>
+
+          {status === "rendering" && !filmProject.final_video_path && (
+            <div className="flex items-center gap-2 text-sm text-amber-600">
+              <span className="animate-pulse">⏳</span>
+              <span>הסרט בתהליך הרכבה — ה-render worker ירכיב את הסרט. רענן כדי לבדוק.</span>
+            </div>
+          )}
+
+          {filmProject.final_video_path && (
+            <div className="space-y-3">
+              {/* Thumbnail + info */}
+              <div className="flex items-start gap-4">
+                {finalThumbnailUrl && (
+                  <div className="shrink-0 w-40 rounded overflow-hidden border border-border/40">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={finalThumbnailUrl}
+                      alt="תמונה ממוזערת — סרט סופי"
+                      className="w-full aspect-video object-cover"
+                    />
+                  </div>
+                )}
+                <div className="space-y-1.5 text-sm">
+                  {filmProject.final_duration_seconds != null && (
+                    <p>
+                      <span className="text-muted-foreground">משך: </span>
+                      <span className="font-medium">
+                        {Math.floor(filmProject.final_duration_seconds / 60)}:{String(Math.round(filmProject.final_duration_seconds % 60)).padStart(2, "0")}
+                      </span>
+                    </p>
+                  )}
+                  {filmProject.last_assembled_at && (
+                    <p className="text-muted-foreground text-xs">
+                      הורכב: {new Date(filmProject.last_assembled_at).toLocaleString("he-IL")}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {scenes.length} סצנות, {scenes.length > 1 ? `${scenes.length - 1} מעברי עמוד` : "ללא מעברים"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {finalVideoUrl && (
+                  <>
+                    <a
+                      href={finalVideoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted/60 transition-colors"
+                    >
+                      ▶ צפה בסרט
+                    </a>
+                    <a
+                      href={finalVideoUrl}
+                      download="film.mp4"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted/60 transition-colors"
+                    >
+                      ⬇ הורד
+                    </a>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>

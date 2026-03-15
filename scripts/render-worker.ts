@@ -18,10 +18,18 @@
  *   # Render specific scene IDs once, then exit
  *   npx tsx scripts/render-worker.ts <sceneId1> <sceneId2> ...
  *
+ * Additional modes:
+ *   # Assemble final film for a specific order (by orderId)
+ *   npx tsx scripts/render-worker.ts --assemble <orderId>
+ *
+ *   In watch mode, the worker also picks up film projects queued for assembly
+ *   (status = "rendering" with all scenes rendered) automatically.
+ *
  * Prerequisites:
  *   1. Chrome installed on the machine
  *   2. Remotion bundle built:  npm run bundle:remotion  (outputs to .remotion-bundle/)
- *   3. Environment variables set in .env.local (loaded automatically):
+ *   3. ffmpeg + ffprobe installed (for final film assembly)
+ *   4. Environment variables set in .env.local (loaded automatically):
  *      - NEXT_PUBLIC_SUPABASE_URL
  *      - SUPABASE_SERVICE_ROLE_KEY
  *      - REMOTION_BUNDLE_PATH (optional — overrides default .remotion-bundle/ lookup)
@@ -35,6 +43,7 @@ loadEnv({ path: ".env" });
 
 import { createClient } from "@supabase/supabase-js";
 import { renderScene } from "@/services/film/render/render-scene";
+import { assembleFilm } from "@/services/film/render/assemble-film";
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -204,6 +213,134 @@ async function runOnce(
   return { rendered, failed };
 }
 
+// ── Film assembly ────────────────────────────────────────────────────────
+
+/**
+ * Fetch film projects that are queued for assembly.
+ * A project is ready for assembly when status = "rendering" and all its scenes
+ * are in "rendered" status.
+ */
+async function fetchAssemblyReadyProjects(): Promise<
+  Array<{ id: string; order_id: string }>
+> {
+  // Find projects with status "rendering" (set by the assemble API route)
+  const { data: projects, error } = await adminClient
+    .from("film_projects")
+    .select("id, order_id")
+    .eq("status", "rendering");
+
+  if (error || !projects || projects.length === 0) return [];
+
+  // For each candidate, verify all scenes are rendered
+  const ready: Array<{ id: string; order_id: string }> = [];
+
+  for (const proj of projects) {
+    const { data: scenes } = await adminClient
+      .from("film_scenes")
+      .select("status")
+      .eq("film_project_id", proj.id as string);
+
+    if (!scenes || scenes.length === 0) continue;
+
+    const allRendered = scenes.every((s) => s.status === "rendered");
+    if (allRendered) {
+      ready.push({
+        id: proj.id as string,
+        order_id: proj.order_id as string,
+      });
+    }
+  }
+
+  return ready;
+}
+
+/**
+ * Run assembly for all projects that are ready.
+ * Returns count of assembled and failed.
+ */
+async function runAssembly(
+  silent = false
+): Promise<{ assembled: number; failed: number }> {
+  const projects = await fetchAssemblyReadyProjects();
+
+  if (projects.length === 0) {
+    if (!silent) log("No projects ready for assembly.");
+    return { assembled: 0, failed: 0 };
+  }
+
+  log(`Found ${projects.length} project(s) ready for assembly.`);
+
+  let assembled = 0;
+  let failed = 0;
+
+  for (const proj of projects) {
+    log(`Assembling film for project ${proj.id} (order ${proj.order_id})...`);
+
+    try {
+      const result = await assembleFilm({
+        orderId: proj.order_id,
+        filmProjectId: proj.id,
+      });
+      log(
+        `Film assembled → ${result.finalVideoPath} (${Math.round(result.finalDurationSeconds)}s)`
+      );
+      assembled++;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      err(`Assembly failed for project ${proj.id}: ${message}`);
+      // assembleFilm already sets status="error" and saves error_message in DB
+      failed++;
+    }
+  }
+
+  log(`Assembly done. Assembled: ${assembled}, Failed: ${failed}`);
+  return { assembled, failed };
+}
+
+/**
+ * Assemble a specific order's film project directly (CLI mode).
+ */
+async function assembleOrder(orderId: string): Promise<void> {
+  log(`Looking up film project for order ${orderId}...`);
+
+  const { data: project, error: projErr } = await adminClient
+    .from("film_projects")
+    .select("id, status")
+    .eq("order_id", orderId)
+    .maybeSingle();
+
+  if (projErr || !project) {
+    err(`No film project found for order ${orderId}`);
+    process.exit(1);
+  }
+
+  log(`Found project ${project.id as string} (status: ${project.status as string})`);
+
+  // Set status to rendering so assembleFilm can proceed
+  await adminClient
+    .from("film_projects")
+    .update({
+      status: "rendering",
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", project.id as string);
+
+  try {
+    const result = await assembleFilm({
+      orderId,
+      filmProjectId: project.id as string,
+    });
+    log(
+      `Film assembled successfully → ${result.finalVideoPath} (${Math.round(result.finalDurationSeconds)}s)`
+    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    err(`Assembly failed: ${message}`);
+    process.exit(1);
+  }
+}
+
 // ── Watch mode ────────────────────────────────────────────────────────────────
 
 // Run stale-scene recovery every 10 minutes in watch mode
@@ -235,7 +372,10 @@ async function runWatch(intervalSec: number): Promise<never> {
         /* silent = */ true // suppress "no scenes" on every idle poll
       );
 
-      if (rendered > 0) {
+      // Also check for film projects ready for assembly
+      const { assembled } = await runAssembly(/* silent = */ true);
+
+      if (rendered > 0 || assembled > 0) {
         // Something was processed — reset idle tracking
         idleSince = null;
       } else {
@@ -273,6 +413,24 @@ async function main() {
   if (pollIdx !== -1) {
     pollIntervalSec = parseInt(args[pollIdx + 1] ?? "30", 10);
     args.splice(pollIdx, 2);
+  }
+
+  // Parse --assemble flag (takes an orderId)
+  const assembleIdx = args.indexOf("--assemble");
+  let assembleOrderId: string | null = null;
+  if (assembleIdx !== -1) {
+    assembleOrderId = args[assembleIdx + 1] ?? null;
+    if (!assembleOrderId) {
+      err("--assemble requires an orderId argument.");
+      process.exit(1);
+    }
+    args.splice(assembleIdx, 2);
+  }
+
+  // --assemble mode: assemble a specific order's film, then exit
+  if (assembleOrderId) {
+    await assembleOrder(assembleOrderId);
+    process.exit(0);
   }
 
   // Remaining args are scene IDs (only valid in single-run mode)

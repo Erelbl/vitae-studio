@@ -292,7 +292,7 @@ export default async function AdminOrderDetailPage({
     );
   }
 
-  const [filmSampleAUrl, filmSampleBUrl] = await Promise.all([
+  const [filmSampleAUrl, filmSampleBUrl, finalVideoUrl, finalThumbnailUrl] = await Promise.all([
     filmProject?.voice_sample_a_path
       ? adminClient.storage
           .from(filmBucket)
@@ -303,6 +303,18 @@ export default async function AdminOrderDetailPage({
       ? adminClient.storage
           .from(filmBucket)
           .createSignedUrl(filmProject.voice_sample_b_path, 3600)
+          .then((r) => r.data?.signedUrl ?? null)
+      : Promise.resolve(null),
+    filmProject?.final_video_path
+      ? adminClient.storage
+          .from(filmBucket)
+          .createSignedUrl(filmProject.final_video_path, 3600)
+          .then((r) => r.data?.signedUrl ?? null)
+      : Promise.resolve(null),
+    filmProject?.final_video_thumbnail_path
+      ? adminClient.storage
+          .from(filmBucket)
+          .createSignedUrl(filmProject.final_video_thumbnail_path, 3600)
           .then((r) => r.data?.signedUrl ?? null)
       : Promise.resolve(null),
   ]);
@@ -564,6 +576,8 @@ export default async function AdminOrderDetailPage({
           sampleBUrl={filmSampleBUrl}
           sceneThumbnailUrls={sceneThumbnailUrls}
           sceneVideoUrls={sceneVideoUrls}
+          finalVideoUrl={finalVideoUrl}
+          finalThumbnailUrl={finalThumbnailUrl}
         />
       </Section>
 

@@ -248,6 +248,57 @@ Timestamps on every line. Example:
 [2025-03-15 10:02:16] [render-worker] Idle — waiting for queued scenes.
 ```
 
+## Final Film Assembly
+
+The system assembles all rendered scene videos into a single final film with page-turn transitions.
+
+**Key concept**: Scenes represent **open album spreads** (two pages side-by-side), not individual pages. The final film looks like a storybook being flipped through.
+
+### How it works
+
+1. Admin clicks "הרכב סרט" in the Film panel → API route validates all scenes are rendered, sets `film_projects.status = 'rendering'`
+2. The render worker detects projects with status `'rendering'` and all scenes `'rendered'`
+3. Worker runs `assembleFilm()` which:
+   - Downloads all scene MP4s and narration MP3s from storage
+   - Muxes audio into each scene video (silent audio track for scenes without narration)
+   - Concatenates all scenes with **wipeleft** transitions (pages turn right-to-left, Hebrew reading direction)
+   - Extracts thumbnail, measures final duration via ffprobe
+   - Uploads final film to `films/{orderId}/{filmProjectId}/final/film.mp4`
+   - Sets `film_projects.status = 'assembled'`
+
+### CLI usage
+
+```bash
+# Assemble a specific order's film directly
+npx tsx scripts/render-worker.ts --assemble <orderId>
+
+# Watch mode auto-detects assembly-ready projects alongside scene rendering
+npm run render-worker:watch
+```
+
+### Prerequisites
+- **ffmpeg + ffprobe** must be installed (in addition to Chrome for scene rendering)
+- Same environment as the render worker (not Vercel serverless)
+
+### Transition style
+- **wipeleft** xfade transition (0.6s) between scenes — reinforces RTL album-flipping feel
+- Audio crossfade (acrossfade) matches visual transition timing
+- Single scene films have no transitions
+
+### Storage paths
+- Final film: `films/{orderId}/{filmProjectId}/final/film.mp4`
+- Final thumbnail: `films/{orderId}/{filmProjectId}/final/thumbnail.jpg`
+
+### Persisted fields on `film_projects`
+- `final_video_path`, `final_video_thumbnail_path`, `final_duration_seconds`, `last_assembled_at`
+- Status transitions: `rendered → rendering → assembled` (or `→ error`)
+
+### Current limitations
+- No background music mixing yet (architecture ready)
+- No advanced audio normalization across scenes
+- Assembly re-encodes video (libx264 crf=20) for transition compositing
+- Very long films (40+ scenes) may take several minutes to assemble
+
 ## Environment Variables
 See `.env.example` for all required variables. Key ones:
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
