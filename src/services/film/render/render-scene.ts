@@ -237,9 +237,9 @@ async function fetchScenePageData(
  * 5. Upload both to film storage
  * 6. Update film_scenes row (status, paths, render_hash)
  *
- * Storage paths:
- *   films/{orderId}/{filmProjectId}/scenes/{sceneId}/scene.mp4
- *   films/{orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
+ * Storage paths (relative to "films" bucket — no bucket-name prefix):
+ *   {orderId}/{filmProjectId}/scenes/{sceneId}/scene.mp4
+ *   {orderId}/{filmProjectId}/scenes/{sceneId}/thumbnail.jpg
  */
 export async function renderScene(
   input: RenderSceneInput
@@ -373,8 +373,9 @@ export async function renderScene(
       const videoBuffer = await fs.readFile(tmpVideo);
       const thumbBuffer = await fs.readFile(tmpThumb);
 
-      const videoStoragePath = `films/${orderId}/${filmProjectId}/scenes/${sceneId}/scene.mp4`;
-      const thumbStoragePath = `films/${orderId}/${filmProjectId}/scenes/${sceneId}/thumbnail.jpg`;
+      // Paths relative to the "films" bucket — no bucket-name prefix
+      const videoStoragePath = `${orderId}/${filmProjectId}/scenes/${sceneId}/scene.mp4`;
+      const thumbStoragePath = `${orderId}/${filmProjectId}/scenes/${sceneId}/thumbnail.jpg`;
 
       await uploadFilmAsset(videoStoragePath, videoBuffer, "video/mp4");
       await uploadFilmAsset(thumbStoragePath, thumbBuffer, "image/jpeg");

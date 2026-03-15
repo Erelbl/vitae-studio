@@ -15,9 +15,9 @@
  * - Scenes without audio get a silent audio track (required for concat)
  * - Audio crossfades match visual transitions
  *
- * Storage paths:
- *   films/{orderId}/{filmProjectId}/final/film.mp4
- *   films/{orderId}/{filmProjectId}/final/thumbnail.jpg
+ * Storage paths (relative to "films" bucket — no bucket-name prefix):
+ *   {orderId}/{filmProjectId}/final/film.mp4
+ *   {orderId}/{filmProjectId}/final/thumbnail.jpg
  */
 
 import * as fs from "fs/promises";
@@ -362,8 +362,9 @@ export async function assembleFilm(
     const videoBuffer = await fs.readFile(finalVideoLocal);
     const thumbBuffer = await fs.readFile(finalThumbLocal);
 
-    const finalVideoStoragePath = `films/${orderId}/${filmProjectId}/final/film.mp4`;
-    const finalThumbStoragePath = `films/${orderId}/${filmProjectId}/final/thumbnail.jpg`;
+    // Paths relative to the "films" bucket — no bucket-name prefix
+    const finalVideoStoragePath = `${orderId}/${filmProjectId}/final/film.mp4`;
+    const finalThumbStoragePath = `${orderId}/${filmProjectId}/final/thumbnail.jpg`;
 
     console.log(
       `[film-assemble] Uploading final film (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)`

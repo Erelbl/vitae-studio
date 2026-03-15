@@ -28,7 +28,7 @@ export interface GenerateSceneAudioResult {
  *   3. Apply TTS pronunciation overrides (non-mutating — never touches stored text)
  *   4. Call ElevenLabs TTS → MP3 buffer
  *   5. Estimate audio duration from buffer size (≈16000 bytes/sec at ~128kbps)
- *   6. Upload MP3 to: films/{orderId}/{filmProjectId}/scenes/{sceneId}/narration.mp3
+ *   6. Upload MP3 to: {orderId}/{filmProjectId}/scenes/{sceneId}/narration.mp3 (inside "films" bucket)
  *   7. Update film_scenes: audio_path, audio_duration_ms, duration_ms, status → narration_ready
  *
  * Duration notes:
@@ -106,7 +106,8 @@ export async function generateSceneAudio(
   const durationMs = computeSceneDuration(audioDurationMs);
 
   // 6. Upload MP3 to film storage
-  const audioPath = `films/${orderId}/${filmProjectId}/scenes/${sceneId}/narration.mp3`;
+  // Path is relative to the "films" bucket — no bucket-name prefix
+  const audioPath = `${orderId}/${filmProjectId}/scenes/${sceneId}/narration.mp3`;
   await uploadFilmAsset(audioPath, audioBuffer, "audio/mpeg");
 
   // 7. Persist audio metadata and advance scene status

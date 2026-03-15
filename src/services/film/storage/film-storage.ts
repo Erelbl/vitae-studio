@@ -70,7 +70,8 @@ export async function getFilmAssetUrl(
 
 /**
  * Upload a voice sample MP3 for a film project.
- * Stored at: films/{orderId}/{filmProjectId}/voice-samples/{sampleName}.mp3
+ * Stored at: {orderId}/{filmProjectId}/voice-samples/{sampleName}.mp3
+ * (relative path inside the "films" bucket — no bucket name prefix)
  *
  * @returns The stored path
  */
@@ -80,7 +81,7 @@ export async function uploadVoiceSample(
   sampleName: string,
   audioBuffer: Buffer
 ): Promise<string> {
-  const path = `films/${orderId}/${filmProjectId}/voice-samples/${sampleName}.mp3`;
+  const path = `${orderId}/${filmProjectId}/voice-samples/${sampleName}.mp3`;
   return uploadFilmAsset(path, audioBuffer, "audio/mpeg");
 }
 
