@@ -24,7 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildRenderHash } from "@/services/film/utils/build-render-hash";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
 import { filmEnv } from "@/lib/film-env-node";
-import type { SlotImageData } from "@/remotion/SceneComposition";
+import type { SlotImageData, ScenePageData } from "@/remotion/SceneComposition";
 
 export interface RenderSceneInput {
   sceneId: string;
@@ -76,77 +76,76 @@ function getBundlePath(): string {
 
 // ── Page data resolution ──────────────────────────────────────────────────────
 
-interface ScenePageData {
-  layoutType: string;
-  textContent: string | null;
-  textSize: string | null;
-  fontSizePx: number | null;
-  textAlign: string;
-  textX: number | null;
-  textY: number | null;
-  slot1: SlotImageData | null;
-  slot2: SlotImageData | null;
-}
+const DEFAULT_PAGE_DATA: ScenePageData = {
+  layoutType: "FULL_IMAGE",
+  textContent: null,
+  textSize: null,
+  fontSizePx: null,
+  textAlign: "start",
+  textX: null,
+  textY: null,
+  slot1: null,
+  slot2: null,
+};
 
 /**
- * Resolves the primary page's layout + image slot data for a set of page IDs.
+ * Resolves layout + image slot data for ALL pages in a scene.
  *
- * Uses the first page ID as the layout source. Fetches slot images (with crop
- * params) from page_images, falling back to pages.illustration_storage_path
- * for slot 1 if no page_images rows exist.
+ * Returns one ScenePageData per page ID, in the same order as pageIds.
+ * For spread scenes (2 page IDs) this returns 2 entries so both pages
+ * can be rendered side by side.
  *
- * Returns a layout-faithful data structure matching SceneCompositionProps.
+ * Batches DB queries across all pages for efficiency.
  */
 async function fetchScenePageData(
   pageIds: string[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   adminClient: any
-): Promise<ScenePageData> {
-  const defaultResult: ScenePageData = {
-    layoutType: "FULL_IMAGE",
-    textContent: null,
-    textSize: null,
-    fontSizePx: null,
-    textAlign: "start",
-    textX: null,
-    textY: null,
-    slot1: null,
-    slot2: null,
-  };
+): Promise<ScenePageData[]> {
+  if (pageIds.length === 0) return [DEFAULT_PAGE_DATA];
 
-  if (pageIds.length === 0) return defaultResult;
-
-  // 1. Fetch primary page (first in list) for layout metadata
-  const primaryPageId = pageIds[0];
-  const { data: page } = await adminClient
+  // 1. Fetch all pages in this scene
+  const { data: pages } = await adminClient
     .from("pages")
     .select(
       "id, layout_type, text_content, text_size, font_size_px, text_align, text_x, text_y, illustration_storage_path"
     )
-    .eq("id", primaryPageId)
-    .single();
+    .in("id", pageIds);
 
-  if (!page) return defaultResult;
+  if (!pages || pages.length === 0) return [DEFAULT_PAGE_DATA];
 
-  // 2. Fetch slot images for the primary page
-  const { data: pageImages } = await adminClient
+  // Preserve pageIds order
+  const pageMap = new Map<string, (typeof pages)[0]>();
+  for (const p of pages) {
+    pageMap.set(p.id as string, p);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orderedPages: any[] = pageIds
+    .map((id) => pageMap.get(id))
+    .filter(Boolean);
+
+  if (orderedPages.length === 0) return [DEFAULT_PAGE_DATA];
+
+  // 2. Fetch page_images for ALL pages at once
+  const { data: allPageImages } = await adminClient
     .from("page_images")
-    .select("slot, photo_id, crop_x, crop_y, scale")
-    .eq("page_id", primaryPageId)
+    .select("page_id, slot, photo_id, crop_x, crop_y, scale")
+    .in("page_id", pageIds)
     .in("slot", [1, 2]);
 
-  // 3. Fetch illustration paths for photos referenced in slot images
-  const photoIds = (pageImages ?? [])
+  // 3. Fetch illustration paths for referenced photos (deduplicated)
+  const photoIds = (allPageImages ?? [])
     .filter((pi: { photo_id: string | null }) => pi.photo_id)
     .map((pi: { photo_id: string }) => pi.photo_id);
 
+  const uniquePhotoIds = [...new Set(photoIds)];
   const photoIllustrationMap = new Map<string, string>();
 
-  if (photoIds.length > 0) {
+  if (uniquePhotoIds.length > 0) {
     const { data: photos } = await adminClient
       .from("photos")
       .select("id, illustration_storage_path")
-      .in("id", photoIds);
+      .in("id", uniquePhotoIds);
 
     for (const photo of photos ?? []) {
       if (photo.illustration_storage_path) {
@@ -158,70 +157,92 @@ async function fetchScenePageData(
     }
   }
 
-  // 4. Resolve signed URLs for each slot
-  async function resolveSlotUrl(illustrationPath: string): Promise<string | null> {
+  // 4. Signed URL resolver
+  async function resolveSlotUrl(
+    illustrationPath: string
+  ): Promise<string | null> {
     const { data } = await adminClient.storage
       .from("illustrations")
       .createSignedUrl(illustrationPath, 3600);
     return data?.signedUrl ?? null;
   }
 
-  // Build slot data from page_images rows
-  const slotMap = new Map<
-    number,
-    { crop_x: number; crop_y: number; scale: number; photo_id: string | null }
-  >();
-  for (const pi of pageImages ?? []) {
-    slotMap.set(pi.slot as number, {
-      crop_x: (pi.crop_x as number) ?? 0,
-      crop_y: (pi.crop_y as number) ?? 0,
-      scale: (pi.scale as number) ?? 1,
-      photo_id: pi.photo_id as string | null,
+  // 5. Build ScenePageData for each page
+  const results: ScenePageData[] = [];
+
+  for (const page of orderedPages) {
+    const pid = page.id as string;
+
+    // Filter page_images for this page
+    const pageImages = (allPageImages ?? []).filter(
+      (pi: { page_id: string }) => (pi.page_id as string) === pid
+    );
+
+    const slotMap = new Map<
+      number,
+      {
+        crop_x: number;
+        crop_y: number;
+        scale: number;
+        photo_id: string | null;
+      }
+    >();
+    for (const pi of pageImages) {
+      slotMap.set(pi.slot as number, {
+        crop_x: (pi.crop_x as number) ?? 0,
+        crop_y: (pi.crop_y as number) ?? 0,
+        scale: (pi.scale as number) ?? 1,
+        photo_id: pi.photo_id as string | null,
+      });
+    }
+
+    async function buildSlot(slot: 1 | 2): Promise<SlotImageData | null> {
+      const slotData = slotMap.get(slot);
+
+      if (slotData?.photo_id) {
+        const illustPath = photoIllustrationMap.get(slotData.photo_id);
+        if (illustPath) {
+          const url = await resolveSlotUrl(illustPath);
+          if (url) {
+            return {
+              url,
+              crop_x: slotData.crop_x,
+              crop_y: slotData.crop_y,
+              scale: slotData.scale,
+            };
+          }
+        }
+      }
+
+      // Legacy fallback: slot 1 → pages.illustration_storage_path
+      if (slot === 1 && page.illustration_storage_path) {
+        const url = await resolveSlotUrl(
+          page.illustration_storage_path as string
+        );
+        if (url) {
+          return { url, crop_x: 0, crop_y: 0, scale: 1 };
+        }
+      }
+
+      return null;
+    }
+
+    const [slot1, slot2] = await Promise.all([buildSlot(1), buildSlot(2)]);
+
+    results.push({
+      slot1,
+      slot2,
+      layoutType: (page.layout_type as string) ?? "FULL_IMAGE",
+      textContent: (page.text_content as string | null) ?? null,
+      textSize: (page.text_size as string | null) ?? null,
+      fontSizePx: (page.font_size_px as number | null) ?? null,
+      textAlign: (page.text_align as string) ?? "start",
+      textX: (page.text_x as number | null) ?? null,
+      textY: (page.text_y as number | null) ?? null,
     });
   }
 
-  async function buildSlot(slot: 1 | 2): Promise<SlotImageData | null> {
-    const slotData = slotMap.get(slot);
-
-    if (slotData?.photo_id) {
-      const illustPath = photoIllustrationMap.get(slotData.photo_id);
-      if (illustPath) {
-        const url = await resolveSlotUrl(illustPath);
-        if (url) {
-          return {
-            url,
-            crop_x: slotData.crop_x,
-            crop_y: slotData.crop_y,
-            scale: slotData.scale,
-          };
-        }
-      }
-    }
-
-    // Legacy fallback: slot 1 → pages.illustration_storage_path
-    if (slot === 1 && page.illustration_storage_path) {
-      const url = await resolveSlotUrl(page.illustration_storage_path as string);
-      if (url) {
-        return { url, crop_x: 0, crop_y: 0, scale: 1 };
-      }
-    }
-
-    return null;
-  }
-
-  const [slot1, slot2] = await Promise.all([buildSlot(1), buildSlot(2)]);
-
-  return {
-    layoutType: (page.layout_type as string) ?? "FULL_IMAGE",
-    textContent: (page.text_content as string | null) ?? null,
-    textSize: (page.text_size as string | null) ?? null,
-    fontSizePx: (page.font_size_px as number | null) ?? null,
-    textAlign: (page.text_align as string) ?? "start",
-    textX: (page.text_x as number | null) ?? null,
-    textY: (page.text_y as number | null) ?? null,
-    slot1,
-    slot2,
-  };
+  return results.length > 0 ? results : [DEFAULT_PAGE_DATA];
 }
 
 // ── Main render function ──────────────────────────────────────────────────────
@@ -271,8 +292,12 @@ export async function renderScene(
   try {
     const pageIds = (sceneRow.page_ids_json as string[]) ?? [];
 
-    // Resolve page layout + slot image data (layout-faithful)
-    const pageData = await fetchScenePageData(pageIds, adminClient);
+    // Resolve page layout + slot image data for ALL pages in the scene
+    const allPagesData = await fetchScenePageData(pageIds, adminClient);
+    const primaryPage = allPagesData[0];
+    const secondPage =
+      allPagesData.length >= 2 ? allPagesData[1] : null;
+    const isSpread = secondPage !== null;
 
     // Build render hash
     const renderHash = buildRenderHash({
@@ -290,15 +315,16 @@ export async function renderScene(
 
     // Composition props — layout-faithful, matching SceneCompositionProps
     const compositionProps = {
-      slot1: pageData.slot1,
-      slot2: pageData.slot2,
-      layoutType: pageData.layoutType,
-      textContent: pageData.textContent,
-      textSize: pageData.textSize,
-      fontSizePx: pageData.fontSizePx,
-      textAlign: pageData.textAlign,
-      textX: pageData.textX,
-      textY: pageData.textY,
+      slot1: primaryPage.slot1,
+      slot2: primaryPage.slot2,
+      layoutType: primaryPage.layoutType,
+      textContent: primaryPage.textContent,
+      textSize: primaryPage.textSize,
+      fontSizePx: primaryPage.fontSizePx,
+      textAlign: primaryPage.textAlign,
+      textX: primaryPage.textX,
+      textY: primaryPage.textY,
+      secondPage,
       motionPreset:
         (sceneRow.motion_preset as string) === "ken_burns"
           ? "ken_burns"
@@ -347,7 +373,7 @@ export async function renderScene(
     try {
       // Render video (silent — no audio in this phase)
       console.log(
-        `[film-render] Rendering scene ${sceneId} (${durationInFrames} frames @ ${fps}fps, layout: ${pageData.layoutType})`
+        `[film-render] Rendering scene ${sceneId} (${durationInFrames} frames @ ${fps}fps, layout: ${primaryPage.layoutType}, ${isSpread ? "spread" : "single-page"})`
       );
       await renderMedia({
         composition: compositionWithDuration,

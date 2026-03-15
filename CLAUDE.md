@@ -185,6 +185,15 @@ npx tsx scripts/render-worker.ts --poll 60
 - Validation: checks for `index.html` inside the bundle directory
 - Override: set `REMOTION_BUNDLE_PATH` in `.env.local` to an absolute path
 
+### Scene rendering — spreads vs single pages
+Normal content scenes render as **open-album spreads**: two square pages side by side (right page = lower page number, left page = higher — Hebrew reading order). The spread is centred in the 1920×1080 frame with a thin spine shadow between pages. Each page in the spread uses its own layout, text, and images from the album.
+
+Single-page scenes (cover, dedication, back_cover, or an odd trailing page) render as a single full-frame page — unchanged from previous behaviour.
+
+The composition receives `secondPage: ScenePageData | null`. When non-null the spread path is taken. `render-scene.ts` fetches data for **all** page IDs in `page_ids_json`, not just the first.
+
+**Known limitation**: in spread mode, narration-synced text timing is not yet split between the two pages — both pages use visual-only timing. Narration sync for spreads is future work.
+
 ### Scene animation
 Scenes render using the actual album page layout as the visual base — not a generic template. Each of the 9 layout types produces a visually distinct scene.
 

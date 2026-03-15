@@ -17,6 +17,19 @@ export interface SlotImageData {
   scale: number;
 }
 
+/** Per-page data passed to spread scenes. Same fields as the primary page props. */
+export interface ScenePageData {
+  slot1: SlotImageData | null;
+  slot2: SlotImageData | null;
+  layoutType: string;
+  textContent: string | null;
+  textSize: string | null;
+  fontSizePx: number | null;
+  textAlign: string;
+  textX: number | null;
+  textY: number | null;
+}
+
 export interface SceneCompositionProps {
   /** Primary image slot with crop params. */
   slot1: SlotImageData | null;
@@ -36,6 +49,8 @@ export interface SceneCompositionProps {
   textX: number | null;
   /** Custom text Y position (0–1 fraction) — free-position admin override. */
   textY: number | null;
+  /** Second page data for spread scenes (2-page open-book view). Null for single-page scenes. */
+  secondPage: ScenePageData | null;
   /** Ken Burns zoom or static. */
   motionPreset: "ken_burns" | "static";
   /** Fade in at start. */
@@ -810,17 +825,205 @@ function TextOnlyLayout({
   );
 }
 
+// ── PageContent — renders a single page's layout ─────────────────────────────
+
+interface PageContentProps extends ScenePageData {
+  kbScale: number;
+  narrationDurationMs: number | null;
+  textParallaxPx: number;
+}
+
+/**
+ * Renders a single album page's content based on its layout type.
+ * Used by both single-page scenes and each page within a spread scene.
+ */
+function PageContent({
+  slot1, slot2, layoutType: lt, textContent, textSize, fontSizePx,
+  textAlign: ta, textX, textY, kbScale, narrationDurationMs, textParallaxPx,
+}: PageContentProps) {
+  const hasText = Boolean(textContent);
+  const align = ta ?? "start";
+  const overlayProps: OverlayTextProps = {
+    text: textContent ?? "",
+    textSize,
+    fontSizePx,
+    textAlign: align,
+    textX: textX ?? null,
+    textY: textY ?? null,
+    narrationDurationMs,
+    parallaxPx: textParallaxPx,
+  };
+
+  const layout = lt ?? "FULL_IMAGE";
+
+  switch (layout) {
+    case "TEXT_ONLY":
+      return (
+        <TextOnlyLayout
+          text={textContent}
+          textSize={textSize}
+          fontSizePx={fontSizePx}
+          textAlign={align}
+          narrationDurationMs={narrationDurationMs}
+        />
+      );
+
+    case "IMAGE_TOP_TEXT_BOTTOM":
+      return (
+        <AbsoluteFill style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ position: "relative", height: "60%", overflow: "hidden" }}>
+            <ImageFill slot={slot1} kbScale={kbScale} />
+          </div>
+          <div style={{ height: "40%", overflow: "hidden" }}>
+            <SplitTextBlock
+              text={textContent}
+              textSize={textSize}
+              fontSizePx={fontSizePx}
+              textAlign={align}
+              narrationDurationMs={narrationDurationMs}
+            />
+          </div>
+        </AbsoluteFill>
+      );
+
+    case "TEXT_TOP_IMAGE_BOTTOM":
+      return (
+        <AbsoluteFill style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ height: "40%", overflow: "hidden" }}>
+            <SplitTextBlock
+              text={textContent}
+              textSize={textSize}
+              fontSizePx={fontSizePx}
+              textAlign={align}
+              narrationDurationMs={narrationDurationMs}
+            />
+          </div>
+          <div style={{ position: "relative", flex: 1, overflow: "hidden" }}>
+            <ImageFill slot={slot1} kbScale={kbScale} />
+          </div>
+        </AbsoluteFill>
+      );
+
+    case "IMAGE_LEFT_TEXT_RIGHT":
+      return (
+        <AbsoluteFill style={{ display: "flex", flexDirection: "row" }}>
+          <div style={{ position: "relative", width: "55%", overflow: "hidden" }}>
+            <ImageFill slot={slot1} kbScale={kbScale} />
+          </div>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <SplitTextBlock
+              text={textContent}
+              textSize={textSize}
+              fontSizePx={fontSizePx}
+              textAlign={align}
+              narrationDurationMs={narrationDurationMs}
+            />
+          </div>
+        </AbsoluteFill>
+      );
+
+    case "IMAGE_RIGHT_TEXT_LEFT":
+      return (
+        <AbsoluteFill style={{ display: "flex", flexDirection: "row" }}>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <SplitTextBlock
+              text={textContent}
+              textSize={textSize}
+              fontSizePx={fontSizePx}
+              textAlign={align}
+              narrationDurationMs={narrationDurationMs}
+            />
+          </div>
+          <div style={{ position: "relative", width: "55%", overflow: "hidden" }}>
+            <ImageFill slot={slot1} kbScale={kbScale} />
+          </div>
+        </AbsoluteFill>
+      );
+
+    case "TWO_IMAGES":
+      return (
+        <AbsoluteFill style={{ display: "flex", flexDirection: "row" }}>
+          <div style={{ position: "relative", width: "50%", overflow: "hidden" }}>
+            <ImageFill slot={slot1} kbScale={kbScale} />
+          </div>
+          <div style={{ position: "relative", width: "50%", overflow: "hidden" }}>
+            <ImageFill slot={slot2} kbScale={kbScale} />
+          </div>
+          {hasText && textContent && (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "rgba(0,0,0,0.55)",
+                padding: "20px 60px",
+                textAlign: align as React.CSSProperties["textAlign"],
+                zIndex: 10,
+              }}
+            >
+              <AnimatedP
+                style={{
+                  fontFamily: ALBUM_FONT,
+                  fontSize: videoFontPx(textSize, fontSizePx),
+                  direction: "rtl",
+                  color: "white",
+                  textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                  margin: 0,
+                  whiteSpace: "pre-line",
+                }}
+                narrationDurationMs={narrationDurationMs}
+              >
+                {textContent}
+              </AnimatedP>
+            </div>
+          )}
+        </AbsoluteFill>
+      );
+
+    case "FULL_IMAGE_TEXT_TOP":
+      return (
+        <>
+          <ImageFill slot={slot1} kbScale={kbScale} />
+          <VignetteLayer />
+          {hasText && <TextOverlayTop {...overlayProps} />}
+        </>
+      );
+
+    case "FULL_IMAGE_TEXT_CENTER":
+      return (
+        <>
+          <ImageFill slot={slot1} kbScale={kbScale} />
+          <VignetteLayer />
+          {hasText && <TextOverlayCenter {...overlayProps} />}
+        </>
+      );
+
+    case "FULL_IMAGE":
+    default:
+      return (
+        <>
+          <ImageFill slot={slot1} kbScale={kbScale} />
+          <VignetteLayer />
+          {hasText && <TextOverlayBottom {...overlayProps} />}
+        </>
+      );
+  }
+}
+
 // ── Main composition ──────────────────────────────────────────────────────────
 
 /**
  * Remotion composition for a single film scene.
  *
- * Mirrors the album page layout system (AlbumPageView.tsx) exactly:
- *   - Same 9 layout types with identical split ratios
- *   - Same ImageFill crop model (scale / crop_x / crop_y)
- *   - Same text overlay variants (bottom/top/center gradient, frosted glass, split block)
+ * Renders either a single page (cover/dedication/back_cover) or a 2-page
+ * open-book spread (normal content scenes). Spread scenes show both pages
+ * side by side, matching the album preview's open-book layout.
  *
- * Animation effects:
+ * Layout system (9 types) mirrors AlbumPageView.tsx exactly:
+ *   - Same split ratios, ImageFill crop model, text overlay variants
+ *
+ * Animation effects (applied to both single-page and spread scenes):
  *   - Image reveal: 3-phase (outline sketch → color fill → stable original)
  *   - Text reveal: word-by-word fade-in synced to narration duration when available
  *   - Ken Burns: subtle 5% zoom over full scene duration
@@ -836,6 +1039,7 @@ export function SceneComposition({
   textAlign,
   textX,
   textY,
+  secondPage,
   motionPreset,
   transitionIn,
   transitionOut,
@@ -844,7 +1048,7 @@ export function SceneComposition({
   useAlbumFont();
 
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
+  const { durationInFrames, width, height } = useVideoConfig();
 
   // ── Fade envelope ───────────────────────────────────────────────────────────
   const fadeInOpacity =
@@ -867,10 +1071,6 @@ export function SceneComposition({
   const opacity = Math.min(fadeInOpacity, fadeOutOpacity);
 
   // ── Storybook slide-in ───────────────────────────────────────────────────────
-  // The content translates up from slightly below while fading in.
-  // Layered with the existing opacity fade, this creates a "page being turned"
-  // feel — the scene eases into position rather than simply cross-dissolving.
-  // Only active on transitionIn === "fade"; exit is a clean fade only.
   const slideInTranslateY =
     transitionIn === "fade"
       ? interpolate(frame, [0, SLIDE_IN_FRAMES], [SLIDE_IN_PX, 0], {
@@ -887,209 +1087,126 @@ export function SceneComposition({
       : 1;
 
   // ── Text parallax ────────────────────────────────────────────────────────────
-  // Counter-drift: as the Ken Burns image subtly zooms in, the text overlays
-  // drift slightly in the opposite direction (upward for bottom overlays,
-  // downward for top overlays — handled per-overlay). This creates a convincing
-  // sense that the text sits on a separate "glass plate" above the illustration.
-  // Only computed for ken_burns; static preset gets no parallax.
   const textParallaxPx =
     motionPreset === "ken_burns"
       ? interpolate(kbProgress, [0, 1], [0, -TEXT_PARALLAX_PX])
       : 0;
 
-  const hasText = Boolean(textContent);
-  const align = textAlign ?? "start";
-  const overlayProps: OverlayTextProps = {
-    text: textContent ?? "",
-    textSize,
-    fontSizePx,
-    textAlign: align,
-    textX: textX ?? null,
-    textY: textY ?? null,
-    narrationDurationMs: narrationDurationMs ?? null,
-    parallaxPx: textParallaxPx,
-  };
+  // ── Content ─────────────────────────────────────────────────────────────────
 
-  // ── Layout ──────────────────────────────────────────────────────────────────
-  function renderContent() {
-    const layout = layoutType ?? "FULL_IMAGE";
+  const slideTransform =
+    slideInTranslateY !== 0
+      ? `translateY(${slideInTranslateY}px)`
+      : undefined;
 
-    switch (layout) {
-      case "TEXT_ONLY":
-        return (
-          <TextOnlyLayout
-            text={textContent}
-            textSize={textSize}
-            fontSizePx={fontSizePx}
-            textAlign={align}
-            narrationDurationMs={narrationDurationMs}
+  // Spread mode: two pages side by side (open-book view)
+  if (secondPage) {
+    // Each page is a square. Two squares side by side = 2:1 aspect ratio.
+    // Fit within the video frame (typically 1920×1080 = 16:9).
+    const pageSize = Math.min(height, Math.floor(width / 2));
+    const topMargin = Math.floor((height - pageSize) / 2);
+    const leftMargin = Math.floor((width - pageSize * 2) / 2);
+
+    return (
+      <AbsoluteFill style={{ backgroundColor: "#1a1a1a", opacity }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            overflow: "hidden",
+            transform: slideTransform,
+          }}
+        >
+          {/* Left page (second page — higher page number in RTL spread) */}
+          <div
+            style={{
+              position: "absolute",
+              left: leftMargin,
+              top: topMargin,
+              width: pageSize,
+              height: pageSize,
+              overflow: "hidden",
+            }}
+          >
+            <PageContent
+              {...secondPage}
+              kbScale={kbScale}
+              narrationDurationMs={null}
+              textParallaxPx={textParallaxPx}
+            />
+          </div>
+
+          {/* Right page (primary page — lower page number, read first in Hebrew) */}
+          <div
+            style={{
+              position: "absolute",
+              left: leftMargin + pageSize,
+              top: topMargin,
+              width: pageSize,
+              height: pageSize,
+              overflow: "hidden",
+            }}
+          >
+            <PageContent
+              slot1={slot1}
+              slot2={slot2}
+              layoutType={layoutType}
+              textContent={textContent}
+              textSize={textSize}
+              fontSizePx={fontSizePx}
+              textAlign={textAlign}
+              textX={textX}
+              textY={textY}
+              kbScale={kbScale}
+              narrationDurationMs={null}
+              textParallaxPx={textParallaxPx}
+            />
+          </div>
+
+          {/* Spine shadow between pages — mimics open-book binding */}
+          <div
+            style={{
+              position: "absolute",
+              left: leftMargin + pageSize - 1,
+              top: topMargin,
+              width: 3,
+              height: pageSize,
+              background:
+                "linear-gradient(to right, rgba(0,0,0,0.15), rgba(0,0,0,0.06), rgba(0,0,0,0.15))",
+              zIndex: 20,
+              pointerEvents: "none",
+            }}
           />
-        );
-
-      case "IMAGE_TOP_TEXT_BOTTOM":
-        return (
-          <AbsoluteFill style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ position: "relative", height: "60%", overflow: "hidden" }}>
-              <ImageFill slot={slot1} kbScale={kbScale} />
-            </div>
-            <div style={{ height: "40%", overflow: "hidden" }}>
-              <SplitTextBlock
-                text={textContent}
-                textSize={textSize}
-                fontSizePx={fontSizePx}
-                textAlign={align}
-                narrationDurationMs={narrationDurationMs}
-              />
-            </div>
-          </AbsoluteFill>
-        );
-
-      case "TEXT_TOP_IMAGE_BOTTOM":
-        return (
-          <AbsoluteFill style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ height: "40%", overflow: "hidden" }}>
-              <SplitTextBlock
-                text={textContent}
-                textSize={textSize}
-                fontSizePx={fontSizePx}
-                textAlign={align}
-                narrationDurationMs={narrationDurationMs}
-              />
-            </div>
-            <div style={{ position: "relative", flex: 1, overflow: "hidden" }}>
-              <ImageFill slot={slot1} kbScale={kbScale} />
-            </div>
-          </AbsoluteFill>
-        );
-
-      case "IMAGE_LEFT_TEXT_RIGHT":
-        return (
-          <AbsoluteFill style={{ display: "flex", flexDirection: "row" }}>
-            <div style={{ position: "relative", width: "55%", overflow: "hidden" }}>
-              <ImageFill slot={slot1} kbScale={kbScale} />
-            </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              <SplitTextBlock
-                text={textContent}
-                textSize={textSize}
-                fontSizePx={fontSizePx}
-                textAlign={align}
-                narrationDurationMs={narrationDurationMs}
-              />
-            </div>
-          </AbsoluteFill>
-        );
-
-      case "IMAGE_RIGHT_TEXT_LEFT":
-        return (
-          <AbsoluteFill style={{ display: "flex", flexDirection: "row" }}>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              <SplitTextBlock
-                text={textContent}
-                textSize={textSize}
-                fontSizePx={fontSizePx}
-                textAlign={align}
-                narrationDurationMs={narrationDurationMs}
-              />
-            </div>
-            <div style={{ position: "relative", width: "55%", overflow: "hidden" }}>
-              <ImageFill slot={slot1} kbScale={kbScale} />
-            </div>
-          </AbsoluteFill>
-        );
-
-      case "TWO_IMAGES":
-        return (
-          <AbsoluteFill style={{ display: "flex", flexDirection: "row" }}>
-            <div style={{ position: "relative", width: "50%", overflow: "hidden" }}>
-              <ImageFill slot={slot1} kbScale={kbScale} />
-            </div>
-            <div style={{ position: "relative", width: "50%", overflow: "hidden" }}>
-              <ImageFill slot={slot2} kbScale={kbScale} />
-            </div>
-            {hasText && textContent && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: "rgba(0,0,0,0.55)",
-                  padding: "20px 60px",
-                  textAlign: align as React.CSSProperties["textAlign"],
-                  zIndex: 10,
-                }}
-              >
-                <AnimatedP
-                  style={{
-                    fontFamily: ALBUM_FONT,
-                    fontSize: videoFontPx(textSize, fontSizePx),
-                    direction: "rtl",
-                    color: "white",
-                    textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-                    margin: 0,
-                    whiteSpace: "pre-line",
-                  }}
-                  narrationDurationMs={narrationDurationMs}
-                >
-                  {textContent}
-                </AnimatedP>
-              </div>
-            )}
-          </AbsoluteFill>
-        );
-
-      case "FULL_IMAGE_TEXT_TOP":
-        return (
-          <>
-            <ImageFill slot={slot1} kbScale={kbScale} />
-            <VignetteLayer />
-            {hasText && <TextOverlayTop {...overlayProps} />}
-          </>
-        );
-
-      case "FULL_IMAGE_TEXT_CENTER":
-        return (
-          <>
-            <ImageFill slot={slot1} kbScale={kbScale} />
-            <VignetteLayer />
-            {hasText && <TextOverlayCenter {...overlayProps} />}
-          </>
-        );
-
-      case "FULL_IMAGE":
-      default:
-        return (
-          <>
-            <ImageFill slot={slot1} kbScale={kbScale} />
-            <VignetteLayer />
-            {hasText && <TextOverlayBottom {...overlayProps} />}
-          </>
-        );
-    }
+        </div>
+      </AbsoluteFill>
+    );
   }
 
+  // Single-page mode (cover, dedication, back_cover, or odd trailing page)
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: "#1a1a1a",
-        opacity,
-      }}
-    >
-      {/* Inner content wrapper — carries the storybook slide-in translate.
-          Clipped so the translateY never reveals the dark canvas background. */}
+    <AbsoluteFill style={{ backgroundColor: "#1a1a1a", opacity }}>
       <div
         style={{
           position: "absolute",
           inset: 0,
           overflow: "hidden",
-          transform:
-            slideInTranslateY !== 0
-              ? `translateY(${slideInTranslateY}px)`
-              : undefined,
+          transform: slideTransform,
         }}
       >
-        {renderContent()}
+        <PageContent
+          slot1={slot1}
+          slot2={slot2}
+          layoutType={layoutType}
+          textContent={textContent}
+          textSize={textSize}
+          fontSizePx={fontSizePx}
+          textAlign={textAlign}
+          textX={textX}
+          textY={textY}
+          kbScale={kbScale}
+          narrationDurationMs={narrationDurationMs}
+          textParallaxPx={textParallaxPx}
+        />
       </div>
     </AbsoluteFill>
   );
