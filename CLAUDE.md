@@ -268,14 +268,18 @@ The system assembles all rendered scene videos into a single final film with pag
 
 **Key concept**: Scenes represent **open album spreads** (two pages side-by-side), not individual pages. The final film looks like a storybook being flipped through.
 
+**Source of truth**: The final film is assembled **exclusively** from the pre-rendered scene MP4 clips (`rendered_scene_path`). The assembly never re-renders from page data, still images, or thumbnails. Each scene clip already contains the full Remotion animation (image reveal, text reveal, Ken Burns, transitions, narration-synced timing). The assembly's job is strictly: download clips → mux audio → concatenate with transitions → upload.
+
 ### How it works
 
-1. Admin clicks "הרכב סרט" in the Film panel → API route validates all scenes are rendered, sets `film_projects.status = 'rendering'`
-2. The render worker detects projects with status `'rendering'` and all scenes `'rendered'`
+1. Admin clicks "הרכב סרט" in the Film panel → API route validates scenes are ready (rendered or narration_ready with duration), queues any narration_ready scenes for rendering, sets `film_projects.status = 'rendering'`
+2. The render worker renders any queued scenes, then detects projects with status `'rendering'` and all scenes `'rendered'`
 3. Worker runs `assembleFilm()` which:
-   - Downloads all scene MP4s and narration MP3s from storage
-   - Muxes audio into each scene video (no `-shortest` — preserves full video duration so animations complete). Scenes without narration get a silent audio track
+   - Downloads all **pre-rendered scene MP4s** (the sole visual source) and narration MP3s from storage
+   - Validates each clip file is non-empty (fails fast if corrupt)
+   - Muxes audio into each scene video with `-c:v copy` (no re-encoding — preserves animations bit-for-bit). Scenes without narration get a silent audio track
    - Measures actual clip durations via ffprobe (prevents xfade offset mismatches)
+   - Validates all xfade offsets are positive (fails fast if any clip is too short)
    - Concatenates all scenes with **wipeleft** transitions (0.8s) — simulates page turning right-to-left (Hebrew reading direction)
    - Extracts thumbnail, measures final duration via ffprobe
    - Uploads final film to `films/{orderId}/{filmProjectId}/final/film.mp4`
