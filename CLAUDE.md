@@ -166,24 +166,31 @@ npx tsx scripts/render-worker.ts --poll 60
 ### Scene animation
 Scenes render using the actual album page layout as the visual base — not a generic template. Each of the 9 layout types produces a visually distinct scene.
 
-**Image reveal** (paint-in feel):
-- Grayscale-to-color: image starts 60% desaturated, transitions to full color over the first 55% of the scene
-- Radial mask: expanding soft-edged ellipse reveals the image from center outward (like watercolor spreading)
-- Both effects applied to the same layer as Ken Burns zoom
+**Image reveal** (3-phase drawing effect):
+The image reveals progressively, simulating an illustration being created live. The **final frame is pixel-identical to the original album illustration** — no permanent filters or style changes.
 
-**Text reveal** (writing effect):
+- **Phase A — Outline sketch** (0–30% of reveal): High contrast + full grayscale creates a pencil-edge look. A directional mask sweeps in from the right (Hebrew reading direction) combined with a soft radial vignette
+- **Phase B — Color fill** (30–92% of reveal): Contrast eases back to normal, grayscale fades to full color, radial mask expands to full coverage. The image "fills in" with color like watercolor paint
+- **Phase C — Stable** (92–100% of reveal): All CSS filters removed. Image is the unmodified original artwork
+- Reveal completes at 55% of scene duration (`IMAGE_REVEAL_END_FRAC`)
+- All effects are CSS-only (filter + mask), deterministic, no AI generation
+
+**Text reveal** (narration-synced writing effect):
 - Word-by-word fade-in: each word's opacity transitions from 0→1 in sequence
 - Words overlap slightly (0.8 word-units each) for a smooth flowing reveal
 - Whitespace/newlines always visible so the text block never shifts during reveal
 - RTL-safe: inline `<span>`s flow naturally in Hebrew reading order
-- Starts at 15% of scene duration, fully visible by 65%
+- **Narration sync**: when `narrationDurationMs` is available (from `audio_duration_ms` on the scene), text reveal is timed to match narration pacing — words distributed across the narration window starting at 8% into the scene. Falls back to visual-only timing (15%–65% of scene) when no narration data exists
 - Works with all text overlay types (bottom/top/center gradient, split block, text-only)
 
 **Ken Burns**: subtle 5% zoom over full scene duration (reduced from 8% for premium feel)
 
 **Fade**: 15-frame fade in/out envelope at scene boundaries
 
-These are render-time visual effects only — no stored album data is modified. Advanced character animation is future work.
+**Limitations**:
+- No word-level timestamps from TTS yet — text sync uses uniform word distribution across narration duration
+- Image reveal uses CSS filters only; some very dark or very bright illustrations may look less convincing during Phase A sketch effect
+- These are render-time visual effects only — no stored album data is modified. Advanced character animation is future work
 
 ### Logs
 Timestamps on every line. Example:

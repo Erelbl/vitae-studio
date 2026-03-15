@@ -34,6 +34,7 @@ export function Root() {
         motionPreset: "ken_burns",
         transitionIn: "fade",
         transitionOut: "fade",
+        narrationDurationMs: null,
       } satisfies SceneCompositionProps}
     />
   );

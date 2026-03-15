@@ -307,6 +307,8 @@ export async function renderScene(
         (sceneRow.transition_in as string) === "fade" ? "fade" : ("none" as const),
       transitionOut:
         (sceneRow.transition_out as string) === "fade" ? "fade" : ("none" as const),
+      narrationDurationMs:
+        (sceneRow.audio_duration_ms as number | null) ?? null,
     };
 
     // Resolve pre-built bundle path

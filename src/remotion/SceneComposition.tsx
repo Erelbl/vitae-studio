@@ -42,6 +42,8 @@ export interface SceneCompositionProps {
   transitionIn: "fade" | "none";
   /** Fade out at end. */
   transitionOut: "fade" | "none";
+  /** Narration audio duration in ms — used to sync text reveal with speech. */
+  narrationDurationMs: number | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -59,14 +61,39 @@ const FONT_SCALE = 2.5;
 
 // ── Reveal animation timing ──────────────────────────────────────────────────
 
-/** Image fully revealed (color + mask) at this fraction of scene duration. */
+/**
+ * 3-phase image reveal: outline sketch → color fill → stable.
+ *
+ * Phase A (0 – PHASE_A_END): "Outline sketch"
+ *   High contrast + grayscale produce an edge/pencil look.
+ *   A directional mask sweeps in to suggest brush strokes.
+ *
+ * Phase B (PHASE_A_END – PHASE_B_END): "Color fill"
+ *   Contrast eases back to normal, grayscale fades to 0.
+ *   Mask continues expanding until full coverage.
+ *
+ * Phase C (PHASE_B_END – 1.0): "Stable"
+ *   All filters removed. Image is pixel-identical to original.
+ */
 const IMAGE_REVEAL_END_FRAC = 0.55;
-/** Starting grayscale amount (0 = full color, 1 = fully grey). */
-const INITIAL_GRAYSCALE = 0.6;
-/** Radial mask start size (% of container). Smaller = more hidden at start. */
-const MASK_START_PCT = 55;
-/** Radial mask end size (% of container). >100 ensures full coverage. */
-const MASK_END_PCT = 160;
+/** End of outline sketch phase (fraction of reveal progress 0–1). */
+const PHASE_A_END = 0.3;
+/** End of color fill phase (fraction of reveal progress 0–1). */
+const PHASE_B_END = 0.92;
+
+/** Phase A: high contrast + full grayscale for sketch look. */
+const SKETCH_CONTRAST = 2.8;
+const SKETCH_BRIGHTNESS = 1.25;
+const SKETCH_GRAYSCALE = 1.0;
+/** Phase B start: moderate desaturation, easing toward normal. */
+const FILL_GRAYSCALE_START = 0.55;
+
+/** Directional mask sweep: right-to-left (Hebrew reading direction). */
+const MASK_SWEEP_START_PCT = 105; // starts off-screen right
+const MASK_SWEEP_END_PCT = -10;   // ends past left edge
+/** Soft radial mask (combined with sweep for organic feel). */
+const RADIAL_START_PCT = 30;
+const RADIAL_END_PCT = 160;
 /** Ken Burns zoom — subtle, premium feel. */
 const KB_ZOOM_END = 1.05;
 
@@ -74,6 +101,8 @@ const KB_ZOOM_END = 1.05;
 const TEXT_REVEAL_START_FRAC = 0.15;
 /** Text fully visible at this fraction. */
 const TEXT_REVEAL_END_FRAC = 0.65;
+/** Narration typically starts after a brief visual intro. */
+const NARRATION_START_OFFSET_FRAC = 0.08;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -108,27 +137,55 @@ function videoFontPx(textSize?: string | null, fontSizePx?: number | null): numb
  *   4. Words overlap slightly (each fades over ~0.8 "word-units") for
  *      a smooth, flowing reveal rather than staccato pops.
  *
+ * Narration sync:
+ *   When `narrationDurationMs` is provided, text reveal is timed to match
+ *   narration pacing — words are distributed across the narration window
+ *   (starting at NARRATION_START_OFFSET_FRAC into the scene). This creates
+ *   a "words appear as narrator speaks" effect.
+ *
+ *   When no narration duration is available, falls back to the visual-only
+ *   timing (TEXT_REVEAL_START_FRAC to TEXT_REVEAL_END_FRAC).
+ *
  * RTL-safe: the `<p>` carries `direction: rtl` from the caller's style,
  * and inline `<span>`s flow naturally in reading order.
- *
- * Uses Remotion's frame context internally — no prop-drilling needed.
  */
 function AnimatedP({
   children,
   style,
+  narrationDurationMs,
 }: {
   children: string;
   style?: React.CSSProperties;
+  narrationDurationMs?: number | null;
 }) {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
+  const { durationInFrames, fps } = useVideoConfig();
 
-  const textStart = Math.round(durationInFrames * TEXT_REVEAL_START_FRAC);
-  const textEnd = Math.round(durationInFrames * TEXT_REVEAL_END_FRAC);
+  // Determine text reveal window based on narration timing or fallback.
+  let textStart: number;
+  let textEnd: number;
+
+  if (narrationDurationMs != null && narrationDurationMs > 0) {
+    // Narration-synced: words appear across the narration duration.
+    // Narration starts after a brief visual intro offset.
+    const narrationStartFrame = Math.round(
+      durationInFrames * NARRATION_START_OFFSET_FRAC
+    );
+    const narrationFrames = Math.round((narrationDurationMs / 1000) * fps);
+    textStart = narrationStartFrame;
+    // End text reveal slightly before narration ends (95%) so all words
+    // are visible by the time narration finishes.
+    textEnd = Math.min(
+      narrationStartFrame + Math.round(narrationFrames * 0.95),
+      durationInFrames - FADE_FRAMES
+    );
+  } else {
+    // Visual-only fallback.
+    textStart = Math.round(durationInFrames * TEXT_REVEAL_START_FRAC);
+    textEnd = Math.round(durationInFrames * TEXT_REVEAL_END_FRAC);
+  }
 
   // Split into alternating [word, whitespace, word, …] tokens.
-  // The capturing group keeps whitespace in the result array so newlines
-  // are preserved by whiteSpace: pre-line on the <p>.
   const tokens = children.split(/(\s+)/);
 
   // Count real words (non-whitespace tokens) for timing calculation.
@@ -176,23 +233,29 @@ function AnimatedP({
   );
 }
 
-// ── ImageFill with crop model + reveal animation ─────────────────────────────
+// ── ImageFill with crop model + 3-phase reveal animation ─────────────────────
 
 /**
  * Full-bleed image with the same crop/zoom model as AlbumPageView.ImageFill,
- * plus a reveal animation: grayscale-to-color + expanding radial mask.
+ * plus a 3-phase reveal that simulates the image being illustrated live.
  *
+ * Phase A — "Outline sketch" (0 – PHASE_A_END of reveal):
+ *   High contrast + full grayscale creates an edge/pencil-art look.
+ *   A directional mask sweeps in from the right (Hebrew reading direction)
+ *   combined with a tight radial vignette, suggesting brush strokes.
+ *
+ * Phase B — "Color fill" (PHASE_A_END – PHASE_B_END of reveal):
+ *   Contrast eases back to 1.0, grayscale fades to 0 (full color).
+ *   Radial mask expands to full coverage. The image "fills in" with color.
+ *
+ * Phase C — "Stable" (PHASE_B_END – 1.0 of reveal):
+ *   All CSS filters removed. The final rendered image is pixel-identical
+ *   to the original album illustration. No visual modification remains.
+ *
+ * Crop model (identical to album preview):
  *   scale ≥ 1  → image rendered at scale × 100% of container
  *   crop_x 0-1 → horizontal pan (0 = left-edge visible, 1 = right-edge visible)
  *   crop_y 0-1 → vertical pan   (0 = top-edge visible,  1 = bottom-edge visible)
- *
- * kbScale applies Ken Burns on top of the existing crop scale by wrapping the
- * crop-positioned image in a center-origin CSS transform.
- *
- * Reveal animation:
- *   - Grayscale fades from INITIAL_GRAYSCALE → 0 (full color)
- *   - Radial mask expands outward from center (paint-in / illustration feel)
- *   - Both complete at IMAGE_REVEAL_END_FRAC of scene duration
  */
 function ImageFill({
   slot,
@@ -217,20 +280,92 @@ function ImageFill({
   const { url, crop_x, crop_y, scale } = slot;
   const s = Math.max(1, scale);
 
-  // Reveal animation progress
+  // Overall reveal progress: 0 → 1 over IMAGE_REVEAL_END_FRAC of scene.
   const revealEnd = Math.round(durationInFrames * IMAGE_REVEAL_END_FRAC);
   const revealProgress = interpolate(frame, [0, revealEnd], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
 
-  const grayscale = interpolate(revealProgress, [0, 1], [INITIAL_GRAYSCALE, 0]);
-  const maskSize = interpolate(revealProgress, [0, 1], [MASK_START_PCT, MASK_END_PCT]);
   const isRevealed = revealProgress >= 1;
 
-  const maskGradient = isRevealed
+  // ── Phase A: Outline sketch ──────────────────────────────────────────────
+  // High contrast + grayscale for a pencil-edge look, fading to moderate.
+  const phaseAProgress = interpolate(
+    revealProgress, [0, PHASE_A_END], [0, 1],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+
+  // ── Phase B: Color fill ──────────────────────────────────────────────────
+  // Filters ease from sketch values back to identity (no filter).
+  const phaseBProgress = interpolate(
+    revealProgress, [PHASE_A_END, PHASE_B_END], [0, 1],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+
+  // Compute CSS filter values across the 3 phases.
+  let filterContrast: number;
+  let filterBrightness: number;
+  let filterGrayscale: number;
+
+  if (isRevealed) {
+    // Phase C: no filters at all — pixel-identical to original.
+    filterContrast = 1;
+    filterBrightness = 1;
+    filterGrayscale = 0;
+  } else if (revealProgress <= PHASE_A_END) {
+    // Phase A: sketch look easing in, then holding.
+    // Ramp up contrast quickly in first 40% of phase A, hold for rest.
+    const rampIn = interpolate(phaseAProgress, [0, 0.4], [0, 1], {
+      extrapolateLeft: "clamp", extrapolateRight: "clamp",
+    });
+    filterContrast = interpolate(rampIn, [0, 1], [1.2, SKETCH_CONTRAST]);
+    filterBrightness = interpolate(rampIn, [0, 1], [1.0, SKETCH_BRIGHTNESS]);
+    filterGrayscale = SKETCH_GRAYSCALE;
+  } else {
+    // Phase B: ease from sketch → normal.
+    filterContrast = interpolate(phaseBProgress, [0, 1], [SKETCH_CONTRAST, 1]);
+    filterBrightness = interpolate(phaseBProgress, [0, 1], [SKETCH_BRIGHTNESS, 1]);
+    filterGrayscale = interpolate(phaseBProgress, [0, 1], [FILL_GRAYSCALE_START, 0]);
+  }
+
+  // ── Mask: directional sweep + radial softness ────────────────────────────
+  // Directional: a soft vertical edge sweeping right-to-left.
+  const sweepX = isRevealed
+    ? MASK_SWEEP_END_PCT
+    : interpolate(revealProgress, [0, 0.85], [MASK_SWEEP_START_PCT, MASK_SWEEP_END_PCT], {
+        extrapolateLeft: "clamp", extrapolateRight: "clamp",
+      });
+
+  // Radial: expanding soft ellipse from center.
+  const radialSize = isRevealed
+    ? RADIAL_END_PCT
+    : interpolate(revealProgress, [0, 1], [RADIAL_START_PCT, RADIAL_END_PCT], {
+        extrapolateLeft: "clamp", extrapolateRight: "clamp",
+      });
+
+  // Combine both masks: the visible area is the intersection.
+  // Sweep mask: gradient from opaque to transparent at the sweep edge.
+  // Radial mask: soft-edged ellipse from center.
+  const sweepMask = `linear-gradient(to left, black 0%, black ${Math.max(0, sweepX - 20)}%, transparent ${sweepX}%)`;
+  const radialMask = `radial-gradient(ellipse ${radialSize}% ${radialSize}% at 50% 50%, black 50%, transparent 100%)`;
+
+  const combinedMask = isRevealed ? undefined : `${sweepMask}, ${radialMask}`;
+  // For intersecting masks, we need maskComposite. But for a painting feel,
+  // using the radial as primary mask and the sweep as a secondary layer works
+  // well. With default mask-composite (add), the union of both masks is shown,
+  // creating an organic, irregular reveal edge.
+
+  // Build filter string (only when not fully revealed).
+  const filterStr = isRevealed
     ? undefined
-    : `radial-gradient(ellipse ${maskSize}% ${maskSize}% at 50% 50%, black 55%, transparent 100%)`;
+    : [
+        filterContrast !== 1 ? `contrast(${filterContrast.toFixed(2)})` : "",
+        filterBrightness !== 1 ? `brightness(${filterBrightness.toFixed(2)})` : "",
+        filterGrayscale > 0.01 ? `grayscale(${filterGrayscale.toFixed(2)})` : "",
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined;
 
   return (
     <AbsoluteFill style={{ overflow: "hidden" }}>
@@ -241,9 +376,9 @@ function ImageFill({
           inset: 0,
           transform: kbScale !== 1 ? `scale(${kbScale})` : undefined,
           transformOrigin: "center center",
-          filter: grayscale > 0.01 ? `grayscale(${grayscale})` : undefined,
-          maskImage: maskGradient,
-          WebkitMaskImage: maskGradient,
+          filter: filterStr,
+          maskImage: combinedMask,
+          WebkitMaskImage: combinedMask,
         }}
       >
         <Img
@@ -271,6 +406,7 @@ interface OverlayTextProps {
   textAlign: string;
   textX: number | null;
   textY: number | null;
+  narrationDurationMs: number | null;
 }
 
 /** When admin has free-positioned the text, render it at those coordinates. */
@@ -280,12 +416,14 @@ function PositionedOverlay({
   textAlign,
   textX,
   textY,
+  narrationDurationMs,
 }: {
   text: string;
   fontSize: number;
   textAlign: string;
   textX: number;
   textY: number;
+  narrationDurationMs?: number | null;
 }) {
   return (
     <AbsoluteFill style={{ zIndex: 10, pointerEvents: "none" }}>
@@ -311,6 +449,7 @@ function PositionedOverlay({
             color: "white",
             margin: 0,
           }}
+          narrationDurationMs={narrationDurationMs}
         >
           {text}
         </AnimatedP>
@@ -320,7 +459,7 @@ function PositionedOverlay({
 }
 
 /** Bottom gradient overlay — default for FULL_IMAGE. */
-function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -332,6 +471,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
         textAlign={align}
         textX={textX}
         textY={textY}
+        narrationDurationMs={narrationDurationMs}
       />
     );
   }
@@ -361,6 +501,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
             color: "white",
             margin: 0,
           }}
+          narrationDurationMs={narrationDurationMs}
         >
           {text}
         </AnimatedP>
@@ -370,7 +511,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
 }
 
 /** Top gradient overlay — for FULL_IMAGE_TEXT_TOP. */
-function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -382,6 +523,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
         textAlign={align}
         textX={textX}
         textY={textY}
+        narrationDurationMs={narrationDurationMs}
       />
     );
   }
@@ -411,6 +553,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
             color: "white",
             margin: 0,
           }}
+          narrationDurationMs={narrationDurationMs}
         >
           {text}
         </AnimatedP>
@@ -420,7 +563,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
 }
 
 /** Frosted-glass pill — for FULL_IMAGE_TEXT_CENTER. */
-function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -432,6 +575,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
         textAlign={align}
         textX={textX}
         textY={textY}
+        narrationDurationMs={narrationDurationMs}
       />
     );
   }
@@ -468,6 +612,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
             color: "white",
             margin: 0,
           }}
+          narrationDurationMs={narrationDurationMs}
         >
           {text}
         </AnimatedP>
@@ -482,11 +627,13 @@ function SplitTextBlock({
   textSize,
   fontSizePx,
   textAlign,
+  narrationDurationMs,
 }: {
   text: string | null;
   textSize: string | null;
   fontSizePx: number | null;
   textAlign: string;
+  narrationDurationMs?: number | null;
 }) {
   if (!text) return null;
   return (
@@ -514,6 +661,7 @@ function SplitTextBlock({
           margin: 0,
           maxWidth: "90%",
         }}
+        narrationDurationMs={narrationDurationMs}
       >
         {text}
       </AnimatedP>
@@ -527,11 +675,13 @@ function TextOnlyLayout({
   textSize,
   fontSizePx,
   textAlign,
+  narrationDurationMs,
 }: {
   text: string | null;
   textSize: string | null;
   fontSizePx: number | null;
   textAlign: string;
+  narrationDurationMs?: number | null;
 }) {
   const fontSize = fontSizePx
     ? Math.round(fontSizePx * FONT_SCALE)
@@ -560,6 +710,7 @@ function TextOnlyLayout({
             margin: 0,
             maxWidth: "90%",
           }}
+          narrationDurationMs={narrationDurationMs}
         >
           {text}
         </AnimatedP>
@@ -579,8 +730,8 @@ function TextOnlyLayout({
  *   - Same text overlay variants (bottom/top/center gradient, frosted glass, split block)
  *
  * Animation effects:
- *   - Image reveal: grayscale-to-color + expanding radial mask (paint-in feel)
- *   - Text reveal: word-by-word fade-in (writing/appearing effect)
+ *   - Image reveal: 3-phase (outline sketch → color fill → stable original)
+ *   - Text reveal: word-by-word fade-in synced to narration duration when available
  *   - Ken Burns: subtle 5% zoom over full scene duration
  *   - Fade in/out via opacity interpolation
  */
@@ -597,6 +748,7 @@ export function SceneComposition({
   motionPreset,
   transitionIn,
   transitionOut,
+  narrationDurationMs,
 }: SceneCompositionProps) {
   useAlbumFont();
 
@@ -639,6 +791,7 @@ export function SceneComposition({
     textAlign: align,
     textX: textX ?? null,
     textY: textY ?? null,
+    narrationDurationMs: narrationDurationMs ?? null,
   };
 
   // ── Layout ──────────────────────────────────────────────────────────────────
@@ -653,6 +806,7 @@ export function SceneComposition({
             textSize={textSize}
             fontSizePx={fontSizePx}
             textAlign={align}
+            narrationDurationMs={narrationDurationMs}
           />
         );
 
@@ -668,6 +822,7 @@ export function SceneComposition({
                 textSize={textSize}
                 fontSizePx={fontSizePx}
                 textAlign={align}
+                narrationDurationMs={narrationDurationMs}
               />
             </div>
           </AbsoluteFill>
@@ -682,6 +837,7 @@ export function SceneComposition({
                 textSize={textSize}
                 fontSizePx={fontSizePx}
                 textAlign={align}
+                narrationDurationMs={narrationDurationMs}
               />
             </div>
             <div style={{ position: "relative", flex: 1, overflow: "hidden" }}>
@@ -702,6 +858,7 @@ export function SceneComposition({
                 textSize={textSize}
                 fontSizePx={fontSizePx}
                 textAlign={align}
+                narrationDurationMs={narrationDurationMs}
               />
             </div>
           </AbsoluteFill>
@@ -716,6 +873,7 @@ export function SceneComposition({
                 textSize={textSize}
                 fontSizePx={fontSizePx}
                 textAlign={align}
+                narrationDurationMs={narrationDurationMs}
               />
             </div>
             <div style={{ position: "relative", width: "55%", overflow: "hidden" }}>
@@ -756,6 +914,7 @@ export function SceneComposition({
                     margin: 0,
                     whiteSpace: "pre-line",
                   }}
+                  narrationDurationMs={narrationDurationMs}
                 >
                   {textContent}
                 </AnimatedP>
