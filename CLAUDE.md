@@ -185,12 +185,35 @@ The image reveals progressively, simulating an illustration being created live. 
 
 **Ken Burns**: subtle 5% zoom over full scene duration (reduced from 8% for premium feel)
 
-**Fade**: 15-frame fade in/out envelope at scene boundaries
+**Fade + storybook slide-in** (entry transition):
+- 15-frame opacity fade-in combined with a 22-frame Y-translate (14px, ≈1.3% of height)
+- Scene content eases up from slightly below while fading in — a "page being turned" feel
+- Exit is a clean fade-out only (no translate on exit)
+- Only active when `transitionIn === "fade"`
+
+**Text parallax** (depth separation):
+- On `ken_burns` scenes, text overlays counter-drift subtly vs the image zoom
+- Bottom/center overlays drift upward (−6px over the scene), top overlays drift downward (+6px)
+- Creates a sense of the text sitting on a separate "glass plate" above the illustration
+- No parallax on `static` motion preset
+
+**Ambient luminance breath**:
+- After image reveal completes (Phase C only), a very slow sinusoidal ±1.5% brightness variation
+- One complete cycle over the full scene duration (period = scene length)
+- Gives the illustration a gentle sense of life — like soft sunlight shifting
+- Applied as a CSS `brightness()` filter; deterministic per-frame
+
+**Cinematic vignette**:
+- Static radial gradient overlay on all full-image layouts (FULL_IMAGE, FULL_IMAGE_TEXT_TOP/CENTER)
+- `rgba(0,0,0,0.18)` at edges fading to transparent at 50% — a soft natural lens falloff
+- Draws attention to the center of the illustration; zIndex 5 (above image, below text)
+- Not animated; single AbsoluteFill div, no performance impact
 
 **Limitations**:
 - No word-level timestamps from TTS yet — text sync uses uniform word distribution across narration duration
 - Image reveal uses CSS filters only; some very dark or very bright illustrations may look less convincing during Phase A sketch effect
-- These are render-time visual effects only — no stored album data is modified. Advanced character animation is future work
+- Advanced character animation (faces, hands, blinking, etc.) is future work
+- All motion is render-time only — no stored album data is ever modified
 
 ### Logs
 Timestamps on every line. Example:

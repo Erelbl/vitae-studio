@@ -104,6 +104,31 @@ const TEXT_REVEAL_END_FRAC = 0.65;
 /** Narration typically starts after a brief visual intro. */
 const NARRATION_START_OFFSET_FRAC = 0.08;
 
+// ── Cinematic polish constants ────────────────────────────────────────────────
+
+/**
+ * Storybook slide-in: scene enters by translating up from slightly below.
+ * Layered with the existing opacity fade for a "page being turned" feel.
+ * Only active when transitionIn === "fade".
+ */
+const SLIDE_IN_FRAMES = 22;  // slightly longer than FADE_FRAMES for smoothness
+const SLIDE_IN_PX = 14;       // 14px on 1080p ≈ 1.3% — imperceptible but present
+
+/**
+ * Ambient luminance breath: very slow ±1.5% brightness oscillation.
+ * Applied after the image reveal completes (Phase C only).
+ * Creates a gentle sense of life — like candlelight or soft sunlight.
+ */
+const BREATH_AMPLITUDE = 0.015;
+
+/**
+ * Text parallax: counter-drift of text overlays vs Ken Burns image zoom.
+ * As the image subtly zooms in, text drifts slightly outward (up for bottom
+ * overlays, down for top overlays). Creates a sense of depth between the
+ * illustration plane and the text plane. Very subtle (6px max on 1080p).
+ */
+const TEXT_PARALLAX_PX = 6;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function resolveAlbumFontSize(
@@ -280,6 +305,9 @@ function ImageFill({
   const { url, crop_x, crop_y, scale } = slot;
   const s = Math.max(1, scale);
 
+  // Ken Burns progress (0→1 over full scene) — needed for breath timing.
+  const kbProgress = durationInFrames > 1 ? frame / (durationInFrames - 1) : 0;
+
   // Overall reveal progress: 0 → 1 over IMAGE_REVEAL_END_FRAC of scene.
   const revealEnd = Math.round(durationInFrames * IMAGE_REVEAL_END_FRAC);
   const revealProgress = interpolate(frame, [0, revealEnd], [0, 1], {
@@ -356,9 +384,19 @@ function ImageFill({
   // well. With default mask-composite (add), the union of both masks is shown,
   // creating an organic, irregular reveal edge.
 
-  // Build filter string (only when not fully revealed).
+  // Ambient breath: ±1.5% brightness oscillation — one full cycle per scene.
+  // Only active in Phase C (stable) so it doesn't fight the reveal filters.
+  // sin-wave gives a smooth, natural feel (like soft sunlight shifting).
+  const breathDelta = isRevealed
+    ? Math.sin(2 * Math.PI * kbProgress) * BREATH_AMPLITUDE
+    : 0;
+  const breathBrightness = 1.0 + breathDelta;
+
+  // Build filter string.
   const filterStr = isRevealed
-    ? undefined
+    ? (Math.abs(breathDelta) > 0.001
+        ? `brightness(${breathBrightness.toFixed(3)})`
+        : undefined)
     : [
         filterContrast !== 1 ? `contrast(${filterContrast.toFixed(2)})` : "",
         filterBrightness !== 1 ? `brightness(${filterBrightness.toFixed(2)})` : "",
@@ -397,6 +435,26 @@ function ImageFill({
   );
 }
 
+// ── Cinematic vignette layer ──────────────────────────────────────────────────
+
+/**
+ * Subtle cinematic vignette — darkens edges to draw focus to the illustration.
+ * Applied above the image, below text overlays (zIndex 5).
+ * Static, no animation. Think of it as a soft "natural lens falloff".
+ */
+function VignetteLayer() {
+  return (
+    <AbsoluteFill
+      style={{
+        pointerEvents: "none",
+        zIndex: 5,
+        background:
+          "radial-gradient(ellipse 85% 85% at 50% 50%, transparent 50%, rgba(0,0,0,0.18) 100%)",
+      }}
+    />
+  );
+}
+
 // ── Text overlay variants ─────────────────────────────────────────────────────
 
 interface OverlayTextProps {
@@ -407,6 +465,12 @@ interface OverlayTextProps {
   textX: number | null;
   textY: number | null;
   narrationDurationMs: number | null;
+  /**
+   * Parallax pixel offset — counter-drift vs Ken Burns zoom.
+   * Positive = shift down, negative = shift up.
+   * Applied to text overlay containers to create subtle image/text depth separation.
+   */
+  parallaxPx: number;
 }
 
 /** When admin has free-positioned the text, render it at those coordinates. */
@@ -417,6 +481,7 @@ function PositionedOverlay({
   textX,
   textY,
   narrationDurationMs,
+  parallaxPx = 0,
 }: {
   text: string;
   fontSize: number;
@@ -424,9 +489,16 @@ function PositionedOverlay({
   textX: number;
   textY: number;
   narrationDurationMs?: number | null;
+  parallaxPx?: number;
 }) {
   return (
-    <AbsoluteFill style={{ zIndex: 10, pointerEvents: "none" }}>
+    <AbsoluteFill
+      style={{
+        zIndex: 10,
+        pointerEvents: "none",
+        transform: parallaxPx !== 0 ? `translateY(${parallaxPx}px)` : undefined,
+      }}
+    >
       <div
         style={{
           position: "absolute",
@@ -459,7 +531,7 @@ function PositionedOverlay({
 }
 
 /** Bottom gradient overlay — default for FULL_IMAGE. */
-function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs }: OverlayTextProps) {
+function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs, parallaxPx }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -472,12 +544,20 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
         textX={textX}
         textY={textY}
         narrationDurationMs={narrationDurationMs}
+        parallaxPx={parallaxPx}
       />
     );
   }
 
+  // Bottom overlay: text drifts upward as KB zooms in (negative = up).
   return (
-    <AbsoluteFill style={{ zIndex: 10, pointerEvents: "none" }}>
+    <AbsoluteFill
+      style={{
+        zIndex: 10,
+        pointerEvents: "none",
+        transform: parallaxPx !== 0 ? `translateY(${parallaxPx}px)` : undefined,
+      }}
+    >
       <div
         style={{
           position: "absolute",
@@ -511,7 +591,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
 }
 
 /** Top gradient overlay — for FULL_IMAGE_TEXT_TOP. */
-function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs }: OverlayTextProps) {
+function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs, parallaxPx }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -524,12 +604,20 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, n
         textX={textX}
         textY={textY}
         narrationDurationMs={narrationDurationMs}
+        parallaxPx={parallaxPx}
       />
     );
   }
 
+  // Top overlay: text drifts downward as KB zooms in (positive = down).
   return (
-    <AbsoluteFill style={{ zIndex: 10, pointerEvents: "none" }}>
+    <AbsoluteFill
+      style={{
+        zIndex: 10,
+        pointerEvents: "none",
+        transform: parallaxPx !== 0 ? `translateY(${-parallaxPx}px)` : undefined,
+      }}
+    >
       <div
         style={{
           position: "absolute",
@@ -563,7 +651,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, n
 }
 
 /** Frosted-glass pill — for FULL_IMAGE_TEXT_CENTER. */
-function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs }: OverlayTextProps) {
+function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs, parallaxPx }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -576,10 +664,12 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
         textX={textX}
         textY={textY}
         narrationDurationMs={narrationDurationMs}
+        parallaxPx={parallaxPx}
       />
     );
   }
 
+  // Center overlay: subtle upward drift (same direction as bottom overlay).
   return (
     <AbsoluteFill
       style={{
@@ -589,6 +679,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
         alignItems: "center",
         justifyContent: "center",
         padding: "80px",
+        transform: parallaxPx !== 0 ? `translateY(${parallaxPx}px)` : undefined,
       }}
     >
       <div
@@ -775,12 +866,36 @@ export function SceneComposition({
 
   const opacity = Math.min(fadeInOpacity, fadeOutOpacity);
 
+  // ── Storybook slide-in ───────────────────────────────────────────────────────
+  // The content translates up from slightly below while fading in.
+  // Layered with the existing opacity fade, this creates a "page being turned"
+  // feel — the scene eases into position rather than simply cross-dissolving.
+  // Only active on transitionIn === "fade"; exit is a clean fade only.
+  const slideInTranslateY =
+    transitionIn === "fade"
+      ? interpolate(frame, [0, SLIDE_IN_FRAMES], [SLIDE_IN_PX, 0], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      : 0;
+
   // ── Ken Burns ───────────────────────────────────────────────────────────────
   const kbProgress = durationInFrames > 1 ? frame / (durationInFrames - 1) : 0;
   const kbScale =
     motionPreset === "ken_burns"
       ? interpolate(kbProgress, [0, 1], [1.0, KB_ZOOM_END])
       : 1;
+
+  // ── Text parallax ────────────────────────────────────────────────────────────
+  // Counter-drift: as the Ken Burns image subtly zooms in, the text overlays
+  // drift slightly in the opposite direction (upward for bottom overlays,
+  // downward for top overlays — handled per-overlay). This creates a convincing
+  // sense that the text sits on a separate "glass plate" above the illustration.
+  // Only computed for ken_burns; static preset gets no parallax.
+  const textParallaxPx =
+    motionPreset === "ken_burns"
+      ? interpolate(kbProgress, [0, 1], [0, -TEXT_PARALLAX_PX])
+      : 0;
 
   const hasText = Boolean(textContent);
   const align = textAlign ?? "start";
@@ -792,6 +907,7 @@ export function SceneComposition({
     textX: textX ?? null,
     textY: textY ?? null,
     narrationDurationMs: narrationDurationMs ?? null,
+    parallaxPx: textParallaxPx,
   };
 
   // ── Layout ──────────────────────────────────────────────────────────────────
@@ -927,6 +1043,7 @@ export function SceneComposition({
         return (
           <>
             <ImageFill slot={slot1} kbScale={kbScale} />
+            <VignetteLayer />
             {hasText && <TextOverlayTop {...overlayProps} />}
           </>
         );
@@ -935,6 +1052,7 @@ export function SceneComposition({
         return (
           <>
             <ImageFill slot={slot1} kbScale={kbScale} />
+            <VignetteLayer />
             {hasText && <TextOverlayCenter {...overlayProps} />}
           </>
         );
@@ -944,6 +1062,7 @@ export function SceneComposition({
         return (
           <>
             <ImageFill slot={slot1} kbScale={kbScale} />
+            <VignetteLayer />
             {hasText && <TextOverlayBottom {...overlayProps} />}
           </>
         );
@@ -957,7 +1076,21 @@ export function SceneComposition({
         opacity,
       }}
     >
-      {renderContent()}
+      {/* Inner content wrapper — carries the storybook slide-in translate.
+          Clipped so the translateY never reveals the dark canvas background. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          transform:
+            slideInTranslateY !== 0
+              ? `translateY(${slideInTranslateY}px)`
+              : undefined,
+        }}
+      >
+        {renderContent()}
+      </div>
     </AbsoluteFill>
   );
 }
