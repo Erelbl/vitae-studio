@@ -270,21 +270,26 @@ The system assembles all rendered scene videos into a single final film with pag
 
 **Source of truth**: The final film is assembled **exclusively** from the pre-rendered scene MP4 clips (`rendered_scene_path`). The assembly NEVER re-renders from page data, still images, or thumbnails. Each scene clip already contains the full Remotion animation (image reveal, text reveal, Ken Burns, transitions, narration-synced timing). The assembly's only job is: download clips → mux audio → stitch with transitions → upload.
 
-### Assembly strategy — pairwise iterative merge
+### Assembly strategy — Remotion FinalFilmComposition
 
-The assembly uses **pairwise iterative xfade merging** — NOT a monolithic ffmpeg filter chain.
+The assembly uses a **Remotion composition** (`FinalFilmComposition`) — NOT ffmpeg xfade stitching.
 
-**Why**: The previous monolithic approach built a single `filter_complex` with N-1 chained xfade filters. Offset errors accumulated across the chain; by clip 8-10 (~45s) the drift caused ffmpeg to read past clip boundaries → black frames / freeze while audio continued.
+**Why**: Previous approaches (monolithic ffmpeg xfade chain, pairwise iterative merge) both failed because ffmpeg xfade requires precise duration-offset math. When actual clip durations diverge from expected values (e.g. back_cover 33s actual vs 5s DB), offsets become invalid → freeze/black-screen/encoder errors. Remotion handles timeline sequencing natively via `<Sequence>` and `<OffthreadVideo>` — no offset calculations, no filter chains.
 
-**How pairwise merge works**:
-1. Start with clip[0] (the first muxed scene)
-2. Merge clip[0] + clip[1] → intermediate_1 (offset = ffprobe duration of clip[0] − 0.8s)
-3. Merge intermediate_1 + clip[2] → intermediate_2 (offset = ffprobe duration of intermediate_1 − 0.8s)
-4. ...repeat until all clips are merged
+**How it works**:
+1. Each scene clip is downloaded and has narration audio muxed in (ffmpeg `-c:v copy`)
+2. Actual duration of each muxed clip is measured via ffprobe → converted to frames
+3. Clips are passed as `ClipEntry[]` props to the `FinalFilm` Remotion composition
+4. `FinalFilmComposition` sequences clips with `<Sequence>` components, overlapping by the transition duration
+5. During overlap, a CSS `clipPath`-based wipeleft transition wipes the outgoing scene left while revealing the incoming scene from the right
+6. Remotion's `renderMedia` produces the final MP4 in one pass
 
-Each merge step is a single, isolated 2-input xfade. The offset is always computed fresh from the ffprobe-measured duration of the left-hand input. No accumulated offsets. No chain. If any clip has a timing issue, the error is contained to that single merge step with a clear diagnostic.
+**Key files**:
+- `src/remotion/FinalFilmComposition.tsx` — the composition
+- `src/remotion/Root.tsx` — registers `FinalFilm` alongside `Scene`
+- `src/services/film/render/assemble-film.ts` — orchestrates download → mux → render → upload
 
-### How it works
+### How it works (end-to-end)
 
 1. Admin clicks "הרכב סרט" in the Film panel → API route validates scenes are ready (rendered or narration_ready with duration), queues any narration_ready scenes for rendering, sets `film_projects.status = 'rendering'`
 2. The render worker renders any queued scenes, then detects projects with status `'rendering'` and all scenes `'rendered'`
@@ -292,10 +297,10 @@ Each merge step is a single, isolated 2-input xfade. The offset is always comput
    - Downloads all **pre-rendered scene MP4s** (the sole visual source) and narration MP3s from storage
    - Validates each clip file is non-empty (fails fast if corrupt)
    - Muxes audio into each scene video with `-c:v copy` (no re-encoding — preserves animations bit-for-bit). Scenes without narration get a silent audio track
-   - Measures actual clip durations via ffprobe
-   - Stitches scenes using pairwise iterative xfade merges (each merge: 2 inputs, 1 wipeleft transition, 1 output)
-   - Each merge offset is computed from the ffprobe-measured duration of the left clip — no accumulated offsets
-   - Extracts thumbnail, measures final duration via ffprobe
+   - Measures actual clip durations via ffprobe → converts to frame counts
+   - Passes clip entries (file:// URLs + frame durations) to Remotion's `FinalFilm` composition
+   - Remotion renders the sequenced timeline with wipeleft transitions in one pass
+   - Extracts thumbnail via ffmpeg, measures final duration
    - Uploads final film to `films/{orderId}/{filmProjectId}/final/film.mp4`
    - Sets `film_projects.status = 'assembled'`
 
@@ -310,21 +315,24 @@ npm run render-worker:watch
 ```
 
 ### Prerequisites
-- **ffmpeg + ffprobe** must be installed (in addition to Chrome for scene rendering)
+- **Chrome** installed (Remotion uses headless Chrome for both scene rendering and film assembly)
+- **ffmpeg + ffprobe** installed (for audio muxing into scene clips + thumbnail extraction)
+- **Remotion bundle** built: `npm run bundle:remotion` (must include the `FinalFilm` composition)
 - Same environment as the render worker (not Vercel serverless)
 
 ### Transition style and breathing pause
-- **wipeleft** xfade transition (0.8s) between scenes — simulates physically turning a page right-to-left (Hebrew reading direction). The current spread wipes away to the left as the next spread appears from the right
-- **Breathing pause**: each scene has 2500ms of silent video after narration ends (500ms codec tail + 2000ms breathing pause, set in `compute-scene-duration.ts`). The xfade transition starts 0.8s before scene end, leaving ~1.7s of visible still spread before the page starts turning
+- **wipeleft** CSS clipPath transition (0.8s / 24 frames) between scenes — simulates physically turning a page right-to-left (Hebrew reading direction). The outgoing spread clips away from the right while the incoming spread reveals from the right
+- **Breathing pause**: each scene has 2500ms of silent video after narration ends (500ms codec tail + 2000ms breathing pause, set in `compute-scene-duration.ts`). The transition overlap starts 0.8s before scene end, leaving ~1.7s of visible still spread before the page starts turning
 - **End-of-spread flow**: narration ends → ~1.7s still spread visible → page turn (0.8s wipeleft) → next spread appears
-- Audio crossfade (acrossfade, tri curve) matches visual transition timing. Narration naturally ends well before scene tail (2500ms padding), so no audio overlap during transitions
+- Narration naturally ends well before scene tail (2500ms padding), so no audio overlap during transitions
 - Single scene films have no transitions
 
 ### Audio handling
 - Scene clips are rendered **silent** by Remotion (video only, no audio track)
 - Narration MP3 is muxed into each scene clip during assembly with `-c:v copy` (video is NOT re-encoded — all animations preserved bit-for-bit)
-- Scenes without narration get a silent audio track via `anullsrc` (required for consistent streams during xfade)
+- Scenes without narration get a silent audio track via `anullsrc` (required for consistent playback in Remotion's OffthreadVideo)
 - When muxing audio, `-shortest` is NOT used. Scene video is always longer than audio by design (2500ms breathing pause padding). Using `-shortest` would truncate the video, cutting off animations and breathing pauses
+- Audio from muxed clips is carried through by Remotion's OffthreadVideo — no separate audio handling needed during assembly render
 
 ### Storage paths
 - Final film: `films/{orderId}/{filmProjectId}/final/film.mp4`
@@ -337,8 +345,8 @@ npm run render-worker:watch
 ### Current limitations
 - No background music mixing yet (architecture ready)
 - No advanced audio normalization across scenes
-- Pairwise merges re-encode at each step (libx264 crf=18). For N scenes there are N-1 merge steps. This is more encode work than the monolithic approach but eliminates the freeze/drift problem completely
-- Preview export mode further re-encodes to 960×540 at the end (set `PREVIEW_EXPORT_MODE = false` for production 1080p)
+- Assembly re-encodes all video through Remotion's renderer (single pass h264). Preview mode renders at 960×540 (set `PREVIEW_EXPORT_MODE = false` for production 1080p)
+- Very long films (40+ scenes) may take several minutes to render through Remotion
 
 ## Environment Variables
 See `.env.example` for all required variables. Key ones:
