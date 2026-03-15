@@ -46,10 +46,15 @@ export interface AssembleFilmResult {
 
 /**
  * Duration of page-turn transition between scenes, in seconds.
+ *
  * At 0.8s the wipeleft is deliberate enough to read as a page-turn
- * without feeling sluggish. The breathing pause comes from the scene's
- * own 1500ms audio padding — narration ends, there's ~0.7s of still
- * album image, then the page turns.
+ * without feeling sluggish.
+ *
+ * Breathing pause timing (see compute-scene-duration.ts for constants):
+ *   Scene duration = audio_ms + AUDIO_TAIL_MS(500) + BREATHING_PAUSE_MS(2000)
+ *   Visible stillness = (500 + 2000) - TRANSITION_DURATION(800) = 1700ms
+ *
+ * Flow: narration ends → ~1.7s still spread → page turn (0.8s) → next spread
  */
 const TRANSITION_DURATION = 0.8;
 
@@ -518,11 +523,16 @@ export async function assembleFilm(
  * Uses ffmpeg's xfade filter for video and acrossfade for audio.
  * Each transition overlaps by TRANSITION_DURATION seconds.
  *
- * Breathing pause between spreads: each scene has 1500ms of silent video
- * padding after the narration audio ends. The transition starts 0.8s before
- * the scene ends, so there's ~0.7s of still album (no audio) before the
- * page starts turning. This creates the natural pacing: narration ends →
- * brief stillness → page turns → next spread appears.
+ * Breathing pause between spreads:
+ *   Each scene has AUDIO_TAIL_MS(500) + BREATHING_PAUSE_MS(2000) = 2500ms
+ *   of silent video after narration audio ends (set in compute-scene-duration).
+ *   The xfade transition starts TRANSITION_DURATION(0.8s) before the scene
+ *   video ends, leaving 2500 - 800 = ~1700ms of visible still spread.
+ *
+ *   Timeline: narration ends → 1.7s still image → page turn (0.8s wipeleft) → next spread
+ *
+ *   This creates a deliberate pacing rhythm where the viewer can absorb each
+ *   illustration before the album "turns the page."
  */
 async function concatenateWithTransitions(
   videoPaths: string[],

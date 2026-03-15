@@ -141,7 +141,7 @@ Scene-level narration audio is generated via `POST /api/admin/orders/[orderId]/f
 5. Upload to `films/{orderId}/{filmProjectId}/scenes/{sceneId}/narration.mp3`
 6. Update `film_scenes`: `audio_path`, `audio_duration_ms`, `duration_ms`, `status = narration_ready`
 
-**Duration update**: `audio_duration_ms` is estimated from MP3 buffer size (~128kbps ≈ 16000 bytes/sec). `duration_ms = max(3000, audio_duration_ms + 1500ms padding)`. This overrides the coarser word-count estimate set during scene building and is passed to Remotion for narration-synced text reveal.
+**Duration update**: `audio_duration_ms` is estimated from MP3 buffer size (~128kbps ≈ 16000 bytes/sec). `duration_ms = max(3000, audio_duration_ms + 500ms tail + 2000ms breathing pause)`. The breathing pause provides ~1.7s of visible still spread before the page-turn transition (2500ms total tail minus 800ms xfade overlap). This overrides the coarser word-count estimate set during scene building and is passed to Remotion for narration-synced text reveal.
 
 **Batch**: pass `{ sceneIds: string[] }` to generate for specific scenes; omit for all. Sequential execution to respect ElevenLabs rate limits. Failures are per-scene (captured in `error_message`, do not stop the batch).
 
@@ -195,7 +195,7 @@ The composition receives `secondPage: ScenePageData | null`. When non-null the s
 **Spread timing coordination**: spreads are treated as one unified scene, not two sequential slides. A `PageTimingCtx` React context provides per-page timing overrides to `AnimatedP` (text reveal) and `ImageFill` (image reveal) without prop threading:
 - **Text reveal**: the narration window is split between pages proportional to word count. Right page text reveals first (Hebrew reading order), then left page text — both flow continuously as one unified narrative
 - **Image reveal**: right page starts immediately, left page starts with an 18% delay (`SPREAD_IMAGE_DELAY_FRAC = 0.18`) — the right page is well into its reveal before the left page begins, creating a distinctly visible right-then-left sequencing
-- **No intra-spread pause**: `SPREAD_BREATH_SECONDS` is 0. The two pages of a spread flow as one continuous scene. Breathing pauses happen BETWEEN scenes (in the assembly), not inside spreads
+- **No intra-spread pause**: the two pages of a spread flow as one continuous scene. Breathing pauses happen BETWEEN scenes (via scene duration padding + assembly xfade), not between the left and right pages of the same spread
 
 **Known limitation**: no word-level timestamps from TTS yet — text sync uses uniform word distribution across narration duration.
 
@@ -216,7 +216,7 @@ The image reveals progressively, simulating an illustration being created live. 
 - Words overlap slightly (0.8 word-units each) for a smooth flowing reveal
 - Whitespace/newlines always visible so the text block never shifts during reveal
 - RTL-safe: inline `<span>`s flow naturally in Hebrew reading order
-- **Narration sync**: when `narrationDurationMs` is available (from `audio_duration_ms` on the scene), text reveal is timed to match narration pacing — words distributed across the narration window starting at 2% into the scene (`NARRATION_START_OFFSET_FRAC = 0.02`, nearly immediate since audio starts at t=0 in the assembled film). Falls back to visual-only timing (15%–65% of scene) when no narration data exists
+- **Narration sync**: when `narrationDurationMs` is available (from `audio_duration_ms` on the scene), text reveal is timed to match narration pacing — words distributed across the **full** narration window starting at a fixed 0.15s offset (`NARRATION_START_OFFSET_SEC = 0.15`, not a scene-duration fraction). For spreads, the narration window is split between right page and left page proportional to word count (right page text first, then left page — matching Hebrew reading order and the narrator's speech order). Falls back to visual-only timing (15%–65% of scene) when no narration data exists
 - Works with all text overlay types (bottom/top/center gradient, split block, text-only)
 
 **Ken Burns**: subtle 5% zoom over full scene duration (reduced from 8% for premium feel)
@@ -276,7 +276,7 @@ The system assembles all rendered scene videos into a single final film with pag
    - Downloads all scene MP4s and narration MP3s from storage
    - Muxes audio into each scene video (no `-shortest` — preserves full video duration so animations complete). Scenes without narration get a silent audio track
    - Measures actual clip durations via ffprobe (prevents xfade offset mismatches)
-   - Concatenates all scenes with **fadeblack** transitions (1.0s) — graceful fade to black between spreads provides both page-turn feel and breathing pause
+   - Concatenates all scenes with **wipeleft** transitions (0.8s) — simulates page turning right-to-left (Hebrew reading direction)
    - Extracts thumbnail, measures final duration via ffprobe
    - Uploads final film to `films/{orderId}/{filmProjectId}/final/film.mp4`
    - Sets `film_projects.status = 'assembled'`
@@ -297,12 +297,13 @@ npm run render-worker:watch
 
 ### Transition style and breathing pause
 - **wipeleft** xfade transition (0.8s) between scenes — simulates physically turning a page right-to-left (Hebrew reading direction). The current spread wipes away to the left as the next spread appears from the right
-- **Breathing pause**: each scene has 1500ms of silent video padding after narration ends. The transition starts 0.8s before scene end, leaving ~0.7s of still album (silent) before the page starts turning. Flow: narration ends → brief stillness → page turns → next spread appears
-- Audio crossfade (acrossfade, tri curve) matches visual transition timing. Narration naturally ends before scene tail (1500ms padding), so no audio overlap during transitions
+- **Breathing pause**: each scene has 2500ms of silent video after narration ends (500ms codec tail + 2000ms breathing pause, set in `compute-scene-duration.ts`). The xfade transition starts 0.8s before scene end, leaving ~1.7s of visible still spread before the page starts turning
+- **End-of-spread flow**: narration ends → ~1.7s still spread visible → page turn (0.8s wipeleft) → next spread appears
+- Audio crossfade (acrossfade, tri curve) matches visual transition timing. Narration naturally ends well before scene tail (2500ms padding), so no audio overlap during transitions
 - Single scene films have no transitions
 
 ### Audio mux — no `-shortest`
-When muxing narration audio into scene video, `-shortest` is NOT used. Scene video is always longer than audio by design (1500ms padding from `computeSceneDuration`). Using `-shortest` would truncate the video to audio length, cutting off fade-out transitions, text reveal tails, and Ken Burns completion. This was the root cause of the "freeze" bug: truncated clips caused xfade offsets to exceed actual clip durations, making ffmpeg hold the last frame indefinitely.
+When muxing narration audio into scene video, `-shortest` is NOT used. Scene video is always longer than audio by design (2500ms padding from `computeSceneDuration`). Using `-shortest` would truncate the video to audio length, cutting off the breathing pause, fade-out transitions, text reveal tails, and Ken Burns completion. This was the root cause of the "freeze" bug: truncated clips caused xfade offsets to exceed actual clip durations, making ffmpeg hold the last frame indefinitely.
 
 ### Duration accuracy
 After muxing each scene, actual clip duration is measured via ffprobe and used for xfade offset calculations. DB `duration_ms` is not trusted for assembly — codec frame alignment and rounding can cause small discrepancies that compound across many scenes.

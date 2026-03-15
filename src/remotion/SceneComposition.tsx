@@ -117,12 +117,15 @@ const TEXT_REVEAL_START_FRAC = 0.15;
 /** Text fully visible at this fraction. */
 const TEXT_REVEAL_END_FRAC = 0.65;
 /**
- * Narration text reveal offset from scene start.
+ * Narration text reveal offset from scene start (in seconds, not a fraction).
+ *
  * Audio is muxed at t=0 in the assembled film, so text must start near-immediately.
- * A tiny 2% offset (~0.15s) avoids the very first frame hard-pop while keeping
- * text synced with the narrator's voice.
+ * A fixed 0.15s offset avoids the very first frame hard-pop while keeping text
+ * synced with the narrator's voice. Using absolute time (not a fraction of scene
+ * duration) keeps the offset consistent regardless of scene length — a 5s scene
+ * and a 10s scene both start text at the same 0.15s after audio begins.
  */
-const NARRATION_START_OFFSET_FRAC = 0.02;
+const NARRATION_START_OFFSET_SEC = 0.15;
 
 // ── Cinematic polish constants ────────────────────────────────────────────────
 
@@ -161,13 +164,9 @@ const TEXT_PARALLAX_PX = 6;
  */
 const SPREAD_IMAGE_DELAY_FRAC = 0.18;
 
-/**
- * Intra-spread text reveal gap (seconds).
- * Set to 0: the spread is one unified scene — both pages reveal continuously.
- * Breathing pauses happen BETWEEN scenes (in the assembly via fadeblack transition),
- * not between the left and right pages of the same spread.
- */
-const SPREAD_BREATH_SECONDS = 0;
+// NOTE: There is no intra-spread breathing pause. The spread is one unified scene.
+// Breathing pauses happen BETWEEN scenes (via scene duration padding + assembly xfade),
+// not between the left and right pages of the same spread.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -230,8 +229,8 @@ function countWords(text: string | null): number {
  *
  * Narration sync:
  *   When `narrationDurationMs` is provided, text reveal is timed to match
- *   narration pacing — words are distributed across the narration window
- *   (starting at NARRATION_START_OFFSET_FRAC into the scene). This creates
+ *   narration pacing — words are distributed across the full narration window
+ *   (starting at NARRATION_START_OFFSET_SEC after scene start). This creates
  *   a "words appear as narrator speaks" effect.
  *
  *   When no narration duration is available, falls back to the visual-only
@@ -266,14 +265,14 @@ function AnimatedP({
     textStart = timingOverride.textStartFrame;
     textEnd = timingOverride.textEndFrame;
   } else if (narrationDurationMs != null && narrationDurationMs > 0) {
-    // Single-page narration-synced: words appear across the narration duration.
-    const narrationStartFrame = Math.round(
-      durationInFrames * NARRATION_START_OFFSET_FRAC
-    );
+    // Single-page narration-synced: words appear across the full narration duration.
+    // The fixed offset (NARRATION_START_OFFSET_SEC) keeps text ~0.15s behind audio,
+    // matching the perceptual "words appear as narrator speaks" feel.
+    const narrationStartFrame = Math.round(NARRATION_START_OFFSET_SEC * fps);
     const narrationFrames = Math.round((narrationDurationMs / 1000) * fps);
     textStart = narrationStartFrame;
     textEnd = Math.min(
-      narrationStartFrame + Math.round(narrationFrames * 0.95),
+      narrationStartFrame + narrationFrames,
       durationInFrames - FADE_FRAMES
     );
   } else {
@@ -1173,51 +1172,70 @@ export function SceneComposition({
 
     // ── Spread timing coordination ────────────────────────────────────────
     //
-    // The spread is one unified scene, not two sequential slides.
+    // The spread is ONE unified scene. Both pages share a single narration
+    // audio track (right page text spoken first, then left page text).
     //
-    // Text reveal: split the narration (or visual) window between pages,
-    //   proportional to word count, with a breathing pause between them.
-    //   Right page text reveals first (Hebrew reading order), then left page.
+    // TIMING MODEL:
     //
-    // Image reveal: right page starts immediately, left page starts with
-    //   a small delay (SPREAD_IMAGE_DELAY_FRAC) so the spread "opens" from
-    //   right to left — like turning a page in a real album.
+    //   ┌── narration window ─────────────────────────────┐
+    //   │  right page segment  │  left page segment       │
+    //   │  (words ∝ word count)│  (words ∝ word count)    │
+    //   ├──────────────────────┼──────────────────────────┤
+    //   0.15s                                   narrationEnd
+    //   offset                                              │
+    //                                                       ▼
+    //   ┌── scene timeline ───────────────────────────────────────────┐
+    //   │ narration │ breathing pause │ xfade │
+    //   │ (audio)   │ (still image)   │ (page turn)│
+    //   └─────────────────────────────────────────────────────────────┘
     //
-    // Both pages share the same Ken Burns and parallax (scene-level effects).
+    // Right page: text reveals during the first segment, image starts immediately
+    // Left page:  text reveals during the second segment, image starts with delay
+    //
+    // After narration ends, the scene continues with a visible still pause
+    // (BREATHING_PAUSE_MS from compute-scene-duration). The assembly's xfade
+    // transition starts near the end, creating the "page turn" feel.
+    //
+    // No intra-spread pause: left page text begins immediately after right page
+    // text finishes. Breathing pauses are BETWEEN scenes, not inside spreads.
 
     const rightWords = countWords(textContent);
     const leftWords = countWords(secondPage.textContent);
     const totalWords = rightWords + leftWords;
-    const breathFrames = Math.round(fps * SPREAD_BREATH_SECONDS);
 
     // Determine the overall text reveal window for this scene.
+    // This window spans the full narration duration, split between pages
+    // proportional to word count (uniform speech rate assumption).
     let windowStart: number;
     let windowEnd: number;
 
     if (narrationDurationMs != null && narrationDurationMs > 0) {
-      // Narration-synced: text reveal follows the audio.
-      windowStart = Math.round(durationInFrames * NARRATION_START_OFFSET_FRAC);
+      // Narration-synced: text reveal spans the full narration audio.
+      // Fixed 0.15s offset keeps text ~0.15s behind audio start.
+      windowStart = Math.round(NARRATION_START_OFFSET_SEC * fps);
       const narrationFrames = Math.round((narrationDurationMs / 1000) * fps);
       windowEnd = Math.min(
-        windowStart + Math.round(narrationFrames * 0.95),
+        windowStart + narrationFrames,
         durationInFrames - FADE_FRAMES
       );
     } else {
-      // Visual-only fallback.
+      // Visual-only fallback (no narration audio available).
       windowStart = Math.round(durationInFrames * TEXT_REVEAL_START_FRAC);
       windowEnd = Math.round(durationInFrames * TEXT_REVEAL_END_FRAC);
     }
 
-    // Split the window between pages with a breathing gap.
-    // If only one page has text, it gets the full window (no gap).
-    const needsBreath = rightWords > 0 && leftWords > 0;
-    const availableFrames = windowEnd - windowStart - (needsBreath ? breathFrames : 0);
+    // Split narration window between right page and left page.
+    // Each page gets time proportional to its word count.
+    // No gap between segments — the spread flows as one continuous narration.
+    const availableFrames = windowEnd - windowStart;
     const rightFrac = totalWords > 0 ? rightWords / totalWords : 0.5;
     const rightFrames = Math.max(1, Math.round(availableFrames * rightFrac));
 
+    // Right page segment: [windowStart, windowStart + rightFrames]
     const rightTextStart = windowStart;
     const rightTextEnd = rightTextStart + rightFrames;
-    const leftTextStart = rightTextEnd + (needsBreath ? breathFrames : 0);
+    // Left page segment: [rightTextEnd, windowEnd]
+    const leftTextStart = rightTextEnd;
     const leftTextEnd = windowEnd;
 
     const rightTiming: PageTimingOverride = {
