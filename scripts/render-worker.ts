@@ -384,7 +384,7 @@ async function runWatch(intervalSec: number): Promise<never> {
         if (idleSince === null) {
           idleSince = Date.now();
         } else if (Date.now() - idleSince >= 60_000) {
-          log("Idle — waiting for queued scenes.");
+          log("Idle — waiting for queued scenes or assembly jobs.");
           idleSince = Date.now(); // reset so it logs again in another minute
         }
       }
@@ -444,7 +444,14 @@ async function main() {
     await runWatch(pollIntervalSec);
   } else {
     const { failed } = await runOnce(specificIds);
-    process.exit(failed > 0 ? 1 : 0);
+    // In general scan mode (no specific scene IDs), also process any assembly jobs.
+    // This means `npm run render-worker` handles both scene rendering and film assembly.
+    let assemblyFailed = 0;
+    if (!specificIds) {
+      const { failed: af } = await runAssembly();
+      assemblyFailed = af;
+    }
+    process.exit(failed > 0 || assemblyFailed > 0 ? 1 : 0);
   }
 }
 
