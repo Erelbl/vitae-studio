@@ -250,58 +250,77 @@ export function FilmPanel({
     (s) => s.status === "queued" || s.status === "rendering"
   ).length;
 
+  const errorSceneCount = scenes.filter((s) => s.status === "error").length;
+  const pendingSceneCount = scenes.filter((s) => s.status === "pending").length;
+  const totalDurationSec = Math.round(
+    scenes.reduce((sum, s) => sum + (s.duration_ms ?? 0), 0) / 1000
+  );
+
   return (
-    <div className="space-y-5">
-      {/* Status row */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span
-          className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${colorClass}`}
-        >
-          {STATUS_LABELS[status]}
-        </span>
-        <Badge variant="outline">
-          {NARRATION_MODE_LABELS[filmProject.narration_mode] ??
-            filmProject.narration_mode}
-        </Badge>
-        <Badge variant="outline">
-          {MOTION_STYLE_LABELS[filmProject.motion_style] ??
-            filmProject.motion_style}
-        </Badge>
+    <div className="space-y-6">
+      {/* ── Project header ─────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${colorClass}`}
+            >
+              {STATUS_LABELS[status]}
+            </span>
+            <Badge variant="outline">
+              {NARRATION_MODE_LABELS[filmProject.narration_mode] ??
+                filmProject.narration_mode}
+            </Badge>
+            <Badge variant="outline">
+              {MOTION_STYLE_LABELS[filmProject.motion_style] ??
+                filmProject.motion_style}
+            </Badge>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isLoading}
+            onClick={() => router.refresh()}
+            title="רענן סטטוס"
+          >
+            רענן ↻
+          </Button>
+        </div>
+
+        {/* Scene stats */}
+        {scenes.length > 0 && (
+          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+            <span>{scenes.length} סצנות</span>
+            <span className="text-green-600">{renderedSceneCount} מרונדרות</span>
+            {queuedSceneCount > 0 && (
+              <span className="text-amber-600">{queuedSceneCount} בתור</span>
+            )}
+            {pendingSceneCount > 0 && (
+              <span>{pendingSceneCount} ממתינות</span>
+            )}
+            {errorSceneCount > 0 && (
+              <span className="text-red-600">{errorSceneCount} שגיאות</span>
+            )}
+            <span>{totalDurationSec} שניות (אומדן)</span>
+            {filmProject.final_duration_seconds != null && (
+              <span className="font-medium">
+                {Math.round(filmProject.final_duration_seconds)} שניות סופי
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Error banner */}
+        {filmProject.error_message && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {filmProject.error_message}
+          </div>
+        )}
       </div>
-
-      {/* Error banner */}
-      {filmProject.error_message && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {filmProject.error_message}
-        </div>
-      )}
-
-      {/* Scene summary */}
-      {scenes.length > 0 && (
-        <div className="text-sm text-muted-foreground">
-          {scenes.length} סצנות
-          {" · "}
-          {renderedSceneCount} מרונדרות
-          {queuedSceneCount > 0 && (
-            <>
-              {" · "}
-              {queuedSceneCount} בתור
-            </>
-          )}
-          {" · "}
-          {Math.round(
-            scenes.reduce((sum, s) => sum + (s.duration_ms ?? 0), 0) / 1000
-          )}{" "}
-          שניות (אומדן)
-          {filmProject.final_duration_seconds != null && (
-            <> · {Math.round(filmProject.final_duration_seconds)} שניות סופי</>
-          )}
-        </div>
-      )}
 
       {/* ── Voice samples section ──────────────────────────────────────────── */}
       {filmProject.narration_mode !== "none" && (
-        <div className="rounded-lg border border-border/60 p-4 space-y-4">
+        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <p className="text-sm font-medium">דגימות קול</p>
@@ -397,94 +416,120 @@ export function FilmPanel({
         />
       )}
 
-      {/* ── Actions ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={isLoading}
-          onClick={handleBuildScenes}
-        >
-          {loadingAction === "build-scenes"
-            ? "בונה סצנות..."
-            : scenes.length > 0
-            ? "בנה סצנות מחדש"
-            : "בנה סצנות"}
-        </Button>
-
-        {scenes.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isLoading || selectedSceneIds.size === 0}
-            onClick={handleRenderSelected}
-          >
-            {loadingAction === "render-selected"
-              ? "מוסיף לתור..."
-              : selectedSceneIds.size > 0
-              ? `הוסף ${selectedSceneIds.size} סצנות לתור רינדור`
-              : "הוסף סצנות לתור רינדור"}
-          </Button>
-        )}
-
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={isLoading || renderedSceneCount === 0}
-          onClick={() => setError("הרכבת סרט עדיין לא מחוברת")}
-        >
-          הרכב סרט
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={isLoading}
-          onClick={() => router.refresh()}
-          title="רענן סטטוס סצנות"
-        >
-          רענן
-        </Button>
-      </div>
-
-      {/* ── Scene list ────────────────────────────────────────────────────── */}
-      {scenes.length > 0 && (
-        <div className="rounded-lg border border-border/60 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium">סצנות ({scenes.length})</p>
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={toggleSelectAll}
-            >
-              {selectedSceneIds.size === scenes.length
-                ? "בטל בחירה"
-                : "בחר הכל"}
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            {scenes.map((scene) => (
-              <SceneRow
-                key={scene.id}
-                scene={scene}
-                thumbnailUrl={sceneThumbnailUrls[scene.id] ?? null}
-                videoUrl={sceneVideoUrls[scene.id] ?? null}
-                isSelected={selectedSceneIds.has(scene.id)}
-                onToggleSelect={() => toggleSceneSelection(scene.id)}
-                onRender={() => handleRenderScene(scene.id)}
-                isRendering={loadingAction === `render-${scene.id}`}
-                disabled={isLoading}
-              />
-            ))}
-          </div>
-
-          <p className="text-xs text-muted-foreground pt-1">
-            סצנות שנוספות לתור ירונדרו ע״י ה-render worker.
-            {" "}הפעלה: <code className="text-[10px] bg-muted px-1 rounded">npm run render-worker</code>
+      {/* ── Scenes section ─────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-border/60 bg-card p-4 space-y-4">
+        {/* Scenes toolbar */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm font-medium">
+            סצנות{scenes.length > 0 ? ` (${scenes.length})` : ""}
           </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isLoading}
+              onClick={handleBuildScenes}
+            >
+              {loadingAction === "build-scenes"
+                ? "בונה סצנות..."
+                : scenes.length > 0
+                ? "בנה מחדש"
+                : "בנה סצנות"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isLoading || renderedSceneCount === 0}
+              onClick={() => setError("הרכבת סרט עדיין לא מחוברת")}
+            >
+              הרכב סרט
+            </Button>
+          </div>
         </div>
-      )}
+
+        {scenes.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">
+            לא נבנו סצנות עדיין. לחץ &ldquo;בנה סצנות&rdquo; כדי להתחיל.
+          </p>
+        ) : (
+          <>
+            {/* Batch selection toolbar */}
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border/40 bg-muted/30 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectedSceneIds.size === scenes.length && scenes.length > 0}
+                    onChange={toggleSelectAll}
+                    disabled={isLoading}
+                    className="h-3.5 w-3.5 cursor-pointer"
+                    ref={(el) => {
+                      if (el) {
+                        el.indeterminate =
+                          selectedSceneIds.size > 0 &&
+                          selectedSceneIds.size < scenes.length;
+                      }
+                    }}
+                  />
+                  <span className="text-muted-foreground">
+                    {selectedSceneIds.size > 0
+                      ? `${selectedSceneIds.size} נבחרו`
+                      : "בחר הכל"}
+                  </span>
+                </label>
+              </div>
+              <Button
+                variant={selectedSceneIds.size > 0 ? "default" : "outline"}
+                size="sm"
+                disabled={isLoading || selectedSceneIds.size === 0}
+                onClick={handleRenderSelected}
+              >
+                {loadingAction === "render-selected"
+                  ? "מוסיף לתור..."
+                  : selectedSceneIds.size > 0
+                  ? `הוסף ${selectedSceneIds.size} לתור רינדור`
+                  : "הוסף לתור רינדור"}
+              </Button>
+            </div>
+
+            {/* Scene column headers */}
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground/70 uppercase tracking-wide px-0.5 border-b border-border/30 pb-1.5">
+              <span className="shrink-0 w-[14px]" />
+              <span className="shrink-0 w-10 text-center">תמונה</span>
+              <span className="shrink-0 w-5 text-center">#</span>
+              <span className="shrink-0 w-20">פריסה</span>
+              <span className="flex-1">טקסט</span>
+              <span className="shrink-0 w-12 text-end">משך</span>
+              <span className="shrink-0 w-16 text-end">סטטוס</span>
+              <span className="shrink-0 w-[52px]" />
+            </div>
+
+            {/* Scene rows */}
+            <div className="divide-y divide-border/30">
+              {scenes.map((scene) => (
+                <SceneRow
+                  key={scene.id}
+                  scene={scene}
+                  thumbnailUrl={sceneThumbnailUrls[scene.id] ?? null}
+                  videoUrl={sceneVideoUrls[scene.id] ?? null}
+                  isSelected={selectedSceneIds.has(scene.id)}
+                  onToggleSelect={() => toggleSceneSelection(scene.id)}
+                  onRender={() => handleRenderScene(scene.id)}
+                  isRendering={loadingAction === `render-${scene.id}`}
+                  disabled={isLoading}
+                />
+              ))}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground/70 pt-1">
+              סצנות בתור ירונדרו ע״י ה-render worker —{" "}
+              <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono">
+                npm run render-worker
+              </code>
+            </p>
+          </>
+        )}
+      </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
@@ -543,7 +588,7 @@ function SceneRow({
     SCENE_STATUS_COLORS[scene.status] ?? "text-muted-foreground";
 
   return (
-    <div className="flex items-center gap-2 text-xs py-1.5 border-b border-border/40 last:border-b-0">
+    <div className="flex items-center gap-2 text-xs py-2 group hover:bg-muted/20 transition-colors px-0.5 rounded-sm">
       {/* Checkbox */}
       <input
         type="checkbox"
@@ -576,12 +621,12 @@ function SceneRow({
       </span>
 
       {/* Spread key */}
-      <span className="text-muted-foreground shrink-0 w-20 truncate font-mono">
+      <span className="text-muted-foreground shrink-0 w-20 truncate font-mono text-[11px]">
         {scene.page_spread_key ?? "—"}
       </span>
 
       {/* Text preview */}
-      <span className="flex-1 truncate" dir="rtl">
+      <span className="flex-1 truncate text-[11px]" dir="rtl">
         {scene.title ? (
           <span className="font-medium">{scene.title} — </span>
         ) : null}
@@ -589,61 +634,62 @@ function SceneRow({
       </span>
 
       {/* Duration */}
-      <span className="text-muted-foreground shrink-0 w-12 text-end">
+      <span className="text-muted-foreground shrink-0 w-12 text-end tabular-nums">
         {durationSec}s
       </span>
 
       {/* Status */}
-      <span className={`shrink-0 w-16 text-end ${statusColor}`}>
+      <span className={`shrink-0 w-16 text-end font-medium ${statusColor}`}>
         {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
       </span>
 
-      {/* Queue button */}
-      <button
-        type="button"
-        onClick={onRender}
-        disabled={
-          disabled ||
-          isRendering ||
-          scene.status === "queued" ||
-          scene.status === "rendering"
-        }
-        className="shrink-0 h-6 px-2 rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        title={
-          scene.status === "queued"
-            ? "בתור לרינדור"
-            : scene.status === "rendering"
-            ? "מרנדר כעת"
-            : scene.status === "rendered"
-            ? "הוסף לתור מחדש"
-            : "הוסף לתור רינדור"
-        }
-      >
-        {isRendering
-          ? "…"
-          : scene.status === "queued"
-          ? "⏳"
-          : scene.status === "rendering"
-          ? "⚙"
-          : scene.status === "rendered"
-          ? "↺"
-          : "▶"}
-      </button>
-
-      {/* Video preview link */}
-      {videoUrl ? (
-        <a
-          href={videoUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 h-6 px-1.5 rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-blue-600"
-          title="צפה בסרטון (נפתח בטאב חדש)"
+      {/* Queue + Video buttons */}
+      <div className="shrink-0 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onRender}
+          disabled={
+            disabled ||
+            isRendering ||
+            scene.status === "queued" ||
+            scene.status === "rendering"
+          }
+          className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title={
+            scene.status === "queued"
+              ? "בתור לרינדור"
+              : scene.status === "rendering"
+              ? "מרנדר כעת"
+              : scene.status === "rendered"
+              ? "הוסף לתור מחדש"
+              : "הוסף לתור רינדור"
+          }
         >
-          ▶
-        </a>
-      ) : (
-        <span className="shrink-0 w-5" />
-      )}
+          {isRendering
+            ? "…"
+            : scene.status === "queued"
+            ? "⏳"
+            : scene.status === "rendering"
+            ? "⚙"
+            : scene.status === "rendered"
+            ? "↺"
+            : "▶"}
+        </button>
+
+        {videoUrl ? (
+          <a
+            href={videoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-blue-600"
+            title="צפה בסרטון (נפתח בטאב חדש)"
+          >
+            ▶
+          </a>
+        ) : (
+          <span className="w-6" />
+        )}
+      </div>
 
       {/* Error hint */}
       {scene.status === "error" && scene.error_message && (
