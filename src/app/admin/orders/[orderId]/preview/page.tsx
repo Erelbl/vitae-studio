@@ -8,7 +8,7 @@ import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEdi
 import { STATUS_LABELS } from "@/lib/state-machine";
 import { Badge } from "@/components/ui/badge";
 import type { OrderStatus } from "@/types/order";
-import type { TextAlign, TextSize } from "@/types/page";
+import type { TextAlign, TextColor, TextSize } from "@/types/page";
 
 const BUCKET = "illustrations";
 
@@ -72,12 +72,13 @@ export default async function AdminOrderPreviewPage({
     text_align: TextAlign | null;
     text_x: number | null;
     text_y: number | null;
+    text_color: TextColor | null;
   };
   const pageStyleMap = new Map<string, PageStyleRow>();
   if (editorPageIds.length > 0) {
     const { data: styleRows } = await adminClient
       .from("pages")
-      .select("id, text_size, font_size_px, text_align, text_x, text_y")
+      .select("id, text_size, font_size_px, text_align, text_x, text_y, text_color")
       .in("id", editorPageIds);
     for (const r of styleRows ?? []) {
       const row = r as Record<string, unknown>;
@@ -87,6 +88,7 @@ export default async function AdminOrderPreviewPage({
         text_align: (row.text_align as TextAlign | null) ?? null,
         text_x: (row.text_x as number | null) ?? null,
         text_y: (row.text_y as number | null) ?? null,
+        text_color: (row.text_color as TextColor | null) ?? null,
       });
     }
   }
@@ -204,6 +206,7 @@ export default async function AdminOrderPreviewPage({
       text_align: style?.text_align ?? null,
       text_x: style?.text_x ?? null,
       text_y: style?.text_y ?? null,
+      text_color: style?.text_color ?? null,
       images: pageImagesMap.get(p.id as string) ?? [],
     };
   });

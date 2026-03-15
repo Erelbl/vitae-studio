@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { LAYOUT_TYPES, TEXT_SIZES } from "@/types/page";
+import { LAYOUT_TYPES, TEXT_COLORS, TEXT_SIZES } from "@/types/page";
 
 export async function PUT(
   req: NextRequest,
@@ -27,6 +27,7 @@ export async function PUT(
     text_align?: string | null;
     text_x?: number | null;
     text_y?: number | null;
+    text_color?: string | null;
   };
   try {
     body = await req.json();
@@ -149,6 +150,20 @@ export async function PUT(
   }
   if (body.text_y !== undefined) {
     updates.text_y = body.text_y;
+  }
+
+  // Handle text color
+  if (body.text_color !== undefined) {
+    if (
+      body.text_color !== null &&
+      !TEXT_COLORS.includes(body.text_color as (typeof TEXT_COLORS)[number])
+    ) {
+      return NextResponse.json(
+        { error: `Invalid text_color: ${body.text_color}` },
+        { status: 400 }
+      );
+    }
+    updates.text_color = body.text_color;
   }
 
   if (Object.keys(updates).length === 0) {

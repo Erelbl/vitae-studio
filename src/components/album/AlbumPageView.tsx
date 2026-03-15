@@ -1,4 +1,4 @@
-import type { LayoutType, PageImageSlot, PreviewPage, TextAlign, TextSize } from "@/types/page";
+import type { LayoutType, PageImageSlot, PreviewPage, TextAlign, TextColor, TextSize } from "@/types/page";
 
 interface AlbumPageViewProps {
   page: PreviewPage;
@@ -149,12 +149,13 @@ function ContentPage({ page }: { page: PreviewPage }) {
   const align = (page.text_align ?? "center") as TextAlign;
   const tx = page.text_x ?? null;
   const ty = page.text_y ?? null;
+  const tc = (page.text_color ?? null) as TextColor | null;
 
   switch (layout) {
     case "TEXT_ONLY":
       return (
         <PageShell className="bg-card border border-border/60">
-          <TextCenter content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
+          <TextCenter content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
           <PageNumber number={page.page_number} />
         </PageShell>
       );
@@ -167,7 +168,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               <ImageFill url={slot1.url} crop={slot1.crop} />
             </div>
             <div className="flex items-center justify-center flex-1 px-5 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -179,7 +180,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
         <PageShell className="bg-card border border-border/60">
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-[40%] px-5 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
             </div>
             <div className="relative flex-1">
               <ImageFill url={slot1.url} crop={slot1.crop} />
@@ -198,7 +199,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               <ImageFill url={slot1.url} crop={slot1.crop} />
             </div>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -210,7 +211,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
         <PageShell className="bg-card border border-border/60">
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
             </div>
             <div className="relative w-[55%]">
               <ImageFill url={slot1.url} crop={slot1.crop} />
@@ -234,11 +235,12 @@ function ContentPage({ page }: { page: PreviewPage }) {
           {/* Optional caption at bottom */}
           {page.text_content && (
             <div
-              className="absolute inset-x-0 bottom-0 bg-black/55 text-white px-3 py-1"
+              className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-1"
               style={{
                 fontFamily: "YardenAlbum, serif",
                 fontSize: resolveTextSize(ts, fspx),
-                textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                color: tc === "black" ? "#1a1a1a" : "white",
+                textShadow: tc === "black" ? "0 1px 2px rgba(255,255,255,0.6)" : "0 1px 2px rgba(0,0,0,0.8)",
                 textAlign: align,
               }}
             >
@@ -261,6 +263,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               textAlign={align}
               textX={tx}
               textY={ty}
+              textColor={tc}
             />
           )}
           <PageNumber number={page.page_number} light />
@@ -279,6 +282,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               textAlign={align}
               textX={tx}
               textY={ty}
+              textColor={tc}
             />
           )}
           <PageNumber number={page.page_number} light />
@@ -298,6 +302,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               textAlign={align}
               textX={tx}
               textY={ty}
+              textColor={tc}
             />
           )}
           <PageNumber number={page.page_number} light />
@@ -444,19 +449,25 @@ function PositionedText({
   text,
   fontSize,
   textAlign,
+  textColor,
 }: {
   text: string;
   fontSize: string;
   textAlign: TextAlign;
+  textColor?: TextColor | null;
 }) {
+  const color = textColor === "black" ? "#1a1a1a" : "white";
+  const shadow = textColor === "black"
+    ? "0 1px 3px rgba(255,255,255,0.9), 0 2px 8px rgba(255,255,255,0.6)"
+    : "0 1px 6px rgba(0,0,0,0.95), 0 2px 12px rgba(0,0,0,0.8)";
   return (
     <p
       style={{
         fontFamily: "YardenAlbum, serif",
         fontSize,
         textAlign,
-        color: "white",
-        textShadow: "0 1px 6px rgba(0,0,0,0.95), 0 2px 12px rgba(0,0,0,0.8)",
+        color,
+        textShadow: shadow,
         whiteSpace: "pre-line",
         lineHeight: 1.6,
         maxWidth: "84%",
@@ -476,12 +487,17 @@ interface OverlayTextProps {
   textAlign?: TextAlign;
   textX?: number | null;
   textY?: number | null;
+  textColor?: TextColor | null;
 }
 
 /** Gradient text overlay at bottom — no opaque background box. */
-function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, textColor }: OverlayTextProps) {
   const fontSize = resolveTextSize(textSize, fontSizePx);
   const align = textAlign ?? "center";
+  const color = textColor === "black" ? "#1a1a1a" : "white";
+  const shadow = textColor === "black"
+    ? "0 1px 2px rgba(255,255,255,0.7)"
+    : "0 1px 4px rgba(0,0,0,0.6)";
 
   if (textX != null && textY != null) {
     return (
@@ -499,7 +515,7 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY }: Ov
             textAlign: align,
           }}
         >
-          <PositionedText text={text} fontSize={fontSize} textAlign={align} />
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} />
         </div>
       </div>
     );
@@ -508,12 +524,13 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY }: Ov
   return (
     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/72 via-black/40 to-transparent px-5 pb-6 pt-16">
       <p
-        className="text-white leading-relaxed whitespace-pre-line"
+        className="leading-relaxed whitespace-pre-line"
         style={{
           fontFamily: "YardenAlbum, serif",
           fontSize,
           textAlign: align,
-          textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+          color,
+          textShadow: shadow,
         }}
       >
         {text}
@@ -523,9 +540,13 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY }: Ov
 }
 
 /** Gradient text overlay at top. */
-function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, textColor }: OverlayTextProps) {
   const fontSize = resolveTextSize(textSize, fontSizePx);
   const align = textAlign ?? "center";
+  const color = textColor === "black" ? "#1a1a1a" : "white";
+  const shadow = textColor === "black"
+    ? "0 1px 2px rgba(255,255,255,0.7)"
+    : "0 1px 4px rgba(0,0,0,0.6)";
 
   if (textX != null && textY != null) {
     return (
@@ -543,7 +564,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
             textAlign: align,
           }}
         >
-          <PositionedText text={text} fontSize={fontSize} textAlign={align} />
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} />
         </div>
       </div>
     );
@@ -552,12 +573,13 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
   return (
     <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/72 via-black/40 to-transparent px-5 pt-6 pb-16">
       <p
-        className="text-white leading-relaxed whitespace-pre-line"
+        className="leading-relaxed whitespace-pre-line"
         style={{
           fontFamily: "YardenAlbum, serif",
           fontSize,
           textAlign: align,
-          textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+          color,
+          textShadow: shadow,
         }}
       >
         {text}
@@ -567,9 +589,13 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
 }
 
 /** Centered text overlay with a frosted-glass pill — elegant for long verses. */
-function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY }: OverlayTextProps) {
+function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, textColor }: OverlayTextProps) {
   const fontSize = resolveTextSize(textSize, fontSizePx);
   const align = textAlign ?? "center";
+  const color = textColor === "black" ? "#1a1a1a" : "white";
+  const shadow = textColor === "black"
+    ? "0 1px 2px rgba(255,255,255,0.7)"
+    : "0 1px 4px rgba(0,0,0,0.8)";
 
   if (textX != null && textY != null) {
     return (
@@ -587,7 +613,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
             textAlign: align,
           }}
         >
-          <PositionedText text={text} fontSize={fontSize} textAlign={align} />
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} />
         </div>
       </div>
     );
@@ -600,11 +626,12 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
         style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", textAlign: align }}
       >
         <p
-          className="text-white leading-relaxed whitespace-pre-line"
+          className="leading-relaxed whitespace-pre-line"
           style={{
             fontFamily: "YardenAlbum, serif",
             fontSize,
-            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+            color,
+            textShadow: shadow,
           }}
         >
           {text}
@@ -620,21 +647,27 @@ function AlbumTextBlock({
   textSize,
   fontSizePx,
   textAlign,
+  textColor,
 }: {
   content: string | null;
   textSize?: TextSize | null;
   fontSizePx?: number | null;
   textAlign?: TextAlign;
+  textColor?: TextColor | null;
 }) {
   if (!content)
     return <PlaceholderText label="הטקסט יווצר בקרוב" />;
+  const color = textColor === "white" ? "white" : textColor === "black" ? "#1a1a1a" : undefined;
   return (
     <p
-      className="text-foreground leading-relaxed whitespace-pre-line"
+      className={color ? "" : "text-foreground"}
       style={{
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(textSize, fontSizePx),
         textAlign: textAlign ?? "center",
+        lineHeight: 1.6,
+        whiteSpace: "pre-line",
+        ...(color ? { color } : {}),
       }}
     >
       {content}
@@ -648,22 +681,28 @@ function TextCenter({
   textSize,
   fontSizePx,
   textAlign,
+  textColor,
 }: {
   content: string | null;
   textSize?: TextSize | null;
   fontSizePx?: number | null;
   textAlign?: TextAlign;
+  textColor?: TextColor | null;
 }) {
+  const color = textColor === "white" ? "white" : textColor === "black" ? "#1a1a1a" : undefined;
   return (
     <div className="flex h-full flex-col items-center justify-center p-10">
       <Ornament className="mb-7" />
       {content ? (
         <p
-          className="leading-loose text-foreground whitespace-pre-line"
+          className={color ? "" : "text-foreground"}
           style={{
             fontFamily: "YardenAlbum, serif",
             fontSize: resolveTextSize(textSize ?? "lg", fontSizePx),
             textAlign: textAlign ?? "center",
+            lineHeight: 1.6,
+            whiteSpace: "pre-line",
+            ...(color ? { color } : {}),
           }}
         >
           {content}

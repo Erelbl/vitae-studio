@@ -40,6 +40,9 @@ export type LayoutType = (typeof LAYOUT_TYPES)[number];
 export const TEXT_SIZES = ["sm", "md", "lg", "xl"] as const;
 export type TextSize = (typeof TEXT_SIZES)[number];
 
+export const TEXT_COLORS = ["white", "black"] as const;
+export type TextColor = (typeof TEXT_COLORS)[number];
+
 export const VERSION_TYPES = ["text", "illustration"] as const;
 export type VersionType = (typeof VERSION_TYPES)[number];
 
@@ -83,6 +86,8 @@ export interface AlbumPage {
   text_x: number | null;
   /** Free-position text Y (0–1). Null = use layout-default position. */
   text_y: number | null;
+  /** Text color for page text. Null = layout default (white for overlays, foreground for splits). */
+  text_color: TextColor | null;
   narration_audio_path: string | null;
   narration_duration_ms: number | null;
   transition_type: string;
@@ -145,6 +150,8 @@ export interface PreviewPage {
   text_x?: number | null;
   /** Free-position text Y (0–1). Null = use layout-default gradient position. */
   text_y?: number | null;
+  /** Text color. Null = layout default (white for overlays, foreground for splits). */
+  text_color?: TextColor | null;
   /**
    * New slot-based image assignments from page_images table.
    * Slot 1 = primary image, Slot 2 = secondary (TWO_IMAGES layout only).

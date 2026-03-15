@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getMockPreviewPages, MOCK_PERSON_NAME } from "./mock-data";
-import type { LayoutType, PageImageSlot, PageType, PreviewData, PreviewPage, TextAlign, TextSize } from "@/types/page";
+import type { LayoutType, PageImageSlot, PageType, PreviewData, PreviewPage, TextAlign, TextColor, TextSize } from "@/types/page";
 
 const ILLUSTRATIONS_BUCKET = "illustrations";
 
@@ -15,7 +15,7 @@ export async function loadPreviewData(
   const { data: pages, error } = await supabase
     .from("pages")
     .select(
-      "id, page_number, page_type, layout_type, text_content, illustration_storage_path, text_size, font_size_px, text_align, text_x, text_y"
+      "id, page_number, page_type, layout_type, text_content, illustration_storage_path, text_size, font_size_px, text_align, text_x, text_y, text_color"
     )
     .eq("order_id", orderId)
     .order("page_number");
@@ -131,6 +131,7 @@ export async function loadPreviewData(
       text_align: ((page as Record<string, unknown>).text_align as TextAlign | null) ?? null,
       text_x: ((page as Record<string, unknown>).text_x as number | null) ?? null,
       text_y: ((page as Record<string, unknown>).text_y as number | null) ?? null,
+      text_color: ((page as Record<string, unknown>).text_color as TextColor | null) ?? null,
       images: pageImagesMap.get(page.id as string) ?? [],
     };
   });

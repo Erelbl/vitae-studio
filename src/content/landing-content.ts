@@ -110,9 +110,9 @@ export const FOUNDER = {
   // Body paragraphs — each string is a separate paragraph in the UI
   paragraphs: [
     "מעצבת רב-תחומית ויוצרת חוויות שמספרות סיפור ונשארות בלב.",
-    "את ״סיפור חיים בחרוזים״ יצרתי לראשונה ליום הולדתה ה-80 של סבתי האהובה מיכל שהייתה על ערש דווי. כשהגשתי לה את האלבום במיטת בית החולים קרה דבר מדהים — הידיעה שהיא משאירה אחריה חותם בעולם נתנה לה כוחות מחודשים לכמה חודשים יפים ונוספים בחיק המשפחה.",
+    "את ״סיפור חיים בחרוזים״ יצרתי לראשונה ליום הולדתה ה-80 של סבתי האהובה מיכל שהייתה על ערש דווי. כשהגשתי לה את האלבום במיטת בית החולים קרה דבר מדהים - הידיעה שהיא משאירה אחריה חותם בעולם נתנה לה כוחות מחודשים לכמה חודשים יפים ונוספים בחיק המשפחה.",
     "החוויה הזו חיזקה את האמונה שלי שלכל אדם יש סיפור שראוי שיסופר ויישמר. אני מודה על הזכות ליצור עבורכם ועבור הדורות הבאים רגעים מלאי משמעות.",
-    "בסטודיו שלי חושבים, מדמיינים, מתכננים, מעצבים ומפיקים תוכן לאירועים (אבל כזה שזוכרים). אז אם אתם רוצים לשמוע עוד — בואו נדבר ואשמח לתת לכם את כל הפרטים.",
+    "בסטודיו שלי חושבים, מדמיינים, מתכננים, מעצבים ומפיקים תוכן לאירועים (אבל כזה שזוכרים). אז אם אתם רוצים לשמוע עוד - בואו נדבר ואשמח לתת לכם את כל הפרטים.",
   ],
 };
 
@@ -140,19 +140,19 @@ export const IMAGE_COMPARISON = {
   title: "מתמונה לאיור",
   subtitle: "גררו כדי לגלות את התמונה המקורית",
   beforeLabel: "תמונה מקורית",
-  afterLabel: "איור בצבעי מים",
+  afterLabel: "איור",
   // Images from /public/examples/ — replace with real examples when ready
   beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית" },
-  afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים" },
+  afterImage: { src: "/examples/illustrated.jpg", alt: "איור" },
   // Additional static comparison pairs
   additionalPairs: [
     {
       before: { src: "/examples/original2.jpg", alt: "תמונה מקורית" },
-      after: { src: "/examples/illustrated2.jpg", alt: "איור בצבעי מים" },
+      after: { src: "/examples/illustrated2.jpg", alt: "איור" },
     },
     {
       before: { src: "/examples/original3.jpg", alt: "תמונה מקורית" },
-      after: { src: "/examples/illustrated3.jpg", alt: "איור בצבעי מים" },
+      after: { src: "/examples/illustrated3.jpg", alt: "איור" },
     },
   ],
 };

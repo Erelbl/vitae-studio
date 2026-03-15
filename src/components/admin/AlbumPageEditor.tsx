@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { LayoutType, PageImageSlot, PreviewPage, TextAlign } from "@/types/page";
+import type { LayoutType, PageImageSlot, PreviewPage, TextAlign, TextColor } from "@/types/page";
 import { LAYOUT_TYPES } from "@/types/page";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -30,6 +30,8 @@ export type EditorPage = {
   text_x: number | null;
   /** Free-position text Y (0–1). Null = layout default. */
   text_y: number | null;
+  /** Text color. Null = layout default (white for overlays, foreground for splits). */
+  text_color: TextColor | null;
   images: Array<{
     slot: number;
     photo_id: string | null;
@@ -119,6 +121,21 @@ type SlotState = {
   crop_y: number;
   scale: number;
 };
+
+/** Convert the local slots map → PageImageSlot[] suitable for an onPageUpdate override. */
+function buildImages(slotsMap: Record<number, SlotState>): PageImageSlot[] {
+  return Object.entries(slotsMap)
+    .filter(([, s]) => s.image_url != null)
+    .map(([slotNum, s]) => ({
+      id: `local-slot-${slotNum}`,
+      slot: Number(slotNum) as 1 | 2,
+      photo_id: s.photo_id,
+      crop_x: s.crop_x,
+      crop_y: s.crop_y,
+      scale: s.scale,
+      image_url: s.image_url!,
+    }));
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -320,6 +337,7 @@ function PageEditorPanel({
     page.font_size_px ?? legacyTextSizeToPx(page.text_size)
   );
   const [textAlign, setTextAlign] = useState<TextAlign>(page.text_align ?? "center");
+  const [textColor, setTextColor] = useState<TextColor>(page.text_color ?? "white");
 
   const [slots, setSlots] = useState<Record<number, SlotState>>(() => {
     const m: Record<number, SlotState> = {};
@@ -397,6 +415,16 @@ function PageEditorPanel({
     });
   }
 
+  async function handleTextColorChange(newColor: TextColor) {
+    setTextColor(newColor);
+    onPageUpdate?.(page.id, { text_color: newColor });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_color: newColor }),
+    });
+  }
+
   async function handleSlotAssign(
     slot: 1 | 2,
     photo: PhotoForEditor | null
@@ -405,10 +433,13 @@ function PageEditorPanel({
     const imageUrl = photo?.illustrationUrl ?? null;
 
     const prevSlots = slots;
-    setSlots((prev) => ({
-      ...prev,
+    const newSlots = {
+      ...slots,
       [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 },
-    }));
+    };
+    setSlots(newSlots);
+    // Push to large preview immediately for instant visual feedback
+    onPageUpdate?.(page.id, { images: buildImages(newSlots) });
 
     const res = await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
@@ -418,6 +449,7 @@ function PageEditorPanel({
 
     if (!res.ok) {
       setSlots(prevSlots);
+      onPageUpdate?.(page.id, { images: buildImages(prevSlots) });
       const body = await res.json().catch(() => ({}));
       alert(body.error ?? "שגיאה בשמירת האיור");
       return;
@@ -432,29 +464,32 @@ function PageEditorPanel({
     crop_y: number,
     scale: number
   ) {
-    setSlots((prev) => ({
-      ...prev,
-      [slot]: { ...(prev[slot] ?? { photo_id: null, image_url: null }), crop_x, crop_y, scale },
-    }));
-
     const currentSlot = slots[slot];
     if (!currentSlot?.image_url) return;
+
+    const newSlots = {
+      ...slots,
+      [slot]: { ...currentSlot, crop_x, crop_y, scale },
+    };
+    setSlots(newSlots);
+    // Push crop/zoom update to large preview immediately — no router.refresh() needed.
+    // (Refreshing would force all signed image URLs to regenerate and re-download.)
+    onPageUpdate?.(page.id, { images: buildImages(newSlots) });
 
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot, crop_x, crop_y, scale }),
     });
-    // Intentionally NOT calling onSaved() here — crop is shown live via onPageUpdate.
-    // Calling router.refresh() on every drag-end forces all signed image URLs to
-    // regenerate, causing the browser to re-download every image on the page.
   }
 
   function handleManualUpload(slot: 1 | 2, imageUrl: string) {
-    setSlots((prev) => ({
-      ...prev,
+    const newSlots = {
+      ...slots,
       [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 },
-    }));
+    };
+    setSlots(newSlots);
+    onPageUpdate?.(page.id, { images: buildImages(newSlots) });
     onSaved();
   }
 
@@ -490,11 +525,27 @@ function PageEditorPanel({
         )}
       </div>
 
-      {/* Font size slider */}
+      {/* Font size slider + numeric input */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-muted-foreground">גודל טקסט</p>
-          <span className="text-xs tabular-nums text-muted-foreground/70">{fontSizePx}px</span>
+          <input
+            type="number"
+            min={10}
+            max={36}
+            step={1}
+            value={fontSizePx}
+            onChange={(e) => {
+              const v = Math.max(10, Math.min(36, Number(e.target.value) || 10));
+              setFontSizePx(v);
+              onPageUpdate?.(page.id, { font_size_px: v });
+            }}
+            onBlur={(e) => {
+              const v = Math.max(10, Math.min(36, Number(e.target.value) || 10));
+              handleFontSizeCommit(v);
+            }}
+            className="w-14 rounded border border-border bg-background px-2 py-0.5 text-xs tabular-nums text-center focus:outline-none focus:ring-1 focus:ring-primary/50"
+          />
         </div>
         <input
           type="range"
@@ -531,6 +582,36 @@ function PageEditorPanel({
                 }`}
               >
                 <span className="text-[10px]">{icon}</span> {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Text color picker */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">צבע טקסט</p>
+        <div className="flex gap-1.5">
+          {(["white", "black"] as TextColor[]).map((color) => {
+            const label = color === "white" ? "לבן" : "שחור";
+            return (
+              <button
+                key={color}
+                onClick={() => handleTextColorChange(color)}
+                className={`flex-1 rounded-md py-1.5 text-xs border transition-colors flex items-center justify-center gap-1.5 ${
+                  textColor === color
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span
+                  className="inline-block w-3 h-3 rounded-full border"
+                  style={{
+                    background: color === "white" ? "#fff" : "#111",
+                    borderColor: color === "white" ? "#ccc" : "#444",
+                  }}
+                />
+                {label}
               </button>
             );
           })}
