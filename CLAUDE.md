@@ -157,6 +157,31 @@ npx tsx scripts/render-worker.ts --poll 60
 - **Periodic stale recovery**: re-runs the stale-scene check every 10 minutes
 - **Graceful shutdown**: responds to SIGTERM (e.g. from a process manager)
 
+### Bundle path
+- Standard bundle path: `.remotion-bundle/` (matches `--out-dir` in `package.json`)
+- Default lookup: `render-scene.ts` checks `REMOTION_BUNDLE_PATH` env var, falls back to `<cwd>/.remotion-bundle/`
+- Validation: checks for `index.html` inside the bundle directory
+- Override: set `REMOTION_BUNDLE_PATH` in `.env.local` to an absolute path
+
+### Scene animation
+Scenes render using the actual album page layout as the visual base — not a generic template. Each of the 9 layout types produces a visually distinct scene.
+
+**Image reveal** (paint-in feel):
+- Grayscale-to-color: image starts 60% desaturated, transitions to full color over the first 55% of the scene
+- Radial mask: expanding soft-edged ellipse reveals the image from center outward (like watercolor spreading)
+- Both effects applied to the same layer as Ken Burns zoom
+
+**Text reveal** (writing effect):
+- Top-to-bottom CSS mask sweep reveals text progressively
+- Starts at 15% of scene duration, fully visible by 65%
+- Works with all text overlay types (bottom/top/center gradient, split block, text-only)
+
+**Ken Burns**: subtle 5% zoom over full scene duration (reduced from 8% for premium feel)
+
+**Fade**: 15-frame fade in/out envelope at scene boundaries
+
+These are render-time visual effects only — no stored album data is modified. Advanced character animation is future work.
+
 ### Logs
 Timestamps on every line. Example:
 ```

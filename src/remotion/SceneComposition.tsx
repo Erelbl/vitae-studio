@@ -1,3 +1,4 @@
+import React from "react";
 import {
   AbsoluteFill,
   Img,
@@ -56,6 +57,24 @@ const TEXT_DARK = "#2A2420";
  */
 const FONT_SCALE = 2.5;
 
+// ── Reveal animation timing ──────────────────────────────────────────────────
+
+/** Image fully revealed (color + mask) at this fraction of scene duration. */
+const IMAGE_REVEAL_END_FRAC = 0.55;
+/** Starting grayscale amount (0 = full color, 1 = fully grey). */
+const INITIAL_GRAYSCALE = 0.6;
+/** Radial mask start size (% of container). Smaller = more hidden at start. */
+const MASK_START_PCT = 55;
+/** Radial mask end size (% of container). >100 ensures full coverage. */
+const MASK_END_PCT = 160;
+/** Ken Burns zoom — subtle, premium feel. */
+const KB_ZOOM_END = 1.05;
+
+/** Text writing/reveal starts at this fraction of scene duration. */
+const TEXT_REVEAL_START_FRAC = 0.15;
+/** Text fully visible at this fraction. */
+const TEXT_REVEAL_END_FRAC = 0.65;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function resolveAlbumFontSize(
@@ -77,10 +96,57 @@ function videoFontPx(textSize?: string | null, fontSizePx?: number | null): numb
   return Math.round(resolveAlbumFontSize(textSize, fontSizePx) * FONT_SCALE);
 }
 
-// ── ImageFill with crop model ─────────────────────────────────────────────────
+// ── AnimatedP — text writing/reveal effect ───────────────────────────────────
 
 /**
- * Full-bleed image with the same crop/zoom model as AlbumPageView.ImageFill.
+ * A `<p>` element whose text is progressively revealed top-to-bottom via a
+ * CSS mask, simulating a "writing" or "appearing" effect.
+ *
+ * Uses Remotion's frame context internally — no prop-drilling needed.
+ * The reveal timing is relative to the overall scene duration.
+ */
+function AnimatedP({
+  children,
+  style,
+}: {
+  children: string;
+  style?: React.CSSProperties;
+}) {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+
+  const textStart = Math.round(durationInFrames * TEXT_REVEAL_START_FRAC);
+  const textEnd = Math.round(durationInFrames * TEXT_REVEAL_END_FRAC);
+
+  const revealPct = interpolate(frame, [textStart, textEnd], [0, 120], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  const isFullyRevealed = revealPct >= 120;
+
+  const maskGradient = isFullyRevealed
+    ? undefined
+    : `linear-gradient(to bottom, black ${revealPct}%, transparent ${revealPct + 15}%)`;
+
+  return (
+    <p
+      style={{
+        ...style,
+        maskImage: maskGradient,
+        WebkitMaskImage: maskGradient,
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+// ── ImageFill with crop model + reveal animation ─────────────────────────────
+
+/**
+ * Full-bleed image with the same crop/zoom model as AlbumPageView.ImageFill,
+ * plus a reveal animation: grayscale-to-color + expanding radial mask.
  *
  *   scale ≥ 1  → image rendered at scale × 100% of container
  *   crop_x 0-1 → horizontal pan (0 = left-edge visible, 1 = right-edge visible)
@@ -88,6 +154,11 @@ function videoFontPx(textSize?: string | null, fontSizePx?: number | null): numb
  *
  * kbScale applies Ken Burns on top of the existing crop scale by wrapping the
  * crop-positioned image in a center-origin CSS transform.
+ *
+ * Reveal animation:
+ *   - Grayscale fades from INITIAL_GRAYSCALE → 0 (full color)
+ *   - Radial mask expands outward from center (paint-in / illustration feel)
+ *   - Both complete at IMAGE_REVEAL_END_FRAC of scene duration
  */
 function ImageFill({
   slot,
@@ -96,6 +167,9 @@ function ImageFill({
   slot: SlotImageData | null;
   kbScale?: number;
 }) {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+
   if (!slot) {
     return (
       <AbsoluteFill
@@ -109,6 +183,21 @@ function ImageFill({
   const { url, crop_x, crop_y, scale } = slot;
   const s = Math.max(1, scale);
 
+  // Reveal animation progress
+  const revealEnd = Math.round(durationInFrames * IMAGE_REVEAL_END_FRAC);
+  const revealProgress = interpolate(frame, [0, revealEnd], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  const grayscale = interpolate(revealProgress, [0, 1], [INITIAL_GRAYSCALE, 0]);
+  const maskSize = interpolate(revealProgress, [0, 1], [MASK_START_PCT, MASK_END_PCT]);
+  const isRevealed = revealProgress >= 1;
+
+  const maskGradient = isRevealed
+    ? undefined
+    : `radial-gradient(ellipse ${maskSize}% ${maskSize}% at 50% 50%, black 55%, transparent 100%)`;
+
   return (
     <AbsoluteFill style={{ overflow: "hidden" }}>
       {/* Ken Burns outer wrapper — scales from centre without shifting crop */}
@@ -118,6 +207,9 @@ function ImageFill({
           inset: 0,
           transform: kbScale !== 1 ? `scale(${kbScale})` : undefined,
           transformOrigin: "center center",
+          filter: grayscale > 0.01 ? `grayscale(${grayscale})` : undefined,
+          maskImage: maskGradient,
+          WebkitMaskImage: maskGradient,
         }}
       >
         <Img
@@ -173,7 +265,7 @@ function PositionedOverlay({
           textAlign: textAlign as React.CSSProperties["textAlign"],
         }}
       >
-        <p
+        <AnimatedP
           style={{
             fontFamily: ALBUM_FONT,
             fontSize,
@@ -187,7 +279,7 @@ function PositionedOverlay({
           }}
         >
           {text}
-        </p>
+        </AnimatedP>
       </div>
     </AbsoluteFill>
   );
@@ -223,7 +315,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
           padding: "120px 80px 56px",
         }}
       >
-        <p
+        <AnimatedP
           style={{
             fontFamily: ALBUM_FONT,
             fontSize,
@@ -237,7 +329,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
           }}
         >
           {text}
-        </p>
+        </AnimatedP>
       </div>
     </AbsoluteFill>
   );
@@ -273,7 +365,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
           padding: "56px 80px 120px",
         }}
       >
-        <p
+        <AnimatedP
           style={{
             fontFamily: ALBUM_FONT,
             fontSize,
@@ -287,7 +379,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY }:
           }}
         >
           {text}
-        </p>
+        </AnimatedP>
       </div>
     </AbsoluteFill>
   );
@@ -330,7 +422,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
           maxWidth: "86%",
         }}
       >
-        <p
+        <AnimatedP
           style={{
             fontFamily: ALBUM_FONT,
             fontSize,
@@ -344,7 +436,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
           }}
         >
           {text}
-        </p>
+        </AnimatedP>
       </div>
     </AbsoluteFill>
   );
@@ -376,7 +468,7 @@ function SplitTextBlock({
         boxSizing: "border-box",
       }}
     >
-      <p
+      <AnimatedP
         style={{
           fontFamily: ALBUM_FONT,
           fontSize: videoFontPx(textSize, fontSizePx),
@@ -390,7 +482,7 @@ function SplitTextBlock({
         }}
       >
         {text}
-      </p>
+      </AnimatedP>
     </div>
   );
 }
@@ -422,7 +514,7 @@ function TextOnlyLayout({
       }}
     >
       {text ? (
-        <p
+        <AnimatedP
           style={{
             fontFamily: ALBUM_FONT,
             fontSize,
@@ -436,7 +528,7 @@ function TextOnlyLayout({
           }}
         >
           {text}
-        </p>
+        </AnimatedP>
       ) : null}
     </AbsoluteFill>
   );
@@ -451,7 +543,11 @@ function TextOnlyLayout({
  *   - Same 9 layout types with identical split ratios
  *   - Same ImageFill crop model (scale / crop_x / crop_y)
  *   - Same text overlay variants (bottom/top/center gradient, frosted glass, split block)
- *   - Ken Burns applied as an extra scale on top of the existing crop
+ *
+ * Animation effects:
+ *   - Image reveal: grayscale-to-color + expanding radial mask (paint-in feel)
+ *   - Text reveal: top-to-bottom mask sweep (writing/appearing effect)
+ *   - Ken Burns: subtle 5% zoom over full scene duration
  *   - Fade in/out via opacity interpolation
  */
 export function SceneComposition({
@@ -497,7 +593,7 @@ export function SceneComposition({
   const kbProgress = durationInFrames > 1 ? frame / (durationInFrames - 1) : 0;
   const kbScale =
     motionPreset === "ken_burns"
-      ? interpolate(kbProgress, [0, 1], [1.0, 1.08])
+      ? interpolate(kbProgress, [0, 1], [1.0, KB_ZOOM_END])
       : 1;
 
   const hasText = Boolean(textContent);
@@ -603,7 +699,7 @@ export function SceneComposition({
             <div style={{ position: "relative", width: "50%", overflow: "hidden" }}>
               <ImageFill slot={slot2} kbScale={kbScale} />
             </div>
-            {hasText && (
+            {hasText && textContent && (
               <div
                 style={{
                   position: "absolute",
@@ -616,7 +712,7 @@ export function SceneComposition({
                   zIndex: 10,
                 }}
               >
-                <p
+                <AnimatedP
                   style={{
                     fontFamily: ALBUM_FONT,
                     fontSize: videoFontPx(textSize, fontSizePx),
@@ -628,7 +724,7 @@ export function SceneComposition({
                   }}
                 >
                   {textContent}
-                </p>
+                </AnimatedP>
               </div>
             )}
           </AbsoluteFill>
