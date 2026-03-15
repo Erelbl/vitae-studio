@@ -96,14 +96,22 @@ function videoFontPx(textSize?: string | null, fontSizePx?: number | null): numb
   return Math.round(resolveAlbumFontSize(textSize, fontSizePx) * FONT_SCALE);
 }
 
-// ── AnimatedP — text writing/reveal effect ───────────────────────────────────
+// ── AnimatedP — word-by-word text reveal ─────────────────────────────────────
 
 /**
- * A `<p>` element whose text is progressively revealed top-to-bottom via a
- * CSS mask, simulating a "writing" or "appearing" effect.
+ * A `<p>` element whose words fade in one by one, simulating a writing effect.
+ *
+ * How it works:
+ *   1. Split text into tokens (words + whitespace) preserving newlines.
+ *   2. Whitespace tokens are always visible so the layout never shifts.
+ *   3. Each word gets an opacity driven by Remotion's frame counter.
+ *   4. Words overlap slightly (each fades over ~0.8 "word-units") for
+ *      a smooth, flowing reveal rather than staccato pops.
+ *
+ * RTL-safe: the `<p>` carries `direction: rtl` from the caller's style,
+ * and inline `<span>`s flow naturally in reading order.
  *
  * Uses Remotion's frame context internally — no prop-drilling needed.
- * The reveal timing is relative to the overall scene duration.
  */
 function AnimatedP({
   children,
@@ -118,26 +126,52 @@ function AnimatedP({
   const textStart = Math.round(durationInFrames * TEXT_REVEAL_START_FRAC);
   const textEnd = Math.round(durationInFrames * TEXT_REVEAL_END_FRAC);
 
-  const revealPct = interpolate(frame, [textStart, textEnd], [0, 120], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
+  // Split into alternating [word, whitespace, word, …] tokens.
+  // The capturing group keeps whitespace in the result array so newlines
+  // are preserved by whiteSpace: pre-line on the <p>.
+  const tokens = children.split(/(\s+)/);
 
-  const isFullyRevealed = revealPct >= 120;
+  // Count real words (non-whitespace tokens) for timing calculation.
+  let wordCount = 0;
+  for (const t of tokens) {
+    if (t.trim().length > 0) wordCount++;
+  }
 
-  const maskGradient = isFullyRevealed
-    ? undefined
-    : `linear-gradient(to bottom, black ${revealPct}%, transparent ${revealPct + 15}%)`;
+  // How many words should be fully visible right now (fractional).
+  const wordsRevealed = interpolate(
+    frame,
+    [textStart, textEnd],
+    [0, wordCount],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+
+  let wordIdx = 0;
 
   return (
-    <p
-      style={{
-        ...style,
-        maskImage: maskGradient,
-        WebkitMaskImage: maskGradient,
-      }}
-    >
-      {children}
+    <p style={style}>
+      {tokens.map((token, i) => {
+        if (!token) return null;
+
+        // Whitespace (spaces / newlines) — always visible, preserves layout.
+        if (token.trim().length === 0) {
+          return <React.Fragment key={i}>{token}</React.Fragment>;
+        }
+
+        // Word token — fade in based on its position in the sequence.
+        const idx = wordIdx++;
+        const wordOpacity = interpolate(
+          wordsRevealed,
+          [idx, idx + 0.8],
+          [0, 1],
+          { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+        );
+
+        return (
+          <span key={i} style={{ opacity: wordOpacity }}>
+            {token}
+          </span>
+        );
+      })}
     </p>
   );
 }
@@ -546,7 +580,7 @@ function TextOnlyLayout({
  *
  * Animation effects:
  *   - Image reveal: grayscale-to-color + expanding radial mask (paint-in feel)
- *   - Text reveal: top-to-bottom mask sweep (writing/appearing effect)
+ *   - Text reveal: word-by-word fade-in (writing/appearing effect)
  *   - Ken Burns: subtle 5% zoom over full scene duration
  *   - Fade in/out via opacity interpolation
  */

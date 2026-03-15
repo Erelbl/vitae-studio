@@ -172,7 +172,10 @@ Scenes render using the actual album page layout as the visual base — not a ge
 - Both effects applied to the same layer as Ken Burns zoom
 
 **Text reveal** (writing effect):
-- Top-to-bottom CSS mask sweep reveals text progressively
+- Word-by-word fade-in: each word's opacity transitions from 0→1 in sequence
+- Words overlap slightly (0.8 word-units each) for a smooth flowing reveal
+- Whitespace/newlines always visible so the text block never shifts during reveal
+- RTL-safe: inline `<span>`s flow naturally in Hebrew reading order
 - Starts at 15% of scene duration, fully visible by 65%
 - Works with all text overlay types (bottom/top/center gradient, split block, text-only)
 
