@@ -44,14 +44,21 @@ export interface AssembleFilmResult {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** Duration of page-turn transition between scenes, in seconds. */
-const TRANSITION_DURATION = 0.6;
+/**
+ * Duration of page-turn transition between scenes, in seconds.
+ * At 1.0s with fadeblack, the outgoing scene fades to black over ~0.5s
+ * and the incoming scene fades from black over ~0.5s, creating a natural
+ * breathing pause between spreads.
+ */
+const TRANSITION_DURATION = 1.0;
 
 /**
  * ffmpeg xfade transition type.
- * "wipeleft" simulates pages turning right-to-left (Hebrew reading direction).
+ * "fadeblack" creates a page-turn feel: the outgoing spread gracefully
+ * fades to black, holds briefly, then the next spread fades in from black.
+ * This provides both a visual page-turn and a breathing pause between scenes.
  */
-const TRANSITION_TYPE = "wipeleft";
+const TRANSITION_TYPE = "fadeblack";
 
 /** Timeout for the full assembly ffmpeg process (10 minutes). */
 const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -162,6 +169,15 @@ async function downloadStorageFile(
 /**
  * Mux narration audio into a scene video.
  * If no audio, adds a silent audio track (required for concat with xfade).
+ *
+ * IMPORTANT: When audio exists, we do NOT use -shortest. The scene video is
+ * always longer than the audio by design (1500ms padding from computeSceneDuration).
+ * Using -shortest would truncate the video to audio length, cutting off:
+ *   - The fade-out transition at the end of the scene
+ *   - The tail of the text reveal animation
+ *   - Ken Burns zoom completion
+ * This was the root cause of the "freeze" bug: truncated clips caused xfade
+ * offsets to exceed actual durations, making ffmpeg hold the last frame.
  */
 async function muxAudioIntoVideo(
   videoPath: string,
@@ -169,7 +185,8 @@ async function muxAudioIntoVideo(
   outputPath: string
 ): Promise<void> {
   if (!audioPath) {
-    // No narration — add silent audio track so all scenes have matching streams
+    // No narration — add silent audio track so all scenes have matching streams.
+    // -shortest is needed here to limit anullsrc (infinite) to the video length.
     await runFfmpeg(
       "ffmpeg",
       [
@@ -184,6 +201,9 @@ async function muxAudioIntoVideo(
       MUX_TIMEOUT_MS
     );
   } else {
+    // With narration audio — do NOT use -shortest.
+    // Video duration > audio duration by design (1500ms padding).
+    // We want the full video so all animations complete naturally.
     await runFfmpeg(
       "ffmpeg",
       [
@@ -194,12 +214,29 @@ async function muxAudioIntoVideo(
         "-c:a", "aac",
         "-map", "0:v:0",
         "-map", "1:a:0",
-        "-shortest",
         outputPath,
       ],
       MUX_TIMEOUT_MS
     );
   }
+}
+
+/**
+ * Measure actual duration of a video/audio file via ffprobe.
+ * Used after muxing to get accurate clip durations for xfade offset calculation.
+ */
+async function getClipDuration(filePath: string): Promise<number> {
+  const { stdout } = await runFfmpeg(
+    "ffprobe",
+    [
+      "-v", "quiet",
+      "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1",
+      filePath,
+    ],
+    30_000
+  );
+  return parseFloat(stdout.trim()) || 0;
 }
 
 // ── Main assembly function ───────────────────────────────────────────────────
@@ -282,8 +319,6 @@ export async function assembleFilm(
       const sceneId = scene.id as string;
       const videoStoragePath = scene.rendered_scene_path as string;
       const audioStoragePath = scene.audio_path as string | null;
-      const durationMs = (scene.duration_ms as number | null) ?? 5000;
-      const durationSec = durationMs / 1000;
 
       console.log(
         `[film-assemble] Downloading scene ${i + 1}/${scenes.length} (${sceneId})`
@@ -307,8 +342,21 @@ export async function assembleFilm(
       );
       await muxAudioIntoVideo(videoLocal, audioLocal, muxedPath);
 
+      // Measure ACTUAL clip duration via ffprobe — critical for correct xfade offsets.
+      // DB duration_ms may differ from actual clip duration due to codec frame alignment
+      // or rounding. Using actual durations prevents the freeze bug.
+      const actualDuration = await getClipDuration(muxedPath);
+      const dbDurationSec = ((scene.duration_ms as number | null) ?? 5000) / 1000;
+
+      if (Math.abs(actualDuration - dbDurationSec) > 0.5) {
+        console.log(
+          `[film-assemble] Scene ${i + 1} duration: actual=${actualDuration.toFixed(2)}s, ` +
+            `db=${dbDurationSec.toFixed(2)}s (using actual)`
+        );
+      }
+
       muxedPaths.push(muxedPath);
-      sceneDurations.push(durationSec);
+      sceneDurations.push(actualDuration);
     }
 
     // 7. Assemble final film

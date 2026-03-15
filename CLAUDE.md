@@ -193,9 +193,9 @@ Single-page scenes (cover, dedication, back_cover, or an odd trailing page) rend
 The composition receives `secondPage: ScenePageData | null`. When non-null the spread path is taken. `render-scene.ts` fetches data for **all** page IDs in `page_ids_json`, not just the first.
 
 **Spread timing coordination**: spreads are treated as one unified scene, not two sequential slides. A `PageTimingCtx` React context provides per-page timing overrides to `AnimatedP` (text reveal) and `ImageFill` (image reveal) without prop threading:
-- **Text reveal**: the narration window is split between pages proportional to word count. Right page text reveals first (Hebrew reading order), then a breathing pause (~0.3s), then left page text. Falls back to visual-only timing when no narration audio exists
+- **Text reveal**: the narration window is split between pages proportional to word count. Right page text reveals first (Hebrew reading order), then left page text — both flow continuously as one unified narrative
 - **Image reveal**: right page starts immediately, left page starts with a 6% delay (`SPREAD_IMAGE_DELAY_FRAC`) so the spread "opens" right-to-left like a real album
-- **Breathing pause**: `SPREAD_BREATH_SECONDS` (0.3s) gap between right-page and left-page text reveal creates a natural paragraph break
+- **No intra-spread pause**: `SPREAD_BREATH_SECONDS` is 0. The two pages of a spread flow as one continuous scene. Breathing pauses happen BETWEEN scenes (in the assembly), not inside spreads
 
 **Known limitation**: no word-level timestamps from TTS yet — text sync uses uniform word distribution across narration duration.
 
@@ -274,8 +274,9 @@ The system assembles all rendered scene videos into a single final film with pag
 2. The render worker detects projects with status `'rendering'` and all scenes `'rendered'`
 3. Worker runs `assembleFilm()` which:
    - Downloads all scene MP4s and narration MP3s from storage
-   - Muxes audio into each scene video (silent audio track for scenes without narration)
-   - Concatenates all scenes with **wipeleft** transitions (pages turn right-to-left, Hebrew reading direction)
+   - Muxes audio into each scene video (no `-shortest` — preserves full video duration so animations complete). Scenes without narration get a silent audio track
+   - Measures actual clip durations via ffprobe (prevents xfade offset mismatches)
+   - Concatenates all scenes with **fadeblack** transitions (1.0s) — graceful fade to black between spreads provides both page-turn feel and breathing pause
    - Extracts thumbnail, measures final duration via ffprobe
    - Uploads final film to `films/{orderId}/{filmProjectId}/final/film.mp4`
    - Sets `film_projects.status = 'assembled'`
@@ -295,9 +296,15 @@ npm run render-worker:watch
 - Same environment as the render worker (not Vercel serverless)
 
 ### Transition style
-- **wipeleft** xfade transition (0.6s) between scenes — reinforces RTL album-flipping feel
-- Audio crossfade (acrossfade) matches visual transition timing
+- **fadeblack** xfade transition (1.0s) between scenes — outgoing spread fades to black (~0.5s), incoming spread fades from black (~0.5s). Creates a natural breathing pause + page-turn feel between spreads
+- Audio crossfade (acrossfade, tri curve) matches visual transition timing. Narration naturally ends before scene tail (1500ms padding), so no audio overlap during transitions
 - Single scene films have no transitions
+
+### Audio mux — no `-shortest`
+When muxing narration audio into scene video, `-shortest` is NOT used. Scene video is always longer than audio by design (1500ms padding from `computeSceneDuration`). Using `-shortest` would truncate the video to audio length, cutting off fade-out transitions, text reveal tails, and Ken Burns completion. This was the root cause of the "freeze" bug: truncated clips caused xfade offsets to exceed actual clip durations, making ffmpeg hold the last frame indefinitely.
+
+### Duration accuracy
+After muxing each scene, actual clip duration is measured via ffprobe and used for xfade offset calculations. DB `duration_ms` is not trusted for assembly — codec frame alignment and rounding can cause small discrepancies that compound across many scenes.
 
 ### Storage paths
 - Final film: `films/{orderId}/{filmProjectId}/final/film.mp4`

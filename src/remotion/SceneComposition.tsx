@@ -152,10 +152,12 @@ const TEXT_PARALLAX_PX = 6;
 const SPREAD_IMAGE_DELAY_FRAC = 0.06;
 
 /**
- * Breathing pause between right-page and left-page text reveal (seconds).
- * Creates a natural paragraph-break feel between the two pages' narration.
+ * Intra-spread text reveal gap (seconds).
+ * Set to 0: the spread is one unified scene — both pages reveal continuously.
+ * Breathing pauses happen BETWEEN scenes (in the assembly via fadeblack transition),
+ * not between the left and right pages of the same spread.
  */
-const SPREAD_BREATH_SECONDS = 0.3;
+const SPREAD_BREATH_SECONDS = 0;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
