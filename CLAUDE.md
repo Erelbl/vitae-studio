@@ -192,7 +192,12 @@ Single-page scenes (cover, dedication, back_cover, or an odd trailing page) rend
 
 The composition receives `secondPage: ScenePageData | null`. When non-null the spread path is taken. `render-scene.ts` fetches data for **all** page IDs in `page_ids_json`, not just the first.
 
-**Known limitation**: in spread mode, narration-synced text timing is not yet split between the two pages — both pages use visual-only timing. Narration sync for spreads is future work.
+**Spread timing coordination**: spreads are treated as one unified scene, not two sequential slides. A `PageTimingCtx` React context provides per-page timing overrides to `AnimatedP` (text reveal) and `ImageFill` (image reveal) without prop threading:
+- **Text reveal**: the narration window is split between pages proportional to word count. Right page text reveals first (Hebrew reading order), then a breathing pause (~0.3s), then left page text. Falls back to visual-only timing when no narration audio exists
+- **Image reveal**: right page starts immediately, left page starts with a 6% delay (`SPREAD_IMAGE_DELAY_FRAC`) so the spread "opens" right-to-left like a real album
+- **Breathing pause**: `SPREAD_BREATH_SECONDS` (0.3s) gap between right-page and left-page text reveal creates a natural paragraph break
+
+**Known limitation**: no word-level timestamps from TTS yet — text sync uses uniform word distribution across narration duration.
 
 ### Scene animation
 Scenes render using the actual album page layout as the visual base — not a generic template. Each of the 9 layout types produces a visually distinct scene.

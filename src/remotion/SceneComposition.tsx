@@ -144,6 +144,19 @@ const BREATH_AMPLITUDE = 0.015;
  */
 const TEXT_PARALLAX_PX = 6;
 
+/**
+ * Spread timing coordination: left page image reveal starts this fraction
+ * of scene duration later than right page. Creates a unified "book opening"
+ * feel — the right page (read first in Hebrew) leads, left page follows.
+ */
+const SPREAD_IMAGE_DELAY_FRAC = 0.06;
+
+/**
+ * Breathing pause between right-page and left-page text reveal (seconds).
+ * Creates a natural paragraph-break feel between the two pages' narration.
+ */
+const SPREAD_BREATH_SECONDS = 0.3;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function resolveAlbumFontSize(
@@ -163,6 +176,32 @@ function resolveAlbumFontSize(
 /** Scale album font size (designed for ~400px preview) to video resolution. */
 function videoFontPx(textSize?: string | null, fontSizePx?: number | null): number {
   return Math.round(resolveAlbumFontSize(textSize, fontSizePx) * FONT_SCALE);
+}
+
+// ── Per-page timing context (spread coordination) ───────────────────────
+
+/**
+ * Timing overrides for a single page within a spread scene.
+ *
+ * Provided via React context so AnimatedP and ImageFill can read them
+ * without prop threading through intermediate overlay components.
+ * When null (single-page scenes), each component uses its own default timing.
+ */
+interface PageTimingOverride {
+  /** Frame at which word-by-word text reveal begins. */
+  textStartFrame: number;
+  /** Frame at which all words should be fully visible. */
+  textEndFrame: number;
+  /** Fraction of scene duration to delay the start of image reveal. 0 = no delay. */
+  imageRevealDelayFrac: number;
+}
+
+const PageTimingCtx = React.createContext<PageTimingOverride | null>(null);
+
+/** Count real words (non-whitespace tokens) in a text string. */
+function countWords(text: string | null): number {
+  if (!text) return 0;
+  return text.split(/\s+/).filter((t) => t.length > 0).length;
 }
 
 // ── AnimatedP — word-by-word text reveal ─────────────────────────────────────
@@ -201,20 +240,26 @@ function AnimatedP({
   const frame = useCurrentFrame();
   const { durationInFrames, fps } = useVideoConfig();
 
-  // Determine text reveal window based on narration timing or fallback.
+  // Check for per-page timing override (set by spread coordinator via context).
+  const timingOverride = React.useContext(PageTimingCtx);
+
+  // Determine text reveal window.
+  // Priority: spread timing override > narration sync > visual-only fallback.
   let textStart: number;
   let textEnd: number;
 
-  if (narrationDurationMs != null && narrationDurationMs > 0) {
-    // Narration-synced: words appear across the narration duration.
-    // Narration starts after a brief visual intro offset.
+  if (timingOverride) {
+    // Spread mode: the coordinator has pre-computed per-page windows
+    // with breathing pauses and word-proportional splits.
+    textStart = timingOverride.textStartFrame;
+    textEnd = timingOverride.textEndFrame;
+  } else if (narrationDurationMs != null && narrationDurationMs > 0) {
+    // Single-page narration-synced: words appear across the narration duration.
     const narrationStartFrame = Math.round(
       durationInFrames * NARRATION_START_OFFSET_FRAC
     );
     const narrationFrames = Math.round((narrationDurationMs / 1000) * fps);
     textStart = narrationStartFrame;
-    // End text reveal slightly before narration ends (95%) so all words
-    // are visible by the time narration finishes.
     textEnd = Math.min(
       narrationStartFrame + Math.round(narrationFrames * 0.95),
       durationInFrames - FADE_FRAMES
@@ -307,6 +352,10 @@ function ImageFill({
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
 
+  // Check for per-page timing override (spread coordination).
+  const timingOverride = React.useContext(PageTimingCtx);
+  const delayFrac = timingOverride?.imageRevealDelayFrac ?? 0;
+
   if (!slot) {
     return (
       <AbsoluteFill
@@ -324,8 +373,11 @@ function ImageFill({
   const kbProgress = durationInFrames > 1 ? frame / (durationInFrames - 1) : 0;
 
   // Overall reveal progress: 0 → 1 over IMAGE_REVEAL_END_FRAC of scene.
-  const revealEnd = Math.round(durationInFrames * IMAGE_REVEAL_END_FRAC);
-  const revealProgress = interpolate(frame, [0, revealEnd], [0, 1], {
+  // In spread mode, the left page's reveal starts later (delayFrac > 0),
+  // creating a staggered "book opening" feel.
+  const revealStart = Math.round(durationInFrames * delayFrac);
+  const revealEnd = revealStart + Math.round(durationInFrames * IMAGE_REVEAL_END_FRAC);
+  const revealProgress = interpolate(frame, [revealStart, revealEnd], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
@@ -1048,7 +1100,7 @@ export function SceneComposition({
   useAlbumFont();
 
   const frame = useCurrentFrame();
-  const { durationInFrames, width, height } = useVideoConfig();
+  const { durationInFrames, fps, width, height } = useVideoConfig();
 
   // ── Fade envelope ───────────────────────────────────────────────────────────
   const fadeInOpacity =
@@ -1107,6 +1159,67 @@ export function SceneComposition({
     const topMargin = Math.floor((height - pageSize) / 2);
     const leftMargin = Math.floor((width - pageSize * 2) / 2);
 
+    // ── Spread timing coordination ────────────────────────────────────────
+    //
+    // The spread is one unified scene, not two sequential slides.
+    //
+    // Text reveal: split the narration (or visual) window between pages,
+    //   proportional to word count, with a breathing pause between them.
+    //   Right page text reveals first (Hebrew reading order), then left page.
+    //
+    // Image reveal: right page starts immediately, left page starts with
+    //   a small delay (SPREAD_IMAGE_DELAY_FRAC) so the spread "opens" from
+    //   right to left — like turning a page in a real album.
+    //
+    // Both pages share the same Ken Burns and parallax (scene-level effects).
+
+    const rightWords = countWords(textContent);
+    const leftWords = countWords(secondPage.textContent);
+    const totalWords = rightWords + leftWords;
+    const breathFrames = Math.round(fps * SPREAD_BREATH_SECONDS);
+
+    // Determine the overall text reveal window for this scene.
+    let windowStart: number;
+    let windowEnd: number;
+
+    if (narrationDurationMs != null && narrationDurationMs > 0) {
+      // Narration-synced: text reveal follows the audio.
+      windowStart = Math.round(durationInFrames * NARRATION_START_OFFSET_FRAC);
+      const narrationFrames = Math.round((narrationDurationMs / 1000) * fps);
+      windowEnd = Math.min(
+        windowStart + Math.round(narrationFrames * 0.95),
+        durationInFrames - FADE_FRAMES
+      );
+    } else {
+      // Visual-only fallback.
+      windowStart = Math.round(durationInFrames * TEXT_REVEAL_START_FRAC);
+      windowEnd = Math.round(durationInFrames * TEXT_REVEAL_END_FRAC);
+    }
+
+    // Split the window between pages with a breathing gap.
+    // If only one page has text, it gets the full window (no gap).
+    const needsBreath = rightWords > 0 && leftWords > 0;
+    const availableFrames = windowEnd - windowStart - (needsBreath ? breathFrames : 0);
+    const rightFrac = totalWords > 0 ? rightWords / totalWords : 0.5;
+    const rightFrames = Math.max(1, Math.round(availableFrames * rightFrac));
+
+    const rightTextStart = windowStart;
+    const rightTextEnd = rightTextStart + rightFrames;
+    const leftTextStart = rightTextEnd + (needsBreath ? breathFrames : 0);
+    const leftTextEnd = windowEnd;
+
+    const rightTiming: PageTimingOverride = {
+      textStartFrame: rightTextStart,
+      textEndFrame: rightTextEnd,
+      imageRevealDelayFrac: 0,
+    };
+
+    const leftTiming: PageTimingOverride = {
+      textStartFrame: leftTextStart,
+      textEndFrame: leftTextEnd,
+      imageRevealDelayFrac: SPREAD_IMAGE_DELAY_FRAC,
+    };
+
     return (
       <AbsoluteFill style={{ backgroundColor: "#1a1a1a", opacity }}>
         <div
@@ -1128,12 +1241,14 @@ export function SceneComposition({
               overflow: "hidden",
             }}
           >
-            <PageContent
-              {...secondPage}
-              kbScale={kbScale}
-              narrationDurationMs={null}
-              textParallaxPx={textParallaxPx}
-            />
+            <PageTimingCtx.Provider value={leftTiming}>
+              <PageContent
+                {...secondPage}
+                kbScale={kbScale}
+                narrationDurationMs={narrationDurationMs}
+                textParallaxPx={textParallaxPx}
+              />
+            </PageTimingCtx.Provider>
           </div>
 
           {/* Right page (primary page — lower page number, read first in Hebrew) */}
@@ -1147,20 +1262,22 @@ export function SceneComposition({
               overflow: "hidden",
             }}
           >
-            <PageContent
-              slot1={slot1}
-              slot2={slot2}
-              layoutType={layoutType}
-              textContent={textContent}
-              textSize={textSize}
-              fontSizePx={fontSizePx}
-              textAlign={textAlign}
-              textX={textX}
-              textY={textY}
-              kbScale={kbScale}
-              narrationDurationMs={null}
-              textParallaxPx={textParallaxPx}
-            />
+            <PageTimingCtx.Provider value={rightTiming}>
+              <PageContent
+                slot1={slot1}
+                slot2={slot2}
+                layoutType={layoutType}
+                textContent={textContent}
+                textSize={textSize}
+                fontSizePx={fontSizePx}
+                textAlign={textAlign}
+                textX={textX}
+                textY={textY}
+                kbScale={kbScale}
+                narrationDurationMs={narrationDurationMs}
+                textParallaxPx={textParallaxPx}
+              />
+            </PageTimingCtx.Provider>
           </div>
 
           {/* Spine shadow between pages — mimics open-book binding */}
