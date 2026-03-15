@@ -66,6 +66,27 @@ const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1000;
 /** Timeout for individual scene mux operations (2 minutes). */
 const MUX_TIMEOUT_MS = 2 * 60 * 1000;
 
+// ── ⚠️  TEMPORARY PREVIEW EXPORT MODE ────────────────────────────────────────
+//
+// The Supabase free plan has a storage cap that blocks large final film uploads.
+// When PREVIEW_EXPORT_MODE is true, the assembled film is re-encoded at
+// lower resolution and bitrate — enough to test transitions, spreads,
+// animations, timing, and narration, but not production quality.
+//
+// TO RESTORE HIGH-QUALITY EXPORT: set PREVIEW_EXPORT_MODE to false.
+// Production settings: crf=20, preset=medium, 1920×1080, 192k audio.
+//
+const PREVIEW_EXPORT_MODE = true;
+
+/** Preview: scale to 960×540 (quarter the pixels of 1080p). */
+const PREVIEW_SCALE = "960:540";
+/** Preview: CRF 30 — visibly lower quality than CRF 20 but ~3–5× smaller files. */
+const PREVIEW_CRF = "30";
+/** Preview: fast preset — less compression efficiency, faster encode. */
+const PREVIEW_PRESET = "fast";
+/** Preview: audio at 96 kbps (vs 192 kbps production). */
+const PREVIEW_AUDIO_BITRATE = "96k";
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -363,11 +384,35 @@ export async function assembleFilm(
     const finalVideoLocal = path.join(tmpDir, "final.mp4");
 
     if (muxedPaths.length === 1) {
-      // Single scene — just copy, no transitions needed
-      await fs.copyFile(muxedPaths[0], finalVideoLocal);
-      console.log(
-        "[film-assemble] Single scene — copied directly (no transitions)"
-      );
+      if (PREVIEW_EXPORT_MODE) {
+        // In preview mode, re-encode to apply the same scale + CRF reduction
+        // even for single-scene films (no xfade filter path to piggyback on).
+        console.log(
+          `[film-assemble] ⚠️  Preview export mode — re-encoding single scene at ${PREVIEW_SCALE} CRF ${PREVIEW_CRF}`
+        );
+        await runFfmpeg(
+          "ffmpeg",
+          [
+            "-y",
+            "-i", muxedPaths[0],
+            "-vf", `scale=${PREVIEW_SCALE}`,
+            "-c:v", "libx264",
+            "-preset", PREVIEW_PRESET,
+            "-crf", PREVIEW_CRF,
+            "-c:a", "aac",
+            "-b:a", PREVIEW_AUDIO_BITRATE,
+            "-movflags", "+faststart",
+            finalVideoLocal,
+          ],
+          MUX_TIMEOUT_MS
+        );
+      } else {
+        // Production: single scene — just copy, no transitions or re-encoding needed
+        await fs.copyFile(muxedPaths[0], finalVideoLocal);
+        console.log(
+          "[film-assemble] Single scene — copied directly (no transitions)"
+        );
+      }
     } else {
       // Multiple scenes — concatenate with page-turn transitions
       await concatenateWithTransitions(
@@ -518,22 +563,36 @@ async function concatenateWithTransitions(
     );
   }
 
+  // In preview mode, add a scale filter before the final output stream.
+  // This halves both dimensions (1920×1080 → 960×540), reducing file size ~4×.
+  let videoOutLabel = "[vout]";
+  if (PREVIEW_EXPORT_MODE) {
+    videoFilters.push(`[vout]scale=${PREVIEW_SCALE}[vscaled]`);
+    videoOutLabel = "[vscaled]";
+  }
+
   const filterComplex = [...videoFilters, ...audioFilters].join(";");
 
   const args = [
     "-y",
     ...inputs,
     "-filter_complex", filterComplex,
-    "-map", "[vout]",
+    "-map", videoOutLabel,
     "-map", "[aout]",
     "-c:v", "libx264",
-    "-preset", "medium",
-    "-crf", "20",
+    "-preset", PREVIEW_EXPORT_MODE ? PREVIEW_PRESET : "medium",
+    "-crf", PREVIEW_EXPORT_MODE ? PREVIEW_CRF : "20",
     "-c:a", "aac",
-    "-b:a", "192k",
+    "-b:a", PREVIEW_EXPORT_MODE ? PREVIEW_AUDIO_BITRATE : "192k",
     "-movflags", "+faststart",
     outputPath,
   ];
+
+  if (PREVIEW_EXPORT_MODE) {
+    console.log(
+      `[film-assemble] ⚠️  Preview export mode — ${PREVIEW_SCALE} @ CRF ${PREVIEW_CRF} (set PREVIEW_EXPORT_MODE=false for production quality)`
+    );
+  }
 
   console.log(
     `[film-assemble] Running ffmpeg: ${n} inputs, ${n - 1} ${TRANSITION_TYPE} transitions (${td}s each)`
