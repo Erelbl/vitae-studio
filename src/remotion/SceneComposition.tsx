@@ -49,6 +49,19 @@ export interface SceneCompositionProps {
   textX: number | null;
   /** Custom text Y position (0–1 fraction) — free-position admin override. */
   textY: number | null;
+  /**
+   * Page type for special scene rendering.
+   * "cover" → renders the album cover with person name and branding.
+   * "back_cover" → renders the album back cover with Vitae Studio branding.
+   * "dedication" → renders the dedication page layout.
+   * null → standard content page (dispatches on layoutType).
+   */
+  pageType: string | null;
+  /**
+   * Person name from the order — shown prominently on the cover page.
+   * Only used when pageType === "cover".
+   */
+  personName: string | null;
   /** Second page data for spread scenes (2-page open-book view). Null for single-page scenes. */
   secondPage: ScenePageData | null;
   /** Ken Burns zoom or static. */
@@ -888,22 +901,400 @@ function TextOnlyLayout({
   );
 }
 
+// ── Special page layouts (cover, dedication, back_cover) ─────────────────────
+//
+// These mirror the AlbumPageView.tsx CoverPage / DedicationPage / BackCoverPage
+// components but use inline styles instead of Tailwind (not available in the
+// Remotion bundle context).
+//
+// Primary accent colour: #8F9F7A (olive green, matches design system)
+// Ornament: ✦ unicode character (matches AlbumPageView.Ornament)
+
+const PRIMARY = "#8F9F7A";
+
+/** Cover layout — album title page. Matches AlbumPageView.CoverPage. */
+function CoverLayout({
+  slot1,
+  textContent,
+  personName,
+  kbScale,
+  narrationDurationMs,
+  textParallaxPx,
+}: {
+  slot1: SlotImageData | null;
+  textContent: string | null;
+  personName: string | null;
+  kbScale: number;
+  narrationDurationMs: number | null;
+  textParallaxPx: number;
+}) {
+  const hasImage = slot1 !== null;
+
+  return (
+    <>
+      {/* Background image with Ken Burns + 3-phase reveal */}
+      <ImageFill slot={slot1} kbScale={kbScale} />
+      {/* Gradient overlay — diagonal, matches album preview */}
+      <AbsoluteFill
+        style={{
+          background:
+            "linear-gradient(135deg, rgba(143,159,122,0.10) 0%, transparent 50%, rgba(143,159,122,0.18) 100%)",
+          pointerEvents: "none",
+        }}
+      />
+      {/* Content box — centred */}
+      <AbsoluteFill
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+          zIndex: 10,
+          transform: textParallaxPx !== 0 ? `translateY(${textParallaxPx}px)` : undefined,
+        }}
+      >
+        <div
+          style={{
+            border: "2px solid rgba(143,159,122,0.22)",
+            borderRadius: 24,
+            padding: "64px 72px",
+            width: "80%",
+            background: hasImage ? "rgba(0,0,0,0.40)" : "transparent",
+            backdropFilter: hasImage ? "blur(2px)" : undefined,
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
+          {/* Top ornament */}
+          <div
+            style={{
+              color: hasImage ? "rgba(255,255,255,0.55)" : "rgba(143,159,122,0.55)",
+              fontSize: 54,
+              marginBottom: 36,
+              lineHeight: 1,
+            }}
+          >
+            ✦
+          </div>
+          {/* "סיפור חיים בחרוזים" subtitle */}
+          <p
+            style={{
+              color: hasImage ? "rgba(255,255,255,0.72)" : "rgba(143,159,122,0.72)",
+              fontSize: 26,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              fontFamily: "sans-serif",
+              margin: 0,
+              marginBottom: 28,
+            }}
+          >
+            סיפור חיים בחרוזים
+          </p>
+          {/* Person name (large heading) */}
+          {personName && (
+            <h1
+              style={{
+                color: hasImage ? "white" : TEXT_DARK,
+                fontSize: 88,
+                fontWeight: 600,
+                lineHeight: 1.2,
+                margin: 0,
+                fontFamily: "sans-serif",
+              }}
+            >
+              {personName}
+            </h1>
+          )}
+          {/* Optional subtitle text (page.text_content) with word-by-word reveal */}
+          {textContent && (
+            <AnimatedP
+              style={{
+                fontFamily: ALBUM_FONT,
+                fontSize: 44,
+                color: hasImage ? "rgba(255,255,255,0.82)" : "#5A5240",
+                fontStyle: "italic",
+                lineHeight: 1.6,
+                direction: "rtl",
+                whiteSpace: "pre-line",
+                marginTop: 36,
+              }}
+              narrationDurationMs={narrationDurationMs}
+            >
+              {textContent}
+            </AnimatedP>
+          )}
+          {/* Bottom ornament */}
+          <div
+            style={{
+              color: hasImage ? "rgba(255,255,255,0.55)" : "rgba(143,159,122,0.55)",
+              fontSize: 40,
+              marginTop: 36,
+              lineHeight: 1,
+            }}
+          >
+            ✦
+          </div>
+        </div>
+      </AbsoluteFill>
+    </>
+  );
+}
+
+/** Dedication layout — centred poem with ornaments. Matches AlbumPageView.DedicationPage. */
+function DedicationLayout({
+  slot1,
+  textContent,
+  kbScale,
+  narrationDurationMs,
+  textParallaxPx,
+}: {
+  slot1: SlotImageData | null;
+  textContent: string | null;
+  kbScale: number;
+  narrationDurationMs: number | null;
+  textParallaxPx: number;
+}) {
+  const hasImage = slot1 !== null;
+
+  return (
+    <>
+      <ImageFill slot={slot1} kbScale={kbScale} />
+      <AbsoluteFill
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+          zIndex: 10,
+          padding: "80px",
+          textAlign: "center",
+          transform: textParallaxPx !== 0 ? `translateY(${textParallaxPx}px)` : undefined,
+        }}
+      >
+        {/* Top ornament */}
+        <div
+          style={{
+            color: hasImage ? "rgba(255,255,255,0.55)" : "rgba(143,159,122,0.55)",
+            fontSize: 50,
+            marginBottom: 48,
+            lineHeight: 1,
+          }}
+        >
+          ✦
+        </div>
+        {/* Dedication text */}
+        {textContent ? (
+          <AnimatedP
+            style={{
+              fontFamily: ALBUM_FONT,
+              fontSize: 45,
+              color: hasImage ? "rgba(255,255,255,0.92)" : "#5A5240",
+              fontStyle: "italic",
+              lineHeight: 1.75,
+              direction: "rtl",
+              whiteSpace: "pre-line",
+              maxWidth: "80%",
+              textShadow: hasImage ? "0 1px 3px rgba(0,0,0,0.7)" : undefined,
+            }}
+            narrationDurationMs={narrationDurationMs}
+          >
+            {textContent}
+          </AnimatedP>
+        ) : null}
+        {/* Bottom ornament */}
+        <div
+          style={{
+            color: hasImage ? "rgba(255,255,255,0.55)" : "rgba(143,159,122,0.55)",
+            fontSize: 50,
+            marginTop: 48,
+            lineHeight: 1,
+          }}
+        >
+          ✦
+        </div>
+      </AbsoluteFill>
+    </>
+  );
+}
+
+/** Back cover layout — Vitae Studio branding. Matches AlbumPageView.BackCoverPage. */
+function BackCoverLayout({
+  slot1,
+  textContent,
+  kbScale,
+  narrationDurationMs,
+  textParallaxPx,
+}: {
+  slot1: SlotImageData | null;
+  textContent: string | null;
+  kbScale: number;
+  narrationDurationMs: number | null;
+  textParallaxPx: number;
+}) {
+  const hasImage = slot1 !== null;
+
+  return (
+    <>
+      {/* Background image */}
+      <ImageFill slot={slot1} kbScale={kbScale} />
+      {/* Gradient — reversed diagonal vs cover */}
+      <AbsoluteFill
+        style={{
+          background:
+            "linear-gradient(225deg, rgba(143,159,122,0.10) 0%, transparent 50%, rgba(143,159,122,0.16) 100%)",
+          pointerEvents: "none",
+        }}
+      />
+      {/* Content */}
+      <AbsoluteFill
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+          zIndex: 10,
+          padding: "80px",
+          textAlign: "center",
+          transform: textParallaxPx !== 0 ? `translateY(${textParallaxPx}px)` : undefined,
+        }}
+      >
+        {/* Top ornament */}
+        <div
+          style={{
+            color: hasImage ? "rgba(255,255,255,0.55)" : "rgba(143,159,122,0.55)",
+            fontSize: 54,
+            marginBottom: 44,
+            lineHeight: 1,
+          }}
+        >
+          ✦
+        </div>
+        {/* Optional back-cover poem / closing text */}
+        {textContent && (
+          <AnimatedP
+            style={{
+              fontFamily: ALBUM_FONT,
+              fontSize: 45,
+              color: hasImage ? "rgba(255,255,255,0.90)" : "#5A5240",
+              fontStyle: "italic",
+              lineHeight: 1.7,
+              direction: "rtl",
+              whiteSpace: "pre-line",
+              maxWidth: "80%",
+              textShadow: hasImage ? "0 1px 3px rgba(0,0,0,0.7)" : undefined,
+            }}
+            narrationDurationMs={narrationDurationMs}
+          >
+            {textContent}
+          </AnimatedP>
+        )}
+        {/* Vitae Studio branding — matches AlbumPageView.BackCoverPage */}
+        <div
+          style={{
+            marginTop: 56,
+            paddingTop: 36,
+            borderTop: "1px solid rgba(143,159,122,0.22)",
+            width: 200,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 36,
+              fontWeight: 600,
+              letterSpacing: "0.05em",
+              color: hasImage ? "white" : PRIMARY,
+              fontFamily: "sans-serif",
+            }}
+          >
+            Vitae Studio
+          </span>
+          <span
+            style={{
+              fontSize: 22,
+              color: hasImage ? "rgba(255,255,255,0.70)" : "rgba(143,159,122,0.70)",
+              fontFamily: "sans-serif",
+            }}
+          >
+            סיפור חיים בחרוזים
+          </span>
+        </div>
+      </AbsoluteFill>
+    </>
+  );
+}
+
 // ── PageContent — renders a single page's layout ─────────────────────────────
 
 interface PageContentProps extends ScenePageData {
   kbScale: number;
   narrationDurationMs: number | null;
   textParallaxPx: number;
+  /** Page type — "cover", "back_cover", "dedication", or null for content pages. */
+  pageType?: string | null;
+  /** Person name from the order — used only for cover pages. */
+  personName?: string | null;
 }
 
 /**
- * Renders a single album page's content based on its layout type.
- * Used by both single-page scenes and each page within a spread scene.
+ * Renders a single album page's content.
+ *
+ * For special page types (cover, back_cover, dedication) it uses dedicated
+ * layout components that match AlbumPageView.tsx exactly.
+ *
+ * For content pages it dispatches on layoutType (9 layout variants).
  */
 function PageContent({
   slot1, slot2, layoutType: lt, textContent, textSize, fontSizePx,
   textAlign: ta, textX, textY, kbScale, narrationDurationMs, textParallaxPx,
+  pageType, personName,
 }: PageContentProps) {
+  // ── Special page types — dedicated layouts ─────────────────────────────
+  if (pageType === "cover") {
+    return (
+      <CoverLayout
+        slot1={slot1}
+        textContent={textContent}
+        personName={personName ?? null}
+        kbScale={kbScale}
+        narrationDurationMs={narrationDurationMs}
+        textParallaxPx={textParallaxPx}
+      />
+    );
+  }
+
+  if (pageType === "dedication") {
+    return (
+      <DedicationLayout
+        slot1={slot1}
+        textContent={textContent}
+        kbScale={kbScale}
+        narrationDurationMs={narrationDurationMs}
+        textParallaxPx={textParallaxPx}
+      />
+    );
+  }
+
+  if (pageType === "back_cover") {
+    return (
+      <BackCoverLayout
+        slot1={slot1}
+        textContent={textContent}
+        kbScale={kbScale}
+        narrationDurationMs={narrationDurationMs}
+        textParallaxPx={textParallaxPx}
+      />
+    );
+  }
+
+  // ── Content pages — dispatch on layoutType ─────────────────────────────
   const hasText = Boolean(textContent);
   const align = ta ?? "start";
   const overlayProps: OverlayTextProps = {
@@ -1107,6 +1498,8 @@ export function SceneComposition({
   transitionIn,
   transitionOut,
   narrationDurationMs,
+  pageType,
+  personName,
 }: SceneCompositionProps) {
   useAlbumFont();
 
@@ -1370,6 +1763,8 @@ export function SceneComposition({
             kbScale={kbScale}
             narrationDurationMs={narrationDurationMs}
             textParallaxPx={textParallaxPx}
+            pageType={pageType}
+            personName={personName}
           />
         </div>
       </div>

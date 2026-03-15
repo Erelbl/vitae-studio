@@ -36,6 +36,8 @@ export function Root() {
         transitionIn: "fade",
         transitionOut: "fade",
         narrationDurationMs: null,
+        pageType: null,
+        personName: null,
       } satisfies SceneCompositionProps}
     />
   );

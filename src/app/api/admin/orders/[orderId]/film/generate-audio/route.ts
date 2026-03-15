@@ -122,7 +122,20 @@ export async function POST(
     const narrationText = (scene.narration_text as string | null)?.trim();
 
     if (!narrationText) {
-      // Scene has no text — skip silently
+      // No narration text (cover, back_cover, dedication without text).
+      // Mark the scene as narration_ready so it can proceed to rendering.
+      // The assembly will add a silent audio track when no audio_path is set.
+      // Duration was already set during scene building (DEFAULT_DURATION_MS).
+      await adminClient
+        .from("film_scenes")
+        .update({
+          status: "narration_ready",
+          audio_path: null,
+          audio_duration_ms: null,
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", scene.id);
       skipped++;
       continue;
     }

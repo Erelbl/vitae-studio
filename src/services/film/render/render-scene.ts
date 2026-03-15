@@ -299,6 +299,25 @@ export async function renderScene(
       allPagesData.length >= 2 ? allPagesData[1] : null;
     const isSpread = secondPage !== null;
 
+    // ── Derive page type from spread key ─────────────────────────────────
+    // Cover, dedication, and back_cover scenes have page_spread_key matching
+    // their page_type. Content spreads have keys like "spread_01".
+    const spreadKey = (sceneRow.page_spread_key as string | null) ?? "";
+    const specialTypes = new Set(["cover", "dedication", "back_cover"]);
+    const pageType: string | null = specialTypes.has(spreadKey) ? spreadKey : null;
+
+    // ── Fetch person name (for cover rendering) ───────────────────────────
+    // person_name is a direct column on the orders table.
+    let personName: string | null = null;
+    if (pageType === "cover") {
+      const { data: orderRow } = await adminClient
+        .from("orders")
+        .select("person_name")
+        .eq("id", orderId)
+        .single();
+      personName = (orderRow?.person_name as string | null) ?? null;
+    }
+
     // Build render hash
     const renderHash = buildRenderHash({
       narrationText: sceneRow.narration_text as string | null,
@@ -335,6 +354,11 @@ export async function renderScene(
         (sceneRow.transition_out as string) === "fade" ? "fade" : ("none" as const),
       narrationDurationMs:
         (sceneRow.audio_duration_ms as number | null) ?? null,
+      // Special page type — triggers cover/dedication/back_cover layouts.
+      // Null for standard content spreads.
+      pageType,
+      // Person name fetched from orders table — shown on cover page.
+      personName,
     };
 
     // Resolve pre-built bundle path
