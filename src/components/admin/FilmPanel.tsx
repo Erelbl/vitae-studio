@@ -325,6 +325,19 @@ export function FilmPanel({
     (s) => s.status === "queued" || s.status === "rendering"
   ).length;
 
+  // A scene is "assembly-ready" if:
+  //   - status === "rendered"  → already has a rendered MP4 video
+  //   - status === "narration_ready" with duration_ms set → has audio (or is a
+  //     silent-audio scene like cover/back_cover) and will be queued for rendering
+  //     when the admin clicks "Assemble Film". The render worker processes those
+  //     queued scenes first, then auto-assembles once all are rendered.
+  // Scenes in any other status (pending, queued, rendering, error) are NOT ready.
+  const assemblyReadyCount = scenes.filter(
+    (s) =>
+      s.status === "rendered" ||
+      (s.status === "narration_ready" && s.duration_ms != null)
+  ).length;
+
   const errorSceneCount = scenes.filter((s) => s.status === "error").length;
   const pendingSceneCount = scenes.filter((s) => s.status === "pending").length;
   const audioReadyCount = scenes.filter((s) => s.audio_path != null).length;
@@ -517,18 +530,18 @@ export function FilmPanel({
                 : "בנה סצנות"}
             </Button>
             <Button
-              variant={renderedSceneCount === scenes.length && scenes.length > 0 ? "default" : "outline"}
+              variant={assemblyReadyCount === scenes.length && scenes.length > 0 ? "default" : "outline"}
               size="sm"
               disabled={
                 isLoading ||
-                renderedSceneCount === 0 ||
-                renderedSceneCount < scenes.length ||
+                assemblyReadyCount === 0 ||
+                assemblyReadyCount < scenes.length ||
                 status === "rendering"
               }
               onClick={handleAssembleFilm}
               title={
-                renderedSceneCount < scenes.length
-                  ? `${scenes.length - renderedSceneCount} סצנות עדיין לא מרונדרות`
+                assemblyReadyCount < scenes.length
+                  ? `${scenes.length - assemblyReadyCount} סצנות עדיין לא מוכנות (ממתינות לשמע או בשגיאה)`
                   : status === "rendering"
                   ? "הרכבה בתהליך..."
                   : undefined

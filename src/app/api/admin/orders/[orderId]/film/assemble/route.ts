@@ -10,8 +10,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * are rendered, and runs the assembly (ffmpeg-based concatenation with transitions).
  *
  * Prerequisites:
- * - All scenes must be in "rendered" status
  * - Film project must exist
+ * - All scenes must be either "rendered" (have an MP4) OR "narration_ready" with
+ *   duration_ms set (have audio or are silent — e.g. cover/back_cover).
+ *   narration_ready scenes are automatically queued for rendering; the render
+ *   worker renders them first, then auto-assembles once all are done.
  *
  * This does NOT run assembly inline — it only queues it. The render worker
  * (scripts/render-worker.ts) performs the actual assembly outside Vercel.
@@ -53,9 +56,10 @@ export async function POST(
   }
 
   // Fetch all scenes for validation
+  // Include duration_ms so we can verify narration_ready scenes have a duration set.
   const { data: scenes, error: scenesErr } = await adminClient
     .from("film_scenes")
-    .select("id, scene_order, status, rendered_scene_path")
+    .select("id, scene_order, status, rendered_scene_path, duration_ms")
     .eq("film_project_id", filmProject.id as string)
     .order("scene_order");
 
@@ -73,28 +77,68 @@ export async function POST(
     );
   }
 
-  // Validate all scenes are rendered
-  const notRendered = scenes.filter((s) => s.status !== "rendered");
-  if (notRendered.length > 0) {
-    const details = notRendered
+  // A scene is assembly-ready if:
+  //   - status === "rendered"         → already has an MP4; can be assembled directly
+  //   - status === "narration_ready"  → has audio (or is a silent-audio scene like
+  //     cover/back_cover) and a confirmed duration. We queue it for rendering now;
+  //     the render worker will render it first, then auto-assemble once all are done.
+  //
+  // Any other status (pending, queued, rendering, error) means the scene is not yet
+  // ready and assembly must be blocked.
+  const notReady = scenes.filter(
+    (s) =>
+      s.status !== "rendered" &&
+      !(s.status === "narration_ready" && s.duration_ms != null)
+  );
+  if (notReady.length > 0) {
+    const details = notReady
       .map((s) => `#${s.scene_order} (${s.status})`)
       .join(", ");
     return NextResponse.json(
       {
-        error: `Cannot assemble: ${notRendered.length} scene(s) not rendered: ${details}`,
+        error: `Cannot assemble: ${notReady.length} scene(s) not ready: ${details}`,
       },
       { status: 400 }
     );
   }
 
-  const missingVideo = scenes.filter((s) => !s.rendered_scene_path);
+  // Sanity-check: already-rendered scenes must have a video path.
+  const missingVideo = scenes.filter(
+    (s) => s.status === "rendered" && !s.rendered_scene_path
+  );
   if (missingVideo.length > 0) {
     return NextResponse.json(
       {
-        error: `Cannot assemble: ${missingVideo.length} scene(s) missing rendered video.`,
+        error: `Cannot assemble: ${missingVideo.length} rendered scene(s) missing video path.`,
       },
       { status: 400 }
     );
+  }
+
+  // Queue narration_ready scenes for rendering.
+  // The render worker will render them first; once all scenes are "rendered" it
+  // will detect this project (status = "rendering") and run the assembly automatically.
+  const toQueue = scenes.filter(
+    (s) => s.status === "narration_ready" && s.duration_ms != null
+  );
+  if (toQueue.length > 0) {
+    const { error: queueErr } = await adminClient
+      .from("film_scenes")
+      .update({
+        status: "queued",
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      })
+      .in(
+        "id",
+        toQueue.map((s) => s.id as string)
+      );
+    if (queueErr) {
+      return NextResponse.json(
+        { error: `Failed to queue scenes for rendering: ${queueErr.message}` },
+        { status: 500 }
+      );
+    }
   }
 
   // Queue assembly by setting project status to "rendering"
@@ -118,7 +162,10 @@ export async function POST(
     queued: true,
     filmProjectId: filmProject.id,
     sceneCount: scenes.length,
+    queuedForRender: toQueue.length,
     message:
-      "Film assembly queued. The render worker will assemble the final film.",
+      toQueue.length > 0
+        ? `Film assembly queued. ${toQueue.length} scene(s) queued for rendering; the render worker will render them then assemble the final film.`
+        : "Film assembly queued. The render worker will assemble the final film.",
   });
 }
