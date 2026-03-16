@@ -32,15 +32,14 @@ function getConfig() {
     );
   }
 
+  // CardCom does not have a separate sandbox URL — test mode is controlled by
+  // using a test terminal number. CARDCOM_TEST_MODE=true only affects the
+  // Operation field (1 = charge in both modes; use for reference only).
   return {
     terminalNumber,
     apiName,
     apiPassword,
-    // Use test endpoint when CARDCOM_TEST_MODE=true
-    baseUrl:
-      process.env.CARDCOM_TEST_MODE === "true"
-        ? "https://secure.cardcom.solutions/Interface"
-        : "https://secure.cardcom.solutions/Interface",
+    baseUrl: "https://secure.cardcom.solutions/Interface",
   };
 }
 
@@ -122,22 +121,25 @@ export async function createPaymentPage(
 ): Promise<CreatePaymentPageResult> {
   const config = getConfig();
 
-  // Build form data for CardCom LowProfile API
+  // Build form data for CardCom LowProfile API (Name-To-Value format)
+  // Field names must match CardCom docs exactly.
   const body = new URLSearchParams();
+  body.append("Operation", "1");                        // 1 = charge
   body.append("TerminalNumber", config.terminalNumber);
-  body.append("ApiName", config.apiName);
+  body.append("UserName", config.apiName);              // CardCom calls this UserName, not ApiName
   body.append("ApiPassword", config.apiPassword);
-  body.append("ReturnValue", params.returnValue);
-  body.append("Amount", params.totalIls.toString());
-  body.append("SuccessRedirectUrl", params.successUrl);
-  body.append("FailedRedirectUrl", params.failureUrl);
-  body.append("WebHookUrl", params.webhookUrl);
+  body.append("APILevel", "10");
+  body.append("SumToBill", params.totalIls.toString()); // CardCom field is SumToBill, not Amount
+  body.append("CoinId", "1");                           // 1 = ILS (CoinId, not CoinID)
+  body.append("Language", "he");
   body.append("ProductName", params.productName);
   body.append("NumOfPayments", (params.numOfPayments ?? 1).toString());
-  body.append("CoinID", "1"); // 1 = ILS
-  body.append("Language", "he");
+  body.append("ReturnValue", params.returnValue);
+  body.append("SuccessRedirectUrl", params.successUrl);
+  body.append("ErrorRedirectUrl", params.failureUrl);   // CardCom field is ErrorRedirectUrl, not FailedRedirectUrl
+  body.append("IndicatorUrl", params.webhookUrl);       // CardCom field is IndicatorUrl, not WebHookUrl
 
-  // Invoice settings — create tax invoice (type 1)
+  // Invoice settings — create tax invoice
   body.append("InvoiceHead.CustName", params.customerName ?? "");
   body.append("InvoiceHead.SendByEmail", "true");
   body.append("InvoiceHead.Email", params.customerEmail ?? "");
@@ -153,11 +155,14 @@ export async function createPaymentPage(
 
   // Log outgoing request shape (no secrets)
   console.log("[cardcom] POST →", url, {
-    Amount: params.totalIls,
+    Operation: "1",
+    APILevel: "10",
+    SumToBill: params.totalIls,
+    CoinId: "1",
     ReturnValue: params.returnValue,
     SuccessRedirectUrl: params.successUrl,
-    FailedRedirectUrl: params.failureUrl,
-    WebHookUrl: params.webhookUrl,
+    ErrorRedirectUrl: params.failureUrl,
+    IndicatorUrl: params.webhookUrl,
     ProductName: params.productName,
   });
 
@@ -274,11 +279,19 @@ export function parseWebhookPayload(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse CardCom's form-encoded or key=value response into an object. */
+/**
+ * Parse CardCom's LowProfile response into a key→value map.
+ *
+ * CardCom returns semicolon-delimited key=value pairs, e.g.:
+ *   ResponseCode=0;LowProfileCode=abc123;Description=OK
+ *
+ * Falls back to JSON (some CardCom endpoints) and then URL-encoded as a
+ * last resort.
+ */
 function parseCardComResponse(text: string): Record<string, string> {
   const result: Record<string, string> = {};
 
-  // Try JSON first (some endpoints return JSON)
+  // Try JSON first
   try {
     const json = JSON.parse(text);
     if (typeof json === "object" && json !== null) {
@@ -288,10 +301,24 @@ function parseCardComResponse(text: string): Record<string, string> {
       return result;
     }
   } catch {
-    // Not JSON, try URL-encoded
+    // Not JSON, continue
   }
 
-  // Parse as URL-encoded
+  // Primary format: semicolon-delimited key=value (CardCom LowProfile standard)
+  if (text.includes(";") || (text.includes("=") && !text.includes("&"))) {
+    const parts = text.split(";");
+    for (const part of parts) {
+      const eq = part.indexOf("=");
+      if (eq !== -1) {
+        const k = part.slice(0, eq).trim();
+        const v = part.slice(eq + 1).trim();
+        if (k) result[k] = v;
+      }
+    }
+    if (Object.keys(result).length > 0) return result;
+  }
+
+  // Last resort: URL-encoded (&-delimited)
   const params = new URLSearchParams(text);
   for (const [k, v] of params.entries()) {
     result[k] = v;
