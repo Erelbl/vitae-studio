@@ -3,6 +3,7 @@ export const ORDER_STATUSES = [
   "questionnaire_complete",
   "enrichment_complete",
   "ready_for_payment",
+  "payment_pending",
   "photos_uploaded",
   "generating_text",
   "text_ready",
@@ -77,4 +78,32 @@ export interface PricingSnapshot {
   total_price_ils: number;
   currency: "ILS";
   computed_at: string;
+}
+
+export const PAYMENT_ATTEMPT_STATUSES = [
+  "pending",
+  "redirected",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+export type PaymentAttemptStatus = (typeof PAYMENT_ATTEMPT_STATUSES)[number];
+
+export interface PaymentAttempt {
+  id: string;
+  order_id: string;
+  created_at: string;
+  updated_at: string;
+  provider: string;
+  provider_page_code: string | null;
+  provider_transaction_id: string | null;
+  provider_approval_number: string | null;
+  return_value: string;
+  status: PaymentAttemptStatus;
+  amount_ils: number;
+  currency: string;
+  invoice_number: string | null;
+  invoice_type: string | null;
+  error_message: string | null;
+  paid_at: string | null;
 }

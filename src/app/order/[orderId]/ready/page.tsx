@@ -2,7 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
 import { redirect } from "next/navigation";
 import type { PricingSnapshot } from "@/types/order";
-import { Check, Clock } from "lucide-react";
+import { PayButton } from "@/components/checkout/PayButton";
+import { Shield } from "lucide-react";
 
 export default async function ReadyForPaymentPage({
   params,
@@ -19,7 +20,7 @@ export default async function ReadyForPaymentPage({
   const { data: order } = await supabase
     .from("orders")
     .select(
-      "id, status, delivery_mode, album_size, pricing_snapshot, person_name, access_token, access_token_expires_at"
+      "id, status, payment_status, delivery_mode, album_size, pricing_snapshot, person_name, access_token, access_token_expires_at"
     )
     .eq("id", orderId)
     .single();
@@ -46,7 +47,13 @@ export default async function ReadyForPaymentPage({
     );
   }
 
-  if (order.status !== "ready_for_payment") {
+  // If already paid, redirect to photos
+  if (order.payment_status === "paid") {
+    redirect(`/order/${orderId}/photos?token=${token}`);
+  }
+
+  // Allow payment from ready_for_payment or payment_pending (retry)
+  if (order.status !== "ready_for_payment" && order.status !== "payment_pending") {
     redirect(`/order/${orderId}/review?token=${token}`);
   }
 
@@ -60,24 +67,18 @@ export default async function ReadyForPaymentPage({
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10 sm:max-w-2xl sm:px-8">
-      <div className="text-center">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-green-50 px-5 py-2 text-sm font-medium text-green-700">
-          <Check size={18} />
-          ההזמנה שלך מוכנה
-        </div>
-
+      <div className="mb-8 text-center">
         <h1 className="text-2xl font-semibold sm:text-3xl">
           הסיפור של {(order.person_name as string) || "היקר/ה שלכם"} בדרך
         </h1>
-
-        <p className="mt-3 text-base text-muted-foreground">
-          פרטי ההזמנה נשמרו בהצלחה. בקרוב תוכלו להמשיך לתשלום מאובטח.
+        <p className="mt-2 text-base text-muted-foreground">
+          בדקו את פרטי ההזמנה והמשיכו לתשלום
         </p>
       </div>
 
       {/* Order summary card */}
       {pricing && (
-        <div className="mt-8 rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
+        <div className="mb-6 rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-medium">פרטי ההזמנה</h2>
           <div className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
@@ -98,7 +99,7 @@ export default async function ReadyForPaymentPage({
             )}
             <div className="border-t border-border/40 pt-3">
               <div className="flex items-center justify-between">
-                <span className="text-lg font-semibold">סה״כ</span>
+                <span className="text-lg font-semibold">סה״כ לתשלום</span>
                 <span className="text-2xl font-bold text-primary">
                   ₪{pricing.total_price_ils.toLocaleString()}
                 </span>
@@ -108,15 +109,13 @@ export default async function ReadyForPaymentPage({
         </div>
       )}
 
-      {/* Pending payment notice */}
-      <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        <Clock size={18} className="mt-0.5 shrink-0" />
-        <div>
-          <p className="font-medium">ממתין לתשלום</p>
-          <p className="mt-0.5 text-amber-700">
-            שלב התשלום יפתח בקרוב. נשלח אליכם עדכון כשהכל מוכן.
-          </p>
-        </div>
+      {/* Pay button */}
+      <PayButton orderId={orderId} token={token} />
+
+      {/* Security note */}
+      <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground/70">
+        <Shield size={14} />
+        <span>התשלום מאובטח ומעובד באמצעות CardCom</span>
       </div>
     </div>
   );
