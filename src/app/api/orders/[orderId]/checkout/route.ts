@@ -51,15 +51,20 @@ export async function POST(
     );
   }
 
-  // Validate state transition
+  // Validate state transition — skip if already in a payment state (idempotent re-submit)
   const currentStatus = auth.order.status as OrderStatus;
-  try {
-    assertTransition(currentStatus, "ready_for_payment");
-  } catch {
-    return NextResponse.json(
-      { error: `Cannot checkout from status: ${currentStatus}` },
-      { status: 409 }
-    );
+  const alreadyInPaymentFlow =
+    currentStatus === "ready_for_payment" || currentStatus === "payment_pending";
+
+  if (!alreadyInPaymentFlow) {
+    try {
+      assertTransition(currentStatus, "ready_for_payment");
+    } catch {
+      return NextResponse.json(
+        { error: `Cannot checkout from status: ${currentStatus}` },
+        { status: 409 }
+      );
+    }
   }
 
   // Build update payload
