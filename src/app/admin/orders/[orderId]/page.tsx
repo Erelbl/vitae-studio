@@ -30,11 +30,15 @@ function fmtDate(ts: string) {
 }
 
 const ALBUM_TYPE_LABELS: Record<string, string> = {
+  // New album_type values (on orders table)
+  single: "סיפור חיים אישי",
+  couple: "לזוג / חתונה / יום נישואין",
+  memorial: "הנצחה",
+  // Legacy questionnaire album_type values
   life_story_birthday: "סיפור חיים / יום הולדת",
   wedding: "חתונה / סיפור זוגי",
   anniversary: "יום נישואין",
   retirement: "פרישה",
-  memorial: "הנצחה",
   other: "אחר",
 };
 

@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { QUESTIONNAIRE_SECTIONS } from "@/lib/questionnaire-fields";
+import { getQuestionnaireSections } from "@/lib/questionnaire-fields";
+import type { AlbumType } from "@/questionnaires/types";
 
 interface Props {
   orderId: string;
@@ -10,6 +11,7 @@ interface Props {
   personName: string;
   buyerName: string;
   responses: Record<string, unknown>;
+  albumType?: AlbumType;
 }
 
 function resolveDisplay(value: unknown, displayValues?: Record<string, string>): string {
@@ -18,11 +20,13 @@ function resolveDisplay(value: unknown, displayValues?: Record<string, string>):
   return displayValues?.[raw] ?? raw;
 }
 
-export function ReviewScreen({ orderId, token, personName, responses }: Props) {
+export function ReviewScreen({ orderId, token, personName, responses, albumType = "single" }: Props) {
   const router = useRouter();
 
+  const sections = getQuestionnaireSections(albumType);
+
   // Only render sections that have at least one filled field
-  const filledSections = QUESTIONNAIRE_SECTIONS.map((section) => ({
+  const filledSections = sections.map((section) => ({
     ...section,
     fields: section.fields.filter((f) => {
       const val = responses[f.key];

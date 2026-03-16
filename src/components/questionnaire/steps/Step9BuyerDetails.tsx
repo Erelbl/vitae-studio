@@ -101,51 +101,6 @@ export function Step9BuyerDetails({
         )}
       </div>
 
-      {/* Shipping details */}
-      <div className="space-y-4 rounded-xl border border-border/50 bg-muted/30 px-4 py-4">
-        <p className="text-sm font-medium text-foreground">פרטי משלוח <OptionalBadge /></p>
-
-        {/* shipping_address */}
-        <div className="space-y-1.5">
-          <Label htmlFor="shipping_address">כתובת מלאה</Label>
-          <Input
-            id="shipping_address"
-            placeholder="למשל: רחוב הרצל 12"
-            {...register("shipping_address")}
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          {/* shipping_house_number */}
-          <div className="space-y-1.5">
-            <Label htmlFor="shipping_house_number">מספר בית</Label>
-            <Input
-              id="shipping_house_number"
-              {...register("shipping_house_number")}
-            />
-          </div>
-
-          {/* shipping_floor */}
-          <div className="space-y-1.5">
-            <Label htmlFor="shipping_floor">קומה</Label>
-            <Input
-              id="shipping_floor"
-              {...register("shipping_floor")}
-            />
-          </div>
-
-          {/* shipping_zip */}
-          <div className="space-y-1.5">
-            <Label htmlFor="shipping_zip">מיקוד</Label>
-            <Input
-              id="shipping_zip"
-              dir="ltr"
-              {...register("shipping_zip")}
-            />
-          </div>
-        </div>
-      </div>
-
       {/* additional_notes – optional */}
       <div className="space-y-1.5">
         <Label htmlFor="additional_notes">

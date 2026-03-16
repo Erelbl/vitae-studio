@@ -34,7 +34,7 @@ export interface QuestionnaireResponses {
   // Step 1: ספרו לנו
   person_name: string;
   album_type: AlbumType;
-  person_gender: "male" | "female";
+  person_gender: "זכר" | "נקבה";
   person_birth_date: string;
   nickname: string;
 
@@ -90,10 +90,6 @@ export interface QuestionnaireResponses {
   buyer_phone: string;
   buyer_email: string;
   additional_notes: string;
-  shipping_address: string;
-  shipping_house_number: string;
-  shipping_floor: string;
-  shipping_zip: string;
 }
 
 export interface FollowUpQA {

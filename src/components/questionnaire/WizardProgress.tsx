@@ -1,22 +1,21 @@
 "use client";
 
-import { QUESTIONNAIRE_STEPS } from "@/types/questionnaire";
-
 interface Props {
   currentStep: number; // 0-indexed
   stepCompletion?: boolean[]; // per-step validity
   onStepClick?: (step: number) => void;
+  stepLabels: string[];
 }
 
-export function WizardProgress({ currentStep, stepCompletion, onStepClick }: Props) {
-  const total = QUESTIONNAIRE_STEPS.length;
+export function WizardProgress({ currentStep, stepCompletion, onStepClick, stepLabels }: Props) {
+  const total = stepLabels.length;
 
   return (
     <div className="mb-6">
       {/* Step label and counter */}
       <div className="mb-3 flex items-baseline justify-between">
         <span className="text-base font-semibold text-foreground">
-          {QUESTIONNAIRE_STEPS[currentStep].label}
+          {stepLabels[currentStep]}
         </span>
         <span className="text-xs font-medium text-muted-foreground">
           {currentStep + 1} / {total}
@@ -25,7 +24,7 @@ export function WizardProgress({ currentStep, stepCompletion, onStepClick }: Pro
 
       {/* Progress segments */}
       <div className="flex gap-1">
-        {QUESTIONNAIRE_STEPS.map((_, i) => {
+        {stepLabels.map((label, i) => {
           const isComplete = stepCompletion?.[i] ?? false;
           const isCurrent = i === currentStep;
           const isPast = i < currentStep;
@@ -45,7 +44,7 @@ export function WizardProgress({ currentStep, stepCompletion, onStepClick }: Pro
           return (
             <div
               key={i}
-              title={QUESTIONNAIRE_STEPS[i].label}
+              title={label}
               className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${segmentColor} ${
                 clickable ? "cursor-pointer hover:opacity-70" : ""
               }`}

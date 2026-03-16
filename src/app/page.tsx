@@ -67,7 +67,7 @@ export default function LandingPage() {
 
       if (res.ok) {
         const { id, access_token } = await res.json();
-        router.push(`/order/${id}/questionnaire?token=${access_token}`);
+        router.push(`/order/${id}/album-type?token=${access_token}`);
       }
     } finally {
       setLoading(false);

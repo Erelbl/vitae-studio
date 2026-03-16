@@ -90,7 +90,7 @@ export function Step1Introduction({ defaultValues, onNavigate }: Props) {
         <Select
           value={gender}
           onValueChange={(v) =>
-            setValue("person_gender", v as "male" | "female", {
+            setValue("person_gender", v as "זכר" | "נקבה", {
               shouldValidate: true,
             })
           }
@@ -99,8 +99,8 @@ export function Step1Introduction({ defaultValues, onNavigate }: Props) {
             <SelectValue placeholder="בחרו מגדר" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="male">זכר</SelectItem>
-            <SelectItem value="female">נקבה</SelectItem>
+            <SelectItem value="זכר">זכר</SelectItem>
+            <SelectItem value="נקבה">נקבה</SelectItem>
           </SelectContent>
         </Select>
         {errors.person_gender && (

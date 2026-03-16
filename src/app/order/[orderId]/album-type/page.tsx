@@ -1,9 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
-import { ReviewScreen } from "@/components/checkout/ReviewScreen";
-import { redirect } from "next/navigation";
+import { AlbumTypeSelector } from "@/components/questionnaire/AlbumTypeSelector";
 
-export default async function ReviewPage({
+export default async function AlbumTypePage({
   params,
   searchParams,
 }: {
@@ -17,7 +16,7 @@ export default async function ReviewPage({
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, status, person_name, buyer_name, access_token, access_token_expires_at, album_type")
+    .select("id, status, access_token, access_token_expires_at, album_type")
     .eq("id", orderId)
     .single();
 
@@ -43,27 +42,11 @@ export default async function ReviewPage({
     );
   }
 
-  // If questionnaire isn't complete yet, redirect back
-  if (order.status === "created") {
-    redirect(`/order/${orderId}/questionnaire?token=${token}`);
-  }
-
-  const { data: qResponse } = await supabase
-    .from("questionnaire_responses")
-    .select("responses")
-    .eq("order_id", orderId)
-    .single();
-
-  const responses = (qResponse?.responses as Record<string, unknown>) ?? {};
-
   return (
-    <ReviewScreen
+    <AlbumTypeSelector
       orderId={orderId}
       token={token}
-      personName={(order.person_name as string) || ""}
-      buyerName={(order.buyer_name as string) || ""}
-      responses={responses}
-      albumType={(order.album_type as "single" | "couple" | "memorial") || "single"}
+      currentAlbumType={order.album_type as string | undefined}
     />
   );
 }

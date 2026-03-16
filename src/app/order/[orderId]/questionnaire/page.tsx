@@ -1,6 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
+import { redirect } from "next/navigation";
 import { QuestionnaireWizard } from "@/components/questionnaire/QuestionnaireWizard";
+import type { AlbumType } from "@/questionnaires/types";
 
 export default async function QuestionnairePage({
   params,
@@ -16,7 +18,7 @@ export default async function QuestionnairePage({
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, status, access_token, access_token_expires_at")
+    .select("id, status, access_token, access_token_expires_at, album_type")
     .eq("id", orderId)
     .single();
 
@@ -42,6 +44,14 @@ export default async function QuestionnairePage({
     );
   }
 
+  // If album_type hasn't been set yet (still default 'single' with no explicit selection),
+  // and order is freshly created, redirect to album type selection
+  const albumType = (order.album_type as string) || "single";
+  const validAlbumTypes = ["single", "couple", "memorial"];
+  if (!validAlbumTypes.includes(albumType)) {
+    redirect(`/order/${orderId}/album-type?token=${token}`);
+  }
+
   // Fetch saved questionnaire data for pre-population on reload/back navigation
   const { data: qResponse } = await supabase
     .from("questionnaire_responses")
@@ -56,6 +66,7 @@ export default async function QuestionnairePage({
     <QuestionnaireWizard
       orderId={orderId}
       token={token}
+      albumType={albumType as AlbumType}
       initialData={initialData}
       initialStep={Math.min(initialStep, 8)}
     />

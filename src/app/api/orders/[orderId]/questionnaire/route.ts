@@ -9,13 +9,25 @@ function albumTypeToOccasion(albumType: string | undefined): string | null {
   if (!albumType) return null;
   const map: Record<string, string> = {
     life_story_birthday: "birthday",
+    "סיפור חיים / יום הולדת": "birthday",
     wedding: "anniversary",
+    "חתונה / סיפור זוגי": "anniversary",
     anniversary: "anniversary",
+    "יום נישואין": "anniversary",
     retirement: "retirement",
+    "פרישה": "retirement",
     memorial: "memorial",
+    "הנצחה": "memorial",
     other: "other",
+    "אחר": "other",
   };
   return map[albumType] ?? "other";
+}
+
+/** Map Hebrew gender value to internal pipeline value */
+function genderToInternal(gender: string | undefined): "male" | "female" {
+  if (gender === "נקבה" || gender === "female") return "female";
+  return "male";
 }
 
 export async function POST(
@@ -75,7 +87,7 @@ export async function POST(
             buyer_phone: responses.buyer_phone || "",
             occasion: albumTypeToOccasion(responses.album_type),
             person_name: responses.person_name || undefined,
-            person_gender: responses.person_gender || undefined,
+            person_gender: genderToInternal(responses.person_gender),
             person_birth_date: responses.person_birth_date || null,
           })
           .eq("id", orderId);

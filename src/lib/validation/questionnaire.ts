@@ -13,7 +13,7 @@ export const ALBUM_TYPES = [
 export const introductionSchema = z.object({
   person_name: z.string().min(2, "נדרשים לפחות 2 תווים"),
   album_type: z.enum(ALBUM_TYPES, { error: "יש לבחור סוג אלבום" }),
-  person_gender: z.enum(["male", "female"], { error: "יש לבחור מגדר" }),
+  person_gender: z.enum(["זכר", "נקבה"], { error: "יש לבחור מגדר" }),
   person_birth_date: z.string().optional().default(""),
   nickname: z.string().optional().default(""),
 });
@@ -85,10 +85,6 @@ export const buyerDetailsSchema = z.object({
   buyer_phone: z.string().min(9, "מספר טלפון לא תקין"),
   buyer_email: z.string().email("כתובת אימייל לא תקינה").optional().or(z.literal("")).default(""),
   additional_notes: z.string().optional().default(""),
-  shipping_address: z.string().optional().default(""),
-  shipping_house_number: z.string().optional().default(""),
-  shipping_floor: z.string().optional().default(""),
-  shipping_zip: z.string().optional().default(""),
 });
 
 export const STEP_SCHEMAS = [
