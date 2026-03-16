@@ -5,9 +5,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { ManualSpread, StorySource } from "@/types/order";
 
-// Default spread count for a new manual story (18 content spreads = 40 pages total)
-const DEFAULT_SPREAD_COUNT = 18;
-
 function createDefaultSpreads(count: number): ManualSpread[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `spread-${i + 1}`,
@@ -22,19 +19,23 @@ interface ManualStoryEditorProps {
   orderId: string;
   initialStorySource: StorySource;
   initialSpreads: ManualSpread[] | null;
+  targetPageCount: number;
 }
 
 export function ManualStoryEditor({
   orderId,
   initialStorySource,
   initialSpreads,
+  targetPageCount,
 }: ManualStoryEditorProps) {
   const router = useRouter();
   const [storySource, setStorySource] = useState<StorySource>(initialStorySource);
+  // Content spreads = (targetPageCount - 2) / 2 (cover + back_cover are fixed)
+  const maxContentSpreads = (targetPageCount - 2) / 2;
   const [spreads, setSpreads] = useState<ManualSpread[]>(
     initialSpreads && initialSpreads.length > 0
       ? initialSpreads
-      : createDefaultSpreads(DEFAULT_SPREAD_COUNT)
+      : createDefaultSpreads(maxContentSpreads)
   );
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -42,10 +43,7 @@ export function ManualStoryEditor({
   const [dirty, setDirty] = useState(false);
 
   const activeSpreads = spreads.filter((s) => s.isActive);
-  // cover (1) + dedication (1) + content (activeSpreads * 2) + back_cover (1)
-  // We ensure an even total: cover+dedication = 2 pages, content = even, back_cover = 1
-  // Total = 2 + activeSpreads*2 + 2 (dedication counts as page 2, back_cover is last)
-  const resultingPageCount = 2 + activeSpreads.length * 2 + 2;
+  const usableSpreads = Math.min(activeSpreads.length, maxContentSpreads);
 
   const updateSpreadText = useCallback(
     (id: string, field: "rightPageText" | "leftPageText", value: string) => {
@@ -211,16 +209,21 @@ export function ManualStoryEditor({
       {storySource === "manual" && (
         <div className="space-y-4">
           {/* Summary bar */}
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-4 text-xs flex-wrap">
             <span className="text-muted-foreground">
-              מפרשים פעילים: <span className="font-semibold text-foreground">{activeSpreads.length}</span>
+              אורך האלבום: <span className="font-semibold text-foreground">{targetPageCount} עמודים</span>
             </span>
             <span className="text-muted-foreground">
-              עמודים: <span className="font-semibold text-foreground">{resultingPageCount}</span>
+              מפרשים: <span className="font-semibold text-foreground">{usableSpreads}/{maxContentSpreads}</span>
             </span>
-            {activeSpreads.length < spreads.length && (
+            {activeSpreads.length > maxContentSpreads && (
               <span className="text-amber-600 text-xs">
-                {spreads.length - activeSpreads.length} מפרשים מוסתרים
+                {activeSpreads.length - maxContentSpreads} מפרשים חורגים מאורך האלבום
+              </span>
+            )}
+            {activeSpreads.length < spreads.length && (
+              <span className="text-muted-foreground text-xs">
+                {spreads.length - activeSpreads.length} מוסתרים
               </span>
             )}
           </div>
@@ -228,20 +231,23 @@ export function ManualStoryEditor({
           {/* Spread list */}
           <div className="space-y-3 max-h-[600px] overflow-y-auto pe-1">
             {spreads.map((spread, idx) => {
-              // Calculate page numbers for this spread based on active spreads before it
+              // Calculate page numbers: page 1=cover, pages 2 onward=content, last=back_cover
               const activeBeforeCount = spreads
                 .slice(0, idx)
                 .filter((s) => s.isActive).length;
-              const rightPageNum = spread.isActive ? 3 + activeBeforeCount * 2 : null;
+              const rightPageNum = spread.isActive ? 2 + activeBeforeCount * 2 : null;
               const leftPageNum = rightPageNum ? rightPageNum + 1 : null;
+              const exceedsTarget = activeBeforeCount >= maxContentSpreads;
 
               return (
                 <div
                   key={spread.id}
                   className={`rounded-lg border p-3 transition-all ${
-                    spread.isActive
-                      ? "bg-background border-border"
-                      : "bg-muted/30 border-dashed border-muted-foreground/30 opacity-60"
+                    !spread.isActive
+                      ? "bg-muted/30 border-dashed border-muted-foreground/30 opacity-60"
+                      : exceedsTarget
+                      ? "bg-amber-50/50 border-amber-300/60 opacity-70"
+                      : "bg-background border-border"
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -256,6 +262,9 @@ export function ManualStoryEditor({
                       )}
                       {!spread.isActive && (
                         <span className="text-[10px] text-amber-600 font-medium">מוסתר</span>
+                      )}
+                      {spread.isActive && exceedsTarget && (
+                        <span className="text-[10px] text-amber-600 font-medium">חורג מאורך האלבום</span>
                       )}
                     </div>
                     <button

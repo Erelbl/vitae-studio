@@ -8,6 +8,7 @@ type RouteParams = { params: Promise<{ orderId: string }> };
 // POST /api/admin/orders/[orderId]/manual-story/apply
 // Takes the active manual spreads and writes them into the pages table,
 // creating the same page structure that the questionnaire pipeline produces.
+// Uses target_page_count as the canonical album length.
 // This makes manual story content visible in album preview, film, PDF, etc.
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { orderId } = await params;
@@ -24,10 +25,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const adminClient = createAdminClient();
 
-  // Fetch order with manual spreads
+  // Fetch order with manual spreads and target page count
   const { data: order, error: orderError } = await adminClient
     .from("orders")
-    .select("id, status, story_source, manual_spreads_json, total_pages")
+    .select(
+      "id, status, story_source, manual_spreads_json, target_page_count, total_pages"
+    )
     .eq("id", orderId)
     .single();
 
@@ -50,9 +53,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  // Use target_page_count as the canonical album length
+  const targetPageCount: number =
+    (order.target_page_count as number | null) ?? 40;
+
+  // Album structure:
+  //   page 1 = cover
+  //   pages 2 to (targetPageCount - 1) = content (includes dedication as page 2)
+  //   page targetPageCount = back_cover
+  // Content pages = targetPageCount - 2, and content spreads = (targetPageCount - 2) / 2
+  const maxContentSpreads = (targetPageCount - 2) / 2;
+
   const activeSpreads = spreads
     .filter((s) => s.isActive)
-    .sort((a, b) => a.spreadIndex - b.spreadIndex);
+    .sort((a, b) => a.spreadIndex - b.spreadIndex)
+    .slice(0, maxContentSpreads); // take only as many as fit
 
   if (activeSpreads.length === 0) {
     return NextResponse.json(
@@ -60,14 +75,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { status: 400 }
     );
   }
-
-  // Calculate new total pages:
-  // cover (1) + dedication (1) + active content pages (activeSpreads * 2) + back_cover (1)
-  // But we need an even total, so:
-  // page 1 = cover, page 2 = dedication, pages 3..N-1 = content, page N = back_cover
-  const contentPageCount = activeSpreads.length * 2;
-  const newTotalPages = 2 + contentPageCount + 2; // cover + dedication + content + back_cover
-  // Ensure even total (should always be even since content is spread*2)
 
   // Snapshot existing pages for UPDATE vs INSERT logic
   const { data: existingPagesRaw } = await adminClient
@@ -94,20 +101,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // Page 1: cover
   allPages.push({ page_number: 1, page_type: "cover", text_content: null });
 
-  // Page 2: dedication (empty — admin can fill via page editor later)
-  allPages.push({
-    page_number: 2,
-    page_type: "dedication",
-    text_content: null,
-  });
-
-  // Content pages from active spreads
-  let pageNum = 3;
+  // Content pages from active spreads (page 2 onward)
+  // First spread's right page = page 2 (dedication/opening), consistent with pipeline
+  let pageNum = 2;
   for (const spread of activeSpreads) {
-    // Right page (lower number) — primary text
+    // Right page (lower number)
     allPages.push({
       page_number: pageNum,
-      page_type: "illustration_and_text",
+      page_type:
+        pageNum === 2 ? "dedication" : "illustration_and_text",
       text_content: spread.rightPageText.trim() || null,
     });
     pageNum++;
@@ -121,16 +123,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     pageNum++;
   }
 
-  // Back cover
+  // If we have fewer active spreads than maxContentSpreads,
+  // fill remaining content pages as empty illustration_and_text
+  while (pageNum < targetPageCount) {
+    allPages.push({
+      page_number: pageNum,
+      page_type: "illustration_and_text",
+      text_content: null,
+    });
+    pageNum++;
+  }
+
+  // Back cover = last page
   allPages.push({
-    page_number: pageNum,
+    page_number: targetPageCount,
     page_type: "back_cover",
     text_content: null,
   });
 
-  const finalTotalPages = pageNum;
-
-  // Delete pages that exceed the new total (from previous longer generations)
+  // Delete pages that exceed the target (from previous longer generations)
   const pageNumbersToKeep = new Set(allPages.map((p) => p.page_number));
   const pagesToDelete = (existingPagesRaw ?? [])
     .filter((p) => !pageNumbersToKeep.has(p.page_number as number))
@@ -150,7 +161,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     text_version: number;
   }> = [];
 
-  const savedPages: Array<{ id: string; page_number: number; text_content: string | null; new_version: number }> = [];
+  const savedPages: Array<{
+    id: string;
+    page_number: number;
+    text_content: string | null;
+    new_version: number;
+  }> = [];
 
   for (const p of allPages) {
     const existing = existingByNum.get(p.page_number);
@@ -227,10 +243,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     await adminClient.from("page_versions").insert(versionRows);
   }
 
-  // Update order total_pages
+  // Sync total_pages to match target
   await adminClient
     .from("orders")
-    .update({ total_pages: finalTotalPages })
+    .update({ total_pages: targetPageCount })
     .eq("id", orderId);
 
   // Transition order status to preview_ready if in a state that allows it
@@ -250,9 +266,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   ];
 
   if (canTransitionStatuses.includes(currentStatus)) {
-    // For manual story, skip the generation pipeline states and go straight
-    // to preview_ready. Use direct update since the standard state machine
-    // doesn't have a direct path from all these states to preview_ready.
     await adminClient
       .from("orders")
       .update({ status: "preview_ready" })
@@ -261,8 +274,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   return NextResponse.json({
     ok: true,
-    totalPages: finalTotalPages,
+    totalPages: targetPageCount,
     activeSpreads: activeSpreads.length,
+    maxContentSpreads,
     pagesCreated: toInsert.length,
     pagesUpdated: savedPages.length - toInsert.length,
     pagesDeleted: pagesToDelete.length,

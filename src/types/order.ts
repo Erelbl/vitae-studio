@@ -75,6 +75,7 @@ export interface Order {
   currency: string;
   story_source: StorySource;
   manual_spreads_json: ManualSpread[] | null;
+  target_page_count: number;
 }
 
 export const DELIVERY_MODES = ["film", "print", "bundle"] as const;

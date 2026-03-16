@@ -17,6 +17,7 @@ import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { FilmPanel } from "@/components/admin/FilmPanel";
 import { AdminPhotoUpload } from "@/components/admin/AdminPhotoUpload";
 import { ManualStoryEditor } from "@/components/admin/ManualStoryEditor";
+import { AlbumLengthControl } from "@/components/admin/AlbumLengthControl";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 import type { FilmProject, FilmScene } from "@/types/film";
 
@@ -571,6 +572,12 @@ export default async function AdminOrderDetailPage({
                   : "—"
               }
             />
+            <div className="border-t border-border/60 pt-3">
+              <AlbumLengthControl
+                orderId={orderId}
+                initialValue={(order.target_page_count as number) ?? 40}
+              />
+            </div>
             <div className="border-t border-border/60 pt-3 space-y-3">
               <SideField label="מזמין" value={order.buyer_name || "—"} />
               <SideField label="אימייל" value={order.buyer_email || "—"} />
@@ -590,6 +597,7 @@ export default async function AdminOrderDetailPage({
           orderId={orderId}
           initialStorySource={storySource}
           initialSpreads={manualSpreads}
+          targetPageCount={(order.target_page_count as number) ?? 40}
         />
       </Section>
 

@@ -80,14 +80,17 @@ export async function runGenerationPipeline(
     );
     console.log(`[pipeline] existing pages for order: ${existingByNum.size}`);
 
-    // 3. Fetch total_pages for this order (default 40)
+    // 3. Fetch target_page_count for this order (default 40)
     const { data: orderRow } = await supabase
       .from("orders")
-      .select("total_pages")
+      .select("target_page_count, total_pages")
       .eq("id", orderId)
       .single();
-    const totalPages: number = (orderRow?.total_pages as number | null) ?? 40;
-    console.log(`[pipeline] totalPages=${totalPages}`);
+    const totalPages: number =
+      (orderRow?.target_page_count as number | null) ??
+      (orderRow?.total_pages as number | null) ??
+      40;
+    console.log(`[pipeline] totalPages=${totalPages} (from target_page_count)`);
 
     // 4. Generate full continuous story (Step 2)
     const contentPageCount = totalPages - 2; // exclude cover + back-cover
@@ -313,7 +316,13 @@ export async function runGenerationPipeline(
       console.warn("[pipeline] Evaluation step failed (non-fatal):", evalErr);
     }
 
-    // 11. Chain status transitions:
+    // 11. Sync total_pages to match actual generated page count
+    await supabase
+      .from("orders")
+      .update({ total_pages: totalPages })
+      .eq("id", orderId);
+
+    // 12. Chain status transitions:
     //    generating_text → text_ready → generating_illustrations → preview_ready
     const transitions: [OrderStatus, OrderStatus][] = [
       ["generating_text", "text_ready"],
@@ -334,7 +343,7 @@ export async function runGenerationPipeline(
       }
     }
 
-    // 12. Mark processing job complete
+    // 13. Mark processing job complete
     if (jobId) {
       await supabase
         .from("processing_jobs")
