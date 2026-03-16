@@ -1,6 +1,35 @@
 import type { TtsOverride } from "@/types/film";
 
 /**
+ * Merges project-level and scene-level TTS overrides.
+ *
+ * Scene-level overrides take precedence over project-level overrides for the
+ * same `original` key. The result is a flat list ready to pass to
+ * applyTtsOverrides().
+ *
+ * @param projectOverrides  film_projects.tts_overrides_json
+ * @param sceneOverrides    film_scenes.scene_overrides_json
+ */
+export function mergeOverrides(
+  projectOverrides: TtsOverride[] | null | undefined,
+  sceneOverrides: TtsOverride[] | null | undefined
+): TtsOverride[] {
+  const project = projectOverrides ?? [];
+  const scene = sceneOverrides ?? [];
+
+  if (scene.length === 0) return project;
+  if (project.length === 0) return scene;
+
+  const sceneKeys = new Set(
+    scene.map((o) => o.original?.trim()).filter(Boolean)
+  );
+
+  // Keep project entries not shadowed by scene entries, then append all scene entries
+  const merged = project.filter((o) => !sceneKeys.has(o.original?.trim()));
+  return [...merged, ...scene];
+}
+
+/**
  * Applies pronunciation overrides to text before it is sent to ElevenLabs TTS.
  *
  * IMPORTANT: This function must only be called on text destined for TTS.

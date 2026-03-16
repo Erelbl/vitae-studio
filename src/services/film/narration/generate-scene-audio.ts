@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { textToSpeech } from "@/services/film/narration/elevenlabs";
-import { applyTtsOverrides } from "@/services/film/utils/apply-tts-overrides";
+import { applyTtsOverrides, mergeOverrides } from "@/services/film/utils/apply-tts-overrides";
 import { computeSceneDuration } from "@/services/film/utils/compute-scene-duration";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
 import type { TtsOverride } from "@/types/film";
@@ -46,10 +46,10 @@ export async function generateSceneAudio(
   const { sceneId, orderId, filmProjectId } = input;
   const adminClient = createAdminClient();
 
-  // 1. Fetch scene
+  // 1. Fetch scene (include scene_overrides_json for per-scene pronunciation corrections)
   const { data: scene, error: sceneError } = await adminClient
     .from("film_scenes")
-    .select("id, narration_text, film_project_id")
+    .select("id, narration_text, film_project_id, scene_overrides_json")
     .eq("id", sceneId)
     .single();
 
@@ -90,8 +90,22 @@ export async function generateSceneAudio(
   // 3. Apply TTS pronunciation overrides.
   // IMPORTANT: applyTtsOverrides is non-mutating. The original narration_text
   // in the database is never modified — overrides only affect the TTS input.
-  const overrides = project.tts_overrides_json as TtsOverride[] | null;
-  const ttsText = applyTtsOverrides(narrationText, overrides);
+  //
+  // Scene-level overrides take precedence over project-level overrides for
+  // the same `original` key. Both sets are merged before applying.
+  const projectOverrides = project.tts_overrides_json as TtsOverride[] | null;
+  const sceneOverrides = scene.scene_overrides_json as TtsOverride[] | null;
+  const mergedOverrides = mergeOverrides(projectOverrides, sceneOverrides);
+  const ttsText = applyTtsOverrides(narrationText, mergedOverrides);
+
+  if (mergedOverrides.length > 0) {
+    const applied = mergedOverrides.filter(
+      (o) => o.original?.trim() && narrationText.includes(o.original.trim())
+    );
+    console.log(
+      `[generate-scene-audio] scene=${sceneId}: ${applied.length}/${mergedOverrides.length} overrides matched. ttsText changed=${ttsText !== narrationText}`
+    );
+  }
 
   // 4. Generate audio via ElevenLabs TTS
   const { audioBuffer } = await textToSpeech({ text: ttsText, voiceId });

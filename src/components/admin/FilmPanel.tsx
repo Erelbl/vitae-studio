@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TtsOverridesEditor } from "@/components/admin/TtsOverridesEditor";
+import { previewNarrationText } from "@/services/film/utils/preview-narration-text";
 import type {
   FilmProject,
   FilmProjectStatus,
@@ -736,12 +737,15 @@ export function FilmPanel({
             </div>
 
             {/* Scene rows */}
-            <div className="divide-y divide-border/30">
+            <div>
               {scenes.map((scene) => (
                 <SceneRow
                   key={scene.id}
                   orderId={orderId}
                   scene={scene}
+                  projectOverrides={
+                    (filmProject.tts_overrides_json as TtsOverride[] | null) ?? []
+                  }
                   thumbnailUrl={sceneThumbnailUrls[scene.id] ?? null}
                   videoUrl={sceneVideoUrls[scene.id] ?? null}
                   audioUrl={sceneAudioUrls[scene.id] ?? null}
@@ -868,6 +872,7 @@ const SCENE_STATUS_COLORS: Record<string, string> = {
 function SceneRow({
   orderId,
   scene,
+  projectOverrides,
   thumbnailUrl,
   videoUrl,
   audioUrl,
@@ -882,6 +887,8 @@ function SceneRow({
 }: {
   orderId: string;
   scene: FilmScene;
+  /** Project-level TTS overrides (film_projects.tts_overrides_json) */
+  projectOverrides: TtsOverride[];
   thumbnailUrl: string | null;
   videoUrl: string | null;
   /** Signed URL for scene narration audio. null = no audio OR URL generation failed. */
@@ -895,6 +902,8 @@ function SceneRow({
   canGenerateAudio: boolean;
   disabled: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   const textPreview = scene.narration_text
     ? scene.narration_text.length > 55
       ? scene.narration_text.slice(0, 55) + "…"
@@ -912,186 +921,550 @@ function SceneRow({
   const statusColor =
     SCENE_STATUS_COLORS[scene.status] ?? "text-muted-foreground";
 
+  // Quickly compute whether any overrides affect this scene (for the badge)
+  const allOverridesCount =
+    projectOverrides.length + (scene.scene_overrides_json?.length ?? 0);
+  const hasOverrides = allOverridesCount > 0 && Boolean(scene.narration_text);
+
   return (
-    <div className="flex items-center gap-2 text-xs py-2 group hover:bg-muted/20 transition-colors px-0.5 rounded-sm">
-      {/* Checkbox */}
-      <input
-        type="checkbox"
-        checked={isSelected}
-        onChange={onToggleSelect}
-        disabled={disabled}
-        className="shrink-0 h-3.5 w-3.5 cursor-pointer"
-        aria-label={`בחר סצנה ${scene.scene_order}`}
-      />
+    <div className="border-b border-border/20 last:border-0">
+      {/* ── Compact row ─────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 text-xs py-2 group hover:bg-muted/20 transition-colors px-0.5 rounded-sm">
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelect}
+          disabled={disabled}
+          className="shrink-0 h-3.5 w-3.5 cursor-pointer"
+          aria-label={`בחר סצנה ${scene.scene_order}`}
+        />
 
-      {/* Thumbnail */}
-      <div className="shrink-0 w-10 h-7 rounded overflow-hidden bg-muted/50 border border-border/30">
-        {thumbnailUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={thumbnailUrl}
-            alt={`תמונה ממוזערת — סצנה ${scene.scene_order}`}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground/50 text-[8px]">
-            {scene.status === "rendered" ? "?" : "—"}
-          </div>
-        )}
-      </div>
+        {/* Thumbnail */}
+        <div className="shrink-0 w-10 h-7 rounded overflow-hidden bg-muted/50 border border-border/30">
+          {thumbnailUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbnailUrl}
+              alt={`תמונה ממוזערת — סצנה ${scene.scene_order}`}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground/50 text-[8px]">
+              {scene.status === "rendered" ? "?" : "—"}
+            </div>
+          )}
+        </div>
 
-      {/* Order */}
-      <span className="text-muted-foreground shrink-0 w-5 text-center font-mono">
-        {scene.scene_order}
-      </span>
+        {/* Order */}
+        <span className="text-muted-foreground shrink-0 w-5 text-center font-mono">
+          {scene.scene_order}
+        </span>
 
-      {/* Spread key */}
-      <span className="text-muted-foreground shrink-0 w-20 truncate font-mono text-[11px]">
-        {scene.page_spread_key ?? "—"}
-      </span>
+        {/* Spread key */}
+        <span className="text-muted-foreground shrink-0 w-20 truncate font-mono text-[11px]">
+          {scene.page_spread_key ?? "—"}
+        </span>
 
-      {/* Text preview */}
-      <span className="flex-1 truncate text-[11px]" dir="rtl">
-        {scene.title ? (
-          <span className="font-medium">{scene.title} — </span>
-        ) : null}
-        {textPreview}
-      </span>
+        {/* Text preview — click to expand narration detail */}
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex-1 min-w-0 text-start truncate text-[11px] hover:text-foreground transition-colors cursor-pointer"
+          title={expanded ? "סגור פרטי קריינות" : "הצג פרטי קריינות"}
+          dir="rtl"
+        >
+          {scene.title ? (
+            <span className="font-medium">{scene.title} — </span>
+          ) : null}
+          {textPreview}
+          {hasOverrides && (
+            <span className="ms-1 text-amber-500 text-[9px]" title="יש תיקוני הגייה">
+              ✎
+            </span>
+          )}
+        </button>
 
-      {/* Audio duration / estimated duration */}
-      <div className="shrink-0 w-14 text-end tabular-nums leading-tight">
-        {hasAudio ? (
-          audioUrl ? (
+        {/* Audio duration / estimated duration */}
+        <div className="shrink-0 w-14 text-end tabular-nums leading-tight">
+          {hasAudio ? (
+            audioUrl ? (
+              <button
+                type="button"
+                onClick={() => setExpanded(true)}
+                className="text-blue-600 font-medium text-[11px] hover:underline cursor-pointer"
+                title="פתח פרטי קריינות ונגן שמע"
+              >
+                🔊 {audioDurationSec}s
+              </button>
+            ) : (
+              <span
+                className="text-red-500 text-[11px] cursor-help"
+                title="שמע קיים אך לא ניתן היה ליצור קישור. רענן את הדף."
+              >
+                🔊 ⚠
+              </span>
+            )
+          ) : (
+            <span className="text-muted-foreground text-[11px]" title="משך מוערך">
+              ~{durationSec}s
+            </span>
+          )}
+        </div>
+
+        {/* Status */}
+        <span className={`shrink-0 w-16 text-end font-medium ${statusColor}`}>
+          {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
+        </span>
+
+        {/* Audio + Queue + Video buttons */}
+        <div className="shrink-0 flex items-center gap-1">
+          {/* Generate audio */}
+          <button
+            type="button"
+            onClick={onGenerateAudio}
+            disabled={disabled || isGeneratingAudio || !canGenerateAudio}
+            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title={
+              !canGenerateAudio
+                ? "בחר קול תחילה"
+                : hasAudio
+                ? "צור שמע מחדש"
+                : "צור שמע"
+            }
+          >
+            {isGeneratingAudio ? "…" : hasAudio ? "🔊" : "🎙"}
+          </button>
+
+          {/* Queue for render */}
+          <button
+            type="button"
+            onClick={onRender}
+            disabled={
+              disabled ||
+              isRendering ||
+              scene.status === "queued" ||
+              scene.status === "rendering"
+            }
+            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title={
+              scene.status === "queued"
+                ? "בתור לרינדור"
+                : scene.status === "rendering"
+                ? "מרנדר כעת"
+                : scene.status === "rendered"
+                ? "הוסף לתור מחדש"
+                : "הוסף לתור רינדור"
+            }
+          >
+            {isRendering
+              ? "…"
+              : scene.status === "queued"
+              ? "⏳"
+              : scene.status === "rendering"
+              ? "⚙"
+              : scene.status === "rendered"
+              ? "↺"
+              : "▶"}
+          </button>
+
+          {videoUrl ? (
             <a
-              href={audioUrl}
+              href={videoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 font-medium text-[11px] hover:underline"
-              title="האזן לשמע (נפתח בטאב חדש)"
+              className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-blue-600"
+              title="צפה בסרטון (נפתח בטאב חדש)"
             >
-              🔊 {audioDurationSec}s
+              ▶
             </a>
           ) : (
-            <span
-              className="text-red-500 text-[11px] cursor-help"
-              title="שמע קיים אך לא ניתן היה ליצור קישור. רענן את הדף."
+            <span className="w-6" />
+          )}
+
+          {/* Per-scene download: video */}
+          {scene.rendered_scene_path ? (
+            <a
+              href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=video`}
+              className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+              title="הורד סרטון (MP4)"
             >
-              🔊 ⚠
-            </span>
-          )
-        ) : (
-          <span className="text-muted-foreground text-[11px]" title="משך מוערך">
-            ~{durationSec}s
+              🎬
+            </a>
+          ) : (
+            <span className="w-6" />
+          )}
+
+          {/* Per-scene download: audio */}
+          {scene.audio_path ? (
+            <a
+              href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=audio`}
+              className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+              title="הורד שמע קריינות (MP3)"
+            >
+              🎵
+            </a>
+          ) : (
+            <span className="w-6" />
+          )}
+
+          {/* Expand/collapse narration detail */}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+            title={expanded ? "סגור פרטי קריינות" : "פרטי קריינות ותיקוני הגייה"}
+          >
+            {expanded ? "▲" : "▼"}
+          </button>
+        </div>
+
+        {/* Error hint */}
+        {scene.status === "error" && scene.error_message && (
+          <span
+            className="shrink-0 text-red-500 cursor-help"
+            title={scene.error_message}
+          >
+            ⚠
           </span>
         )}
       </div>
 
-      {/* Status */}
-      <span className={`shrink-0 w-16 text-end font-medium ${statusColor}`}>
-        {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
-      </span>
+      {/* ── Expanded narration detail ─────────────────────────────────────── */}
+      {expanded && (
+        <SceneNarrationDetail
+          orderId={orderId}
+          scene={scene}
+          projectOverrides={projectOverrides}
+          audioUrl={audioUrl}
+          canGenerateAudio={canGenerateAudio}
+          onGenerateAudio={onGenerateAudio}
+          isGeneratingAudio={isGeneratingAudio}
+          disabled={disabled}
+        />
+      )}
+    </div>
+  );
+}
 
-      {/* Audio + Queue + Video buttons */}
-      <div className="shrink-0 flex items-center gap-1">
-        {/* Generate audio */}
-        <button
-          type="button"
-          onClick={onGenerateAudio}
-          disabled={disabled || isGeneratingAudio || !canGenerateAudio}
-          className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          title={
-            !canGenerateAudio
-              ? "בחר קול תחילה"
-              : hasAudio
-              ? "צור שמע מחדש"
-              : "צור שמע"
-          }
-        >
-          {isGeneratingAudio ? "…" : hasAudio ? "🔊" : "🎙"}
-        </button>
+// ── SceneNarrationDetail ───────────────────────────────────────────────────────
 
-        {/* Queue for render */}
-        <button
-          type="button"
-          onClick={onRender}
-          disabled={
-            disabled ||
-            isRendering ||
-            scene.status === "queued" ||
-            scene.status === "rendering"
-          }
-          className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          title={
-            scene.status === "queued"
-              ? "בתור לרינדור"
-              : scene.status === "rendering"
-              ? "מרנדר כעת"
-              : scene.status === "rendered"
-              ? "הוסף לתור מחדש"
-              : "הוסף לתור רינדור"
-          }
-        >
-          {isRendering
-            ? "…"
-            : scene.status === "queued"
-            ? "⏳"
-            : scene.status === "rendering"
-            ? "⚙"
-            : scene.status === "rendered"
-            ? "↺"
-            : "▶"}
-        </button>
+function SceneNarrationDetail({
+  orderId,
+  scene,
+  projectOverrides,
+  audioUrl,
+  canGenerateAudio,
+  onGenerateAudio,
+  isGeneratingAudio,
+  disabled,
+}: {
+  orderId: string;
+  scene: FilmScene;
+  projectOverrides: TtsOverride[];
+  audioUrl: string | null;
+  canGenerateAudio: boolean;
+  onGenerateAudio: () => void;
+  isGeneratingAudio: boolean;
+  disabled: boolean;
+}) {
+  // Local state for scene-level override editing
+  const [sceneRows, setSceneRows] = useState<TtsOverride[]>(
+    scene.scene_overrides_json ?? []
+  );
+  const [savingOverrides, setSavingOverrides] = useState(false);
+  const [overrideSaveError, setOverrideSaveError] = useState<string | null>(null);
+  const [overrideSavedOk, setOverrideSavedOk] = useState(false);
 
-        {videoUrl ? (
-          <a
-            href={videoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-blue-600"
-            title="צפה בסרטון (נפתח בטאב חדש)"
-          >
-            ▶
-          </a>
+  // Compute TTS preview client-side (pure, no API call)
+  const preview = previewNarrationText(
+    scene.narration_text ?? "",
+    projectOverrides,
+    sceneRows
+  );
+
+  function handleRowChange(index: number, field: keyof TtsOverride, value: string) {
+    setOverrideSavedOk(false);
+    setSceneRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row))
+    );
+  }
+
+  function handleAddRow() {
+    setOverrideSavedOk(false);
+    setSceneRows((prev) => [...prev, { original: "", spoken: "" }]);
+  }
+
+  function handleDeleteRow(index: number) {
+    setOverrideSavedOk(false);
+    setSceneRows((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSaveSceneOverrides() {
+    setSavingOverrides(true);
+    setOverrideSaveError(null);
+    setOverrideSavedOk(false);
+    const cleaned = sceneRows.filter((r) => r.original.trim() !== "");
+    try {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/scenes/${scene.id}/overrides`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ overrides: cleaned }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה בשמירת תיקוני הסצנה");
+      }
+      setSceneRows(cleaned);
+      setOverrideSavedOk(true);
+    } catch (err) {
+      setOverrideSaveError(
+        err instanceof Error ? err.message : "שגיאה לא ידועה"
+      );
+    } finally {
+      setSavingOverrides(false);
+    }
+  }
+
+  const lastUpdated = scene.updated_at
+    ? new Date(scene.updated_at).toLocaleString("he-IL")
+    : null;
+
+  return (
+    <div className="mx-1 mb-2 rounded-md border border-border/40 bg-muted/20 p-3 space-y-3 text-xs">
+
+      {/* ── Narration text ──────────────────────────────────────────────── */}
+      <div className="space-y-1">
+        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+          טקסט קריינות מאוחסן
+        </p>
+        {scene.narration_text ? (
+          <pre className="whitespace-pre-wrap text-[11px] font-sans leading-relaxed rounded bg-background border border-border/30 px-2 py-1.5 max-h-28 overflow-y-auto" dir="rtl">
+            {scene.narration_text}
+          </pre>
         ) : (
-          <span className="w-6" />
-        )}
-
-        {/* Per-scene download: video */}
-        {scene.rendered_scene_path ? (
-          <a
-            href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=video`}
-            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
-            title="הורד סרטון (MP4)"
-          >
-            🎬
-          </a>
-        ) : (
-          <span className="w-6" />
-        )}
-
-        {/* Per-scene download: audio */}
-        {scene.audio_path ? (
-          <a
-            href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=audio`}
-            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
-            title="הורד שמע קריינות (MP3)"
-          >
-            🎵
-          </a>
-        ) : (
-          <span className="w-6" />
+          <p className="text-muted-foreground italic">אין טקסט קריינות לסצנה זו</p>
         )}
       </div>
 
-      {/* Error hint */}
-      {scene.status === "error" && scene.error_message && (
-        <span
-          className="shrink-0 text-red-500 cursor-help"
-          title={scene.error_message}
-        >
-          ⚠
-        </span>
+      {/* ── TTS preview ─────────────────────────────────────────────────── */}
+      {scene.narration_text && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+            טקסט שנשלח ל-TTS (אחרי תיקוני הגייה)
+          </p>
+          {preview.hasChanges ? (
+            <pre className="whitespace-pre-wrap text-[11px] font-sans leading-relaxed rounded bg-amber-50 border border-amber-200 px-2 py-1.5 max-h-28 overflow-y-auto" dir="rtl">
+              {preview.ttsText}
+            </pre>
+          ) : (
+            <p className="text-green-700 text-[11px]">
+              ✓ זהה לטקסט המאוחסן — לא הוחלו תיקוני הגייה
+            </p>
+          )}
+        </div>
       )}
+
+      {/* ── Override status list ─────────────────────────────────────────── */}
+      {preview.overrideStatuses.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+            תיקוני הגייה פעילים
+          </p>
+          <div className="space-y-0.5">
+            {preview.overrideStatuses.map((s, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-1.5 flex-wrap"
+              >
+                <span
+                  dir="rtl"
+                  className="font-mono text-[11px] bg-background border border-border/30 rounded px-1 py-0.5"
+                >
+                  {s.original}
+                </span>
+                <span className="text-muted-foreground">→</span>
+                <span
+                  dir="rtl"
+                  className="font-mono text-[11px] bg-background border border-border/30 rounded px-1 py-0.5"
+                >
+                  {s.spoken || <em className="text-muted-foreground">(ריק — ישמט)</em>}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[9px] px-1 py-0 h-4 ${
+                    s.source === "scene"
+                      ? "border-blue-300 text-blue-700 bg-blue-50"
+                      : "border-gray-300 text-gray-600"
+                  }`}
+                >
+                  {s.source === "scene" ? "סצנה" : "גלובלי"}
+                </Badge>
+                {s.applied ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 h-4 border-green-300 text-green-700 bg-green-50"
+                  >
+                    ✓ {s.count}x
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 h-4 border-red-200 text-red-500 bg-red-50"
+                  >
+                    ✕ לא נמצא
+                  </Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Scene-level override editor ──────────────────────────────────── */}
+      <div className="space-y-2 border-t border-border/30 pt-2">
+        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+          תיקוני הגייה לסצנה זו בלבד
+        </p>
+        <p className="text-[10px] text-muted-foreground">
+          תיקוני סצנה מקבלים עדיפות על תיקונים גלובליים עבור אותו מונח.
+        </p>
+
+        {sceneRows.length > 0 && (
+          <div className="space-y-1">
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5 px-0.5">
+              <span className="text-[10px] text-muted-foreground">מונח מקורי</span>
+              <span className="text-[10px] text-muted-foreground">הגייה לקריינות</span>
+              <span />
+            </div>
+            {sceneRows.map((row, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-1.5 items-center">
+                <input
+                  type="text"
+                  value={row.original}
+                  onChange={(e) => handleRowChange(i, "original", e.target.value)}
+                  placeholder="שם מקורי"
+                  className="h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  dir="rtl"
+                />
+                <input
+                  type="text"
+                  value={row.spoken}
+                  onChange={(e) => handleRowChange(i, "spoken", e.target.value)}
+                  placeholder="הגייה"
+                  className="h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  dir="rtl"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleDeleteRow(i)}
+                  className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  aria-label="מחק שורה"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {sceneRows.length === 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            אין תיקוני הגייה ספציפיים לסצנה זו.
+          </p>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 text-[11px] px-2"
+            onClick={handleAddRow}
+            disabled={savingOverrides}
+          >
+            + הוסף
+          </Button>
+          <Button
+            size="sm"
+            className="h-6 text-[11px] px-2"
+            onClick={handleSaveSceneOverrides}
+            disabled={savingOverrides}
+          >
+            {savingOverrides ? "שומר..." : "שמור"}
+          </Button>
+          {overrideSavedOk && (
+            <span className="text-[11px] text-green-700 font-medium">✓ נשמר</span>
+          )}
+          {overrideSaveError && (
+            <span className="text-[11px] text-destructive">{overrideSaveError}</span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Audio player ────────────────────────────────────────────────── */}
+      <div className="space-y-1.5 border-t border-border/30 pt-2">
+        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+          שמע קריינות
+        </p>
+        {audioUrl ? (
+          // key={scene.updated_at} forces audio element remount after regeneration,
+          // preventing the browser from playing a cached version of the old file.
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <audio
+            key={scene.updated_at}
+            controls
+            src={audioUrl}
+            className="w-full h-8"
+            style={{ minWidth: 0 }}
+          />
+        ) : scene.audio_path ? (
+          <p className="text-[11px] text-red-500">
+            קיים שמע אך לא ניתן לטעון את הקישור. רענן את הדף.
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">לא נוצר שמע עדיין.</p>
+        )}
+        {scene.audio_duration_ms != null && (
+          <p className="text-[10px] text-muted-foreground">
+            משך שמע: {(scene.audio_duration_ms / 1000).toFixed(1)}s
+            {scene.duration_ms != null &&
+              ` · משך סצנה: ${(scene.duration_ms / 1000).toFixed(1)}s`}
+          </p>
+        )}
+        {lastUpdated && (
+          <p className="text-[10px] text-muted-foreground">
+            עדכון אחרון: {lastUpdated}
+          </p>
+        )}
+
+        <Button
+          size="sm"
+          className="h-6 text-[11px] px-2"
+          onClick={onGenerateAudio}
+          disabled={disabled || isGeneratingAudio || !canGenerateAudio}
+          title={
+            !canGenerateAudio
+              ? "בחר קול תחילה"
+              : overrideSavedOk
+              ? "תיקוני הגייה נשמרו — צור שמע מחדש"
+              : scene.audio_path
+              ? "צור שמע מחדש (יחליף את הקובץ הקיים)"
+              : "צור שמע קריינות"
+          }
+        >
+          {isGeneratingAudio
+            ? "מייצר שמע..."
+            : scene.audio_path
+            ? "🎙 צור שמע מחדש"
+            : "🎙 צור שמע"}
+        </Button>
+        {!canGenerateAudio && (
+          <p className="text-[10px] text-amber-600">בחר קול לפני יצירת שמע.</p>
+        )}
+      </div>
     </div>
   );
 }

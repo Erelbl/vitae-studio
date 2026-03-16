@@ -117,6 +117,12 @@ export interface FilmScene {
   render_hash: string | null;
   version: number;
   error_message: string | null;
+  /**
+   * Per-scene pronunciation overrides applied at TTS time only.
+   * Takes precedence over project-level tts_overrides_json for the same `original` key.
+   * Never modifies album text shown to the customer.
+   */
+  scene_overrides_json: TtsOverride[] | null;
   created_at: string;
   updated_at: string;
 }
