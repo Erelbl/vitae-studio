@@ -25,6 +25,17 @@ export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 export const PERSON_GENDERS = ["male", "female"] as const;
 export type PersonGender = (typeof PERSON_GENDERS)[number];
 
+export const STORY_SOURCES = ["questionnaire", "manual"] as const;
+export type StorySource = (typeof STORY_SOURCES)[number];
+
+export interface ManualSpread {
+  id: string;
+  spreadIndex: number;
+  rightPageText: string;
+  leftPageText: string;
+  isActive: boolean;
+}
+
 export interface Order {
   id: string;
   created_at: string;
@@ -62,6 +73,8 @@ export interface Order {
   shipping_notes: string | null;
   pricing_snapshot: PricingSnapshot | null;
   currency: string;
+  story_source: StorySource;
+  manual_spreads_json: ManualSpread[] | null;
 }
 
 export const DELIVERY_MODES = ["film", "print", "bundle"] as const;

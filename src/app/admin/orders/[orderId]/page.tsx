@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { STATUS_LABELS } from "@/lib/state-machine";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OrderStatus } from "@/types/order";
+import type { OrderStatus, StorySource, ManualSpread } from "@/types/order";
 import type { QuestionnaireResponses } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
@@ -16,6 +16,7 @@ import { AdminPhotosGallery } from "@/components/admin/AdminPhotosGallery";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { FilmPanel } from "@/components/admin/FilmPanel";
 import { AdminPhotoUpload } from "@/components/admin/AdminPhotoUpload";
+import { ManualStoryEditor } from "@/components/admin/ManualStoryEditor";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 import type { FilmProject, FilmScene } from "@/types/film";
 
@@ -343,6 +344,10 @@ export default async function AdminOrderDetailPage({
   const storyEvaluation =
     (order.story_evaluation as RhymeEvaluation | null) ?? null;
 
+  // ── Manual story data ──
+  const storySource = (order.story_source as StorySource) ?? "questionnaire";
+  const manualSpreads = (order.manual_spreads_json as ManualSpread[] | null) ?? null;
+
   // ── Derive display state ──
   const currentStatus = order.status as OrderStatus;
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
@@ -578,6 +583,15 @@ export default async function AdminOrderDetailPage({
           </dl>
         </section>
       </div>
+
+      {/* ── Manual Story Editor ── */}
+      <Section title="מקור הסיפור">
+        <ManualStoryEditor
+          orderId={orderId}
+          initialStorySource={storySource}
+          initialSpreads={manualSpreads}
+        />
+      </Section>
 
       {/* ── Film section ── */}
       <Section title="סרט">
