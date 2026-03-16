@@ -213,6 +213,58 @@ export function FilmPanel({
     });
   }
 
+  // ── Download / export handlers ──────────────────────────────────────────
+
+  /**
+   * Triggers a ZIP download for selected scenes (or all scenes if sceneIds is null).
+   * @param sceneIds null = all scenes; string[] = specific scene IDs
+   * @param video    include rendered scene MP4s
+   * @param audio    include narration MP3s
+   * @param actionKey unique key for loading state
+   */
+  async function handleExportZip(
+    sceneIds: string[] | null,
+    video: boolean,
+    audio: boolean,
+    actionKey: string
+  ) {
+    await runAction(actionKey, async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/export-zip`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(sceneIds != null ? { sceneIds } : {}),
+            video,
+            audio,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה בייצוא קבצים");
+      }
+
+      // Stream blob and trigger download via hidden anchor
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get("Content-Disposition") ?? "";
+      const match = contentDisposition.match(/filename="([^"]+)"/);
+      const filename = match?.[1] ?? "film-export.zip";
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+
   async function handleAssembleFilm() {
     await runAction("assemble", async () => {
       const res = await fetch(
@@ -529,6 +581,20 @@ export function FilmPanel({
                 ? "בנה מחדש"
                 : "בנה סצנות"}
             </Button>
+            {/* Export all: video + audio ZIP */}
+            {scenes.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading}
+                onClick={() =>
+                  handleExportZip(null, true, true, "export-all")
+                }
+                title="ייצא ZIP של כל סרטוני הסצנות וקבצי השמע"
+              >
+                {loadingAction === "export-all" ? "מייצא..." : "⬇ ייצא הכל (ZIP)"}
+              </Button>
+            )}
             <Button
               variant={assemblyReadyCount === scenes.length && scenes.length > 0 ? "default" : "outline"}
               size="sm"
@@ -614,6 +680,47 @@ export function FilmPanel({
                   ? `הוסף ${selectedSceneIds.size} לתור רינדור`
                   : "הוסף לתור רינדור"}
               </Button>
+              {/* Batch download — only show when scenes are selected */}
+              {selectedSceneIds.size > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isLoading}
+                    onClick={() =>
+                      handleExportZip(
+                        [...selectedSceneIds],
+                        true,
+                        false,
+                        "export-video-selected"
+                      )
+                    }
+                    title={`הורד ${selectedSceneIds.size} סרטוני וידאו כ-ZIP`}
+                  >
+                    {loadingAction === "export-video-selected"
+                      ? "מוריד..."
+                      : `⬇ וידאו (${selectedSceneIds.size})`}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isLoading}
+                    onClick={() =>
+                      handleExportZip(
+                        [...selectedSceneIds],
+                        false,
+                        true,
+                        "export-audio-selected"
+                      )
+                    }
+                    title={`הורד ${selectedSceneIds.size} קבצי שמע כ-ZIP`}
+                  >
+                    {loadingAction === "export-audio-selected"
+                      ? "מוריד..."
+                      : `⬇ שמע (${selectedSceneIds.size})`}
+                  </Button>
+                </>
+              )}
             </div>
 
             {/* Scene column headers */}
@@ -625,7 +732,7 @@ export function FilmPanel({
               <span className="flex-1">טקסט</span>
               <span className="shrink-0 w-14 text-end">שמע / משך</span>
               <span className="shrink-0 w-16 text-end">סטטוס</span>
-              <span className="shrink-0 w-[76px]" />
+              <span className="shrink-0 w-[122px]" />
             </div>
 
             {/* Scene rows */}
@@ -633,6 +740,7 @@ export function FilmPanel({
               {scenes.map((scene) => (
                 <SceneRow
                   key={scene.id}
+                  orderId={orderId}
                   scene={scene}
                   thumbnailUrl={sceneThumbnailUrls[scene.id] ?? null}
                   videoUrl={sceneVideoUrls[scene.id] ?? null}
@@ -758,6 +866,7 @@ const SCENE_STATUS_COLORS: Record<string, string> = {
 };
 
 function SceneRow({
+  orderId,
   scene,
   thumbnailUrl,
   videoUrl,
@@ -771,6 +880,7 @@ function SceneRow({
   canGenerateAudio,
   disabled,
 }: {
+  orderId: string;
   scene: FilmScene;
   thumbnailUrl: string | null;
   videoUrl: string | null;
@@ -941,6 +1051,32 @@ function SceneRow({
             title="צפה בסרטון (נפתח בטאב חדש)"
           >
             ▶
+          </a>
+        ) : (
+          <span className="w-6" />
+        )}
+
+        {/* Per-scene download: video */}
+        {scene.rendered_scene_path ? (
+          <a
+            href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=video`}
+            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+            title="הורד סרטון (MP4)"
+          >
+            🎬
+          </a>
+        ) : (
+          <span className="w-6" />
+        )}
+
+        {/* Per-scene download: audio */}
+        {scene.audio_path ? (
+          <a
+            href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=audio`}
+            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+            title="הורד שמע קריינות (MP3)"
+          >
+            🎵
           </a>
         ) : (
           <span className="w-6" />
