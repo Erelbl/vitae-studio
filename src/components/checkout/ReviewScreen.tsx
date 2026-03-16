@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Check } from "lucide-react";
+import { QUESTIONNAIRE_SECTIONS } from "@/lib/questionnaire-fields";
 
 interface Props {
   orderId: string;
@@ -12,69 +12,73 @@ interface Props {
   responses: Record<string, unknown>;
 }
 
-const REVIEW_SECTIONS = [
-  { key: "person_name", label: "שם" },
-  { key: "nickname", label: "כינוי" },
-  { key: "person_birth_date", label: "תאריך לידה" },
-  { key: "person_birth_city", label: "עיר לידה" },
-  { key: "childhood_city", label: "עיר ילדות" },
-  { key: "profession", label: "מקצוע" },
-  { key: "partner", label: "בן/בת זוג" },
-  { key: "children", label: "ילדים" },
-  { key: "personality_traits", label: "תכונות אופי" },
-  { key: "blessing_wish", label: "ברכה" },
-] as const;
+function resolveDisplay(value: unknown, displayValues?: Record<string, string>): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return displayValues?.[raw] ?? raw;
+}
 
 export function ReviewScreen({ orderId, token, personName, responses }: Props) {
   const router = useRouter();
 
-  const filledCount = REVIEW_SECTIONS.filter(
-    (s) => responses[s.key] && String(responses[s.key]).trim().length > 0
-  ).length;
+  // Only render sections that have at least one filled field
+  const filledSections = QUESTIONNAIRE_SECTIONS.map((section) => ({
+    ...section,
+    fields: section.fields.filter((f) => {
+      const val = responses[f.key];
+      return val !== undefined && val !== null && String(val).trim().length > 0;
+    }),
+  })).filter((s) => s.fields.length > 0);
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10 sm:max-w-2xl sm:px-8">
       <div className="mb-8 text-center">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-green-50 px-4 py-1.5 text-sm font-medium text-green-700">
-          <Check size={16} />
-          השאלון הושלם בהצלחה
-        </div>
         <h1 className="text-2xl font-semibold sm:text-3xl">
-          הסיפור של {personName || "היקר/ה שלכם"} בדרך
+          סיכום השאלון
+          {personName ? ` — ${personName}` : ""}
         </h1>
-        <p className="mt-2 text-base text-muted-foreground">
-          מילאתם {filledCount} מתוך {REVIEW_SECTIONS.length} שדות עיקריים.
-          עכשיו בואו נבחר איך תרצו לקבל את הסיפור.
+        <p className="mt-2 text-sm text-muted-foreground">
+          עיינו בתשובות לפני שממשיכים. לעריכה — חזרו לשאלון.
         </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="mb-8 rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-medium">תקציר הפרטים</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {REVIEW_SECTIONS.map((section) => {
-            const value = responses[section.key];
-            const text = value ? String(value).trim() : "";
-            if (!text) return null;
-            return (
-              <div
-                key={section.key}
-                className="rounded-lg bg-muted/40 px-3 py-2"
-              >
-                <span className="text-xs font-medium text-muted-foreground">
-                  {section.label}
-                </span>
-                <p className="mt-0.5 text-sm leading-relaxed line-clamp-2">
-                  {text}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+      {/* Read-only Q&A grouped by section */}
+      <div className="space-y-6">
+        {filledSections.map((section) => (
+          <div
+            key={section.title}
+            className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm"
+          >
+            <h2 className="mb-4 text-base font-semibold text-foreground/90">
+              {section.title}
+            </h2>
+            <dl className="space-y-3">
+              {section.fields.map((field) => {
+                const display = resolveDisplay(responses[field.key], field.displayValues);
+                return (
+                  <div key={field.key}>
+                    <dt className="text-xs font-medium text-muted-foreground">
+                      {field.label}
+                    </dt>
+                    <dd className="mt-0.5 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                      {display}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        ))}
+
+        {filledSections.length === 0 && (
+          <div className="rounded-2xl border border-border/60 bg-muted/30 p-8 text-center text-muted-foreground">
+            לא נמצאו תשובות שמורות.
+          </div>
+        )}
       </div>
 
-      {/* Edit / Continue */}
-      <div className="flex flex-col gap-3 sm:flex-row-reverse">
+      {/* Actions */}
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row-reverse">
         <Button
           size="lg"
           className="flex-1 rounded-xl text-base"
@@ -92,7 +96,7 @@ export function ReviewScreen({ orderId, token, personName, responses }: Props) {
             router.push(`/order/${orderId}/questionnaire?token=${token}`)
           }
         >
-          חזרה לעריכה
+          חזרה לשאלון
         </Button>
       </div>
     </div>
