@@ -92,32 +92,42 @@ export default async function AdminDashboardPage() {
     {
       label: 'סה"כ הזמנות',
       value: total,
+      icon: "📋",
+      accent: "text-foreground",
       bg: "bg-background",
       border: "border",
     },
     {
       label: "חדשות / בתהליך",
       value: newCount,
-      bg: "bg-blue-50",
-      border: "border-blue-200",
+      icon: "🔄",
+      accent: "text-blue-700",
+      bg: "bg-blue-50/60",
+      border: "border-blue-200/80",
     },
     {
       label: "ממתינות לאישור",
       value: reviewCount,
-      bg: "bg-yellow-50",
-      border: "border-yellow-200",
+      icon: "⏳",
+      accent: "text-yellow-700",
+      bg: "bg-yellow-50/60",
+      border: "border-yellow-200/80",
     },
     {
       label: "מאושרות",
       value: approvedCount,
-      bg: "bg-green-50",
-      border: "border-green-200",
+      icon: "✅",
+      accent: "text-green-700",
+      bg: "bg-green-50/60",
+      border: "border-green-200/80",
     },
     {
       label: "נמסרו",
       value: deliveredCount,
-      bg: "bg-emerald-50",
-      border: "border-emerald-200",
+      icon: "📦",
+      accent: "text-emerald-700",
+      bg: "bg-emerald-50/60",
+      border: "border-emerald-200/80",
     },
   ];
 
@@ -130,10 +140,13 @@ export default async function AdminDashboardPage() {
         {kpis.map((kpi) => (
           <div
             key={kpi.label}
-            className={`rounded-xl ${kpi.border} ${kpi.bg} p-5 shadow-sm`}
+            className={`rounded-xl ${kpi.border} ${kpi.bg} p-5 shadow-sm hover:shadow-md transition-shadow`}
           >
-            <p className="text-sm text-muted-foreground mb-1">{kpi.label}</p>
-            <p className="text-3xl font-bold">{kpi.value}</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-medium text-muted-foreground tracking-wide">{kpi.label}</p>
+              <span className="text-base opacity-70">{kpi.icon}</span>
+            </div>
+            <p className={`text-3xl font-bold tracking-tight ${kpi.accent}`}>{kpi.value}</p>
           </div>
         ))}
       </div>

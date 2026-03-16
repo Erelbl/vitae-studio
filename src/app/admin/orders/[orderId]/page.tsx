@@ -15,6 +15,7 @@ import { DraftStatusPoller } from "@/components/admin/DraftStatusPoller";
 import { AdminPhotosGallery } from "@/components/admin/AdminPhotosGallery";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { FilmPanel } from "@/components/admin/FilmPanel";
+import { AdminPhotoUpload } from "@/components/admin/AdminPhotoUpload";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 import type { FilmProject, FilmScene } from "@/types/film";
 
@@ -596,6 +597,10 @@ export default async function AdminOrderDetailPage({
 
       {/* ── Photos + Illustration generation ── */}
       <Section title={`תמונות (${photosForGallery.length})`}>
+        <div className="border-b border-border/60 pb-4 mb-4">
+          <p className="text-xs font-medium text-muted-foreground mb-2">העלאת תמונות (אדמין)</p>
+          <AdminPhotoUpload orderId={orderId} />
+        </div>
         <AdminPhotosGallery orderId={orderId} photos={photosForGallery} />
       </Section>
 

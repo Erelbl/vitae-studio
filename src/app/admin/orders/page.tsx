@@ -73,9 +73,6 @@ export default async function AdminOrdersPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
-                <TableHead className="px-4 py-3 font-semibold text-foreground w-[120px]">
-                  מזהה הזמנה
-                </TableHead>
                 <TableHead className="px-4 py-3 font-semibold text-foreground">
                   שם הנפש
                 </TableHead>
@@ -102,14 +99,6 @@ export default async function AdminOrdersPage() {
                   key={order.id}
                   className="cursor-pointer transition-colors hover:bg-muted/40 border-b last:border-b-0"
                 >
-                  <TableCell className="px-4 py-3">
-                    <Link
-                      href={`/admin/orders/${order.id}`}
-                      className="font-mono text-xs text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      {order.id.slice(0, 8)}…
-                    </Link>
-                  </TableCell>
                   <TableCell className="px-4 py-3 font-medium">
                     <Link
                       href={`/admin/orders/${order.id}`}

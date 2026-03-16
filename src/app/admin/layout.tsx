@@ -43,7 +43,7 @@ export default async function AdminLayout({
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">
-              {user.email}
+              {user.user_metadata?.full_name || user.user_metadata?.name || user.email}
             </span>
             <form action="/api/admin/logout" method="POST">
               <Button variant="ghost" size="sm" type="submit">
