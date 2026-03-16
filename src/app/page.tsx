@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,45 @@ import { FinalCta } from "@/components/home/FinalCta";
 import { ContactSection } from "@/components/home/ContactSection";
 import { FOOTER } from "@/content/landing-content";
 
+const DRAFT_STORAGE_KEY = "vitae_draft";
+
+interface DraftPointer {
+  orderId: string;
+  token: string;
+  updatedAt: string;
+}
+
 export default function LandingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [draft, setDraft] = useState<DraftPointer | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as DraftPointer;
+        // Only show if draft is less than 30 days old
+        const age = Date.now() - new Date(parsed.updatedAt).getTime();
+        if (age < 30 * 24 * 60 * 60 * 1000) {
+          setDraft(parsed);
+        } else {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+        }
+      }
+    } catch { /* ok */ }
+  }, []);
+
+  function handleResumeDraft() {
+    if (draft) {
+      router.push(`/order/${draft.orderId}/questionnaire?token=${draft.token}`);
+    }
+  }
+
+  function handleDismissDraft() {
+    setDraft(null);
+    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ok */ }
+  }
 
   async function handleStartOrder() {
     setLoading(true);
@@ -64,6 +100,34 @@ export default function LandingPage() {
           </Button>
         </div>
       </header>
+
+      {/* Draft resume banner */}
+      {draft && (
+        <div className="border-b border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
+            <span className="text-sm text-foreground/80">
+              יש לכם שאלון שלא סיימתם למלא
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-full text-xs"
+                onClick={handleDismissDraft}
+              >
+                התחל מחדש
+              </Button>
+              <Button
+                size="sm"
+                className="rounded-full text-xs"
+                onClick={handleResumeDraft}
+              >
+                המשך מהמקום שעצרת
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main>
         {/* Hero with embedded gallery carousel */}

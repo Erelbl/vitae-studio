@@ -25,7 +25,7 @@ export async function POST(
   const { orderId } = await params;
   const token = request.nextUrl.searchParams.get("token");
   const body = await request.json();
-  const { responses, isComplete } = body;
+  const { responses, isComplete, currentStep } = body;
 
   const supabase = createAdminClient();
 
@@ -42,6 +42,7 @@ export async function POST(
         order_id: orderId,
         responses,
         is_complete: isComplete ?? false,
+        ...(typeof currentStep === "number" ? { current_step: currentStep } : {}),
       },
       { onConflict: "order_id" }
     );

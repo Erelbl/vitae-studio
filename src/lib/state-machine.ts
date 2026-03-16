@@ -7,7 +7,8 @@ const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   // generation succeeded, the customer skipped it, or it failed. No intermediate
   // generating_followup state is used in MVP.
   questionnaire_complete: ["enrichment_complete"],
-  enrichment_complete: ["photos_uploaded"],
+  enrichment_complete: ["ready_for_payment", "photos_uploaded"],
+  ready_for_payment: ["photos_uploaded"],
   photos_uploaded: ["generating_text"],
   generating_text: ["text_ready", "error_generation"],
   text_ready: ["generating_illustrations"],
@@ -85,4 +86,5 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   generating_pdf: "יוצר PDF...",
   delivered: "נמסר",
   error_generation: "שגיאה ביצירה",
+  ready_for_payment: "ממתין לתשלום",
 };

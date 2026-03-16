@@ -2,6 +2,7 @@ export const ORDER_STATUSES = [
   "created",
   "questionnaire_complete",
   "enrichment_complete",
+  "ready_for_payment",
   "photos_uploaded",
   "generating_text",
   "text_ready",
@@ -49,4 +50,31 @@ export interface Order {
   access_token_expires_at: string | null;
   video_storage_path: string | null;
   video_status: string | null;
+  delivery_mode: DeliveryMode | null;
+  album_size: AlbumSize | null;
+  shipping_full_name: string | null;
+  shipping_phone: string | null;
+  shipping_city: string | null;
+  shipping_street: string | null;
+  shipping_apartment: string | null;
+  shipping_postal_code: string | null;
+  shipping_notes: string | null;
+  pricing_snapshot: PricingSnapshot | null;
+  currency: string;
+}
+
+export const DELIVERY_MODES = ["film", "print", "bundle"] as const;
+export type DeliveryMode = (typeof DELIVERY_MODES)[number];
+
+export const ALBUM_SIZES = ["25x25", "30x30"] as const;
+export type AlbumSize = (typeof ALBUM_SIZES)[number];
+
+export interface PricingSnapshot {
+  delivery_mode: DeliveryMode;
+  album_size: AlbumSize | null;
+  includes_printed_album: boolean;
+  includes_narrated_film: boolean;
+  total_price_ils: number;
+  currency: "ILS";
+  computed_at: string;
 }

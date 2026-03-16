@@ -1,8 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
-import { QuestionnaireWizard } from "@/components/questionnaire/QuestionnaireWizard";
+import { ProductSelection } from "@/components/checkout/ProductSelection";
+import { redirect } from "next/navigation";
+import type { DeliveryMode } from "@/types/order";
 
-export default async function QuestionnairePage({
+export default async function SelectProductPage({
   params,
   searchParams,
 }: {
@@ -16,7 +18,7 @@ export default async function QuestionnairePage({
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, status, access_token, access_token_expires_at")
+    .select("id, status, delivery_mode, access_token, access_token_expires_at")
     .eq("id", orderId)
     .single();
 
@@ -42,22 +44,16 @@ export default async function QuestionnairePage({
     );
   }
 
-  // Fetch saved questionnaire data for pre-population on reload/back navigation
-  const { data: qResponse } = await supabase
-    .from("questionnaire_responses")
-    .select("responses, current_step")
-    .eq("order_id", orderId)
-    .single();
-
-  const initialData = (qResponse?.responses as Record<string, unknown>) ?? {};
-  const initialStep = (qResponse?.current_step as number) ?? 0;
+  // Must have completed questionnaire
+  if (order.status === "created") {
+    redirect(`/order/${orderId}/questionnaire?token=${token}`);
+  }
 
   return (
-    <QuestionnaireWizard
+    <ProductSelection
       orderId={orderId}
       token={token}
-      initialData={initialData}
-      initialStep={Math.min(initialStep, 8)}
+      initialDeliveryMode={(order.delivery_mode as DeliveryMode) ?? null}
     />
   );
 }

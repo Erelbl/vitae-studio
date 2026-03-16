@@ -163,11 +163,10 @@ export const PACKAGES = {
   subtitle: "בחרו את החבילה המתאימה לכם",
   items: [
     {
-      title: "אלבום סיפור חיים בחרוזים",
+      title: "אלבום פיזי מודפס",
       description: "אפשרות 30×30 או 25×25 · עד 40 עמודים",
-      price: "₪2,200",
+      price: "החל מ־₪2,500",
       featured: false,
-      // Replace / expand these lines with final package inclusions
       inclusions: [
         "שאלון אישי מעמיק",
         "כתיבת טקסט בחרוזים עבריים",
@@ -177,21 +176,21 @@ export const PACKAGES = {
       ],
     },
     {
-      title: "חבילה משולבת",
-      description: "אלבום + סרט — הכל בחבילה אחת",
-      price: "₪3,780",
+      title: "אלבום פיזי + סרט",
+      description: "הכל בחבילה אחת — אלבום מודפס וסרט עם קריינות",
+      price: "החל מ־₪3,750",
       featured: true,
       inclusions: [
-        "כל מה שב\"אלבום\" +",
+        'כל מה שב"אלבום" +',
         "עריכת וידאו עם הנפשות עדינות",
         "קריינות מקצועית",
         "קובץ וידאו להורדה ולשיתוף",
       ],
     },
     {
-      title: "סרטון סיפור חיים בחרוזים",
+      title: "סרט עם קריינות",
       description: "האלבום מתעורר לחיים עם קריינות מקצועית והנפשות עדינות",
-      price: "₪2,000",
+      price: "₪2,200",
       featured: false,
       inclusions: [
         "שאלון אישי מעמיק",

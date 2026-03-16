@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { WizardProgress } from "./WizardProgress";
@@ -19,27 +19,41 @@ interface Props {
   orderId: string;
   token: string;
   initialData?: Record<string, unknown>;
+  initialStep?: number;
 }
 
 const TOTAL_STEPS = 9;
+const DRAFT_STORAGE_KEY = "vitae_draft";
 
-export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props) {
+export function QuestionnaireWizard({ orderId, token, initialData = {}, initialStep = 0 }: Props) {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(initialStep);
   const [allData, setAllData] = useState<Record<string, unknown>>(initialData);
   const [submitting, setSubmitting] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Store draft pointer in localStorage for resume from same browser
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        DRAFT_STORAGE_KEY,
+        JSON.stringify({ orderId, token, updatedAt: new Date().toISOString() })
+      );
+    } catch { /* localStorage unavailable */ }
+  }, [orderId, token]);
 
   // Compute per-step validity against stored allData
   const stepCompletion = STEP_SCHEMAS.map((schema) => schema.safeParse(allData).success);
 
-  async function persist(merged: Record<string, unknown>, isComplete: boolean) {
+  const persist = useCallback(async (merged: Record<string, unknown>, isComplete: boolean, step?: number) => {
     const res = await fetch(`/api/orders/${orderId}/questionnaire?token=${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ responses: merged, isComplete }),
+      body: JSON.stringify({ responses: merged, isComplete, currentStep: step }),
     });
     if (!res.ok) throw new Error("שגיאה בשמירה");
-  }
+    setLastSaved(new Date());
+  }, [orderId, token]);
 
   // Free navigation: save current step data and advance — no validation gate
   async function handleNavigate(stepData: Record<string, unknown>) {
@@ -47,8 +61,9 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
     setAllData(merged);
     setSubmitting(true);
     try {
-      await persist(merged, false);
-      setCurrentStep((s) => s + 1);
+      const nextStep = currentStep + 1;
+      await persist(merged, false, nextStep);
+      setCurrentStep(nextStep);
     } catch {
       toast.error("שגיאה בשמירת הנתונים. נסו שוב.");
     } finally {
@@ -76,8 +91,10 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
 
     setSubmitting(true);
     try {
-      await persist(merged, true);
-      router.push(`/order/${orderId}/photos?token=${token}`);
+      await persist(merged, true, TOTAL_STEPS);
+      // Clear draft pointer — questionnaire is complete
+      try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ok */ }
+      router.push(`/order/${orderId}/review?token=${token}`);
     } catch {
       toast.error("שגיאה בשמירת הנתונים. נסו שוב.");
     } finally {
@@ -106,6 +123,12 @@ export function QuestionnaireWizard({ orderId, token, initialData = {} }: Props)
           ניתן לנוע בין השלבים בחופשיות, ככל שתספרו לנו יותר פרטים, אנחנו נוכל לכתוב את הסיפור שלכם כך שיהיה אישי ומרגש
         </div>
       )}
+
+      {/* Autosave indicator */}
+      <div className="mb-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground/70">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500/60" />
+        ההתקדמות שלך נשמרת אוטומטית
+      </div>
 
       <WizardProgress
         currentStep={currentStep}

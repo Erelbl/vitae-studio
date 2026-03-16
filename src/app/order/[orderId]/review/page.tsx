@@ -1,8 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
-import { QuestionnaireWizard } from "@/components/questionnaire/QuestionnaireWizard";
+import { ReviewScreen } from "@/components/checkout/ReviewScreen";
+import { redirect } from "next/navigation";
 
-export default async function QuestionnairePage({
+export default async function ReviewPage({
   params,
   searchParams,
 }: {
@@ -16,7 +17,7 @@ export default async function QuestionnairePage({
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, status, access_token, access_token_expires_at")
+    .select("id, status, person_name, buyer_name, access_token, access_token_expires_at")
     .eq("id", orderId)
     .single();
 
@@ -42,22 +43,26 @@ export default async function QuestionnairePage({
     );
   }
 
-  // Fetch saved questionnaire data for pre-population on reload/back navigation
+  // If questionnaire isn't complete yet, redirect back
+  if (order.status === "created") {
+    redirect(`/order/${orderId}/questionnaire?token=${token}`);
+  }
+
   const { data: qResponse } = await supabase
     .from("questionnaire_responses")
-    .select("responses, current_step")
+    .select("responses")
     .eq("order_id", orderId)
     .single();
 
-  const initialData = (qResponse?.responses as Record<string, unknown>) ?? {};
-  const initialStep = (qResponse?.current_step as number) ?? 0;
+  const responses = (qResponse?.responses as Record<string, unknown>) ?? {};
 
   return (
-    <QuestionnaireWizard
+    <ReviewScreen
       orderId={orderId}
       token={token}
-      initialData={initialData}
-      initialStep={Math.min(initialStep, 8)}
+      personName={(order.person_name as string) || ""}
+      buyerName={(order.buyer_name as string) || ""}
+      responses={responses}
     />
   );
 }
