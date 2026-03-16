@@ -19,6 +19,13 @@ function getConfig() {
   const apiName = process.env.CARDCOM_API_NAME;
   const apiPassword = process.env.CARDCOM_API_PASSWORD;
 
+  console.log("[cardcom] env check:", {
+    CARDCOM_TERMINAL_NUMBER: !!terminalNumber,
+    CARDCOM_API_NAME: !!apiName,
+    CARDCOM_API_PASSWORD: !!apiPassword,
+    CARDCOM_TEST_MODE: process.env.CARDCOM_TEST_MODE,
+  });
+
   if (!terminalNumber || !apiName || !apiPassword) {
     throw new Error(
       "Missing CardCom credentials: CARDCOM_TERMINAL_NUMBER, CARDCOM_API_NAME, CARDCOM_API_PASSWORD"
@@ -144,6 +151,16 @@ export async function createPaymentPage(
 
   const url = `${config.baseUrl}/LowProfile.aspx`;
 
+  // Log outgoing request shape (no secrets)
+  console.log("[cardcom] POST →", url, {
+    Amount: params.totalIls,
+    ReturnValue: params.returnValue,
+    SuccessRedirectUrl: params.successUrl,
+    FailedRedirectUrl: params.failureUrl,
+    WebHookUrl: params.webhookUrl,
+    ProductName: params.productName,
+  });
+
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -153,8 +170,23 @@ export async function createPaymentPage(
 
     const text = await response.text();
 
+    console.log("[cardcom] HTTP status:", response.status);
+    console.log("[cardcom] Content-Type:", response.headers.get("content-type"));
+    console.log("[cardcom] Raw response (first 1000 chars):", text.slice(0, 1000));
+
+    if (!response.ok) {
+      return {
+        success: false,
+        lowProfileCode: null,
+        redirectUrl: null,
+        rawResponse: { httpStatus: response.status, body: text.slice(0, 500) },
+        error: `CardCom HTTP ${response.status}: ${text.slice(0, 200)}`,
+      };
+    }
+
     // CardCom returns form-encoded response
     const parsed = parseCardComResponse(text);
+    console.log("[cardcom] Parsed response:", parsed);
 
     const responseCode = parsed.ResponseCode ?? parsed.responsecode ?? "";
     const lowProfileCode =
@@ -171,17 +203,24 @@ export async function createPaymentPage(
       };
     }
 
+    const description = parsed.Description ?? parsed.description ?? "";
+    console.error("[cardcom] Payment page creation failed:", {
+      responseCode,
+      description,
+      parsed,
+    });
+
     return {
       success: false,
       lowProfileCode: null,
       redirectUrl: null,
       rawResponse: parsed,
-      error:
-        parsed.Description ??
-        parsed.description ??
-        `CardCom error code: ${responseCode}`,
+      error: description
+        ? `CardCom error ${responseCode}: ${description}`
+        : `CardCom error code: ${responseCode}`,
     };
   } catch (err) {
+    console.error("[cardcom] Fetch error:", (err as Error).message, (err as Error).stack);
     return {
       success: false,
       lowProfileCode: null,

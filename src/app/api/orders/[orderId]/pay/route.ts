@@ -111,18 +111,35 @@ export async function POST(
   const productName = DELIVERY_LABELS[pricing.delivery_mode] ?? "Vitae Studio";
 
   // Call CardCom
-  const result = await createPaymentPage({
-    totalIls,
-    productName,
-    returnValue,
-    successUrl,
-    failureUrl,
-    webhookUrl,
-    customerName: (order.buyer_name as string) || (order.person_name as string) || "",
-    customerEmail: (order.buyer_email as string) || "",
-    customerPhone: (order.buyer_phone as string) || "",
-    invoiceDescription: productName,
-  });
+  let result;
+  try {
+    result = await createPaymentPage({
+      totalIls,
+      productName,
+      returnValue,
+      successUrl,
+      failureUrl,
+      webhookUrl,
+      customerName: (order.buyer_name as string) || (order.person_name as string) || "",
+      customerEmail: (order.buyer_email as string) || "",
+      customerPhone: (order.buyer_phone as string) || "",
+      invoiceDescription: productName,
+    });
+  } catch (err) {
+    console.error("[pay] CardCom call threw:", (err as Error).message, (err as Error).stack);
+    // Record failure on the payment attempt
+    await supabase
+      .from("payment_attempts")
+      .update({
+        status: "failed",
+        error_message: (err as Error).message,
+      })
+      .eq("id", attempt.id);
+    return NextResponse.json(
+      { error: (err as Error).message || "CardCom service error" },
+      { status: 502 }
+    );
+  }
 
   // Store provider response on the payment attempt
   await supabase
@@ -136,6 +153,7 @@ export async function POST(
     .eq("id", attempt.id);
 
   if (!result.success || !result.redirectUrl) {
+    console.error("[pay] CardCom page creation failed:", result.error, result.rawResponse);
     return NextResponse.json(
       { error: result.error || "Failed to create payment page" },
       { status: 502 }
