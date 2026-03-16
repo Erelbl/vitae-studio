@@ -47,9 +47,9 @@ export default async function ReadyForPaymentPage({
     );
   }
 
-  // If already paid, redirect to photos
+  // If already paid, redirect to status
   if (order.payment_status === "paid") {
-    redirect(`/order/${orderId}/photos?token=${token}`);
+    redirect(`/order/${orderId}/status?token=${token}`);
   }
 
   // Allow payment from ready_for_payment or payment_pending (retry)

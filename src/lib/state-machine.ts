@@ -7,10 +7,12 @@ const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   // generation succeeded, the customer skipped it, or it failed. No intermediate
   // generating_followup state is used in MVP.
   questionnaire_complete: ["enrichment_complete"],
-  enrichment_complete: ["ready_for_payment", "photos_uploaded"],
-  ready_for_payment: ["payment_pending", "photos_uploaded"],
-  payment_pending: ["ready_for_payment", "photos_uploaded"],
-  photos_uploaded: ["generating_text"],
+  // New flow: questionnaire → photos → checkout → payment → generation
+  // Photos must be uploaded before proceeding to checkout/payment.
+  enrichment_complete: ["photos_uploaded"],
+  photos_uploaded: ["ready_for_payment", "generating_text"],
+  ready_for_payment: ["payment_pending"],
+  payment_pending: ["ready_for_payment", "generating_text"],
   generating_text: ["text_ready", "error_generation"],
   text_ready: ["generating_illustrations"],
   generating_illustrations: ["preview_ready", "error_generation"],

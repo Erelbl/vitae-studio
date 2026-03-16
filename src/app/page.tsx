@@ -91,12 +91,11 @@ export default function LandingPage() {
             />
           </div>
           <Button
-            size="sm"
             onClick={handleStartOrder}
             disabled={loading}
-            className="rounded-full px-5 text-sm"
+            className="rounded-full px-6 py-2.5 text-sm font-medium"
           >
-            {loading ? "טוען..." : "התחילו"}
+            {loading ? "טוען..." : "התחילו כאן"}
           </Button>
         </div>
       </header>

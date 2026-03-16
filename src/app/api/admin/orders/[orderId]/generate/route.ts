@@ -55,6 +55,7 @@ export async function POST(
   const ALLOWED_START: OrderStatus[] = [
     "enrichment_complete",
     "photos_uploaded",
+    "payment_pending",
     "revision_requested",
     "error_generation",
     "preview_ready",

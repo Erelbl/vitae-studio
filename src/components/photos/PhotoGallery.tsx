@@ -122,6 +122,22 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
     }
   }
 
+  async function handleUpdateCaption(photoId: string, caption: string) {
+    const res = await fetch(
+      `/api/orders/${orderId}/photos/${photoId}?token=${token}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caption: caption || null }),
+      }
+    );
+    if (res.ok) {
+      setPhotos((prev) =>
+        prev.map((p) => (p.id === photoId ? { ...p, caption: caption || null } : p))
+      );
+    }
+  }
+
   async function handleComplete() {
     if (photos.length < 1) {
       toast.error("יש להעלות לפחות תמונה אחת");
@@ -134,7 +150,7 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
         { method: "POST" }
       );
       if (res.ok) {
-        router.push(`/order/${orderId}/status?token=${token}`);
+        router.push(`/order/${orderId}/select-product?token=${token}`);
       } else {
         toast.error("שגיאה בסיום ההעלאה");
       }
@@ -154,6 +170,14 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
           העלו תמונות מתקופות שונות בחיים — לפחות 10, עד 40.
           אנחנו נמיין ונשלב אותן בסיפור.
+        </p>
+      </div>
+
+      {/* Guidance text */}
+      <div className="mb-6 rounded-2xl border border-border/50 bg-card p-4 text-sm leading-relaxed text-foreground/80 shadow-sm sm:text-base">
+        <p>
+          מומלץ להעלות תמונות מתקופות שונות בחיים ושמתחברות למה שסיפרתם בשאלון.
+          תמונות של מקומות, בית ילדות, נופים, משפחה ואירועים משמעותיים יעזרו לנו לבנות סיפור עשיר ומדויק יותר.
         </p>
       </div>
 
@@ -205,35 +229,44 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
 
       {/* Photo grid */}
       {photos.length > 0 && (
-        <div className="mb-8 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5">
+        <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {photos.map((photo) => (
-            <div key={photo.id} className="group relative aspect-square">
-              {photo.display_url ? (
-                <img
-                  src={photo.display_url}
-                  alt={photo.original_filename}
-                  className="h-full w-full rounded-xl object-cover shadow-sm"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
-                  {photo.original_filename}
-                </div>
-              )}
-              {photo.life_stage && (
-                <Badge
-                  variant="secondary"
-                  className="absolute bottom-1 start-1 text-xs"
+            <div key={photo.id} className="group">
+              <div className="relative aspect-square">
+                {photo.display_url ? (
+                  <img
+                    src={photo.display_url}
+                    alt={photo.original_filename}
+                    className="h-full w-full rounded-xl object-cover shadow-sm"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
+                    {photo.original_filename}
+                  </div>
+                )}
+                {photo.life_stage && (
+                  <Badge
+                    variant="secondary"
+                    className="absolute bottom-1 start-1 text-xs"
+                  >
+                    {photo.life_stage}
+                  </Badge>
+                )}
+                <button
+                  onClick={() => handleDelete(photo.id)}
+                  className="absolute end-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-foreground/70 text-background text-xs opacity-70 transition-opacity hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                  aria-label="מחק תמונה"
                 >
-                  {photo.life_stage}
-                </Badge>
-              )}
-              <button
-                onClick={() => handleDelete(photo.id)}
-                className="absolute end-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-foreground/70 text-background text-xs opacity-70 transition-opacity hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                aria-label="מחק תמונה"
-              >
-                ✕
-              </button>
+                  ✕
+                </button>
+              </div>
+              <input
+                type="text"
+                defaultValue={photo.caption ?? ""}
+                placeholder="תיאור קצר של התמונה (מי מופיע בתמונה / מה רואים בה)"
+                className="mt-1.5 w-full rounded-lg border border-border/50 bg-card px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-none"
+                onBlur={(e) => handleUpdateCaption(photo.id, e.target.value)}
+              />
             </div>
           ))}
         </div>

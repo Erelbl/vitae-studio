@@ -57,6 +57,7 @@ export async function POST(
     currentStatus === "ready_for_payment" || currentStatus === "payment_pending";
 
   if (!alreadyInPaymentFlow) {
+    // photos_uploaded → ready_for_payment is the expected path in the new flow
     try {
       assertTransition(currentStatus, "ready_for_payment");
     } catch {

@@ -55,6 +55,7 @@ export async function POST(
   const ALLOWED_START: OrderStatus[] = [
     "enrichment_complete",
     "photos_uploaded",
+    "payment_pending",
     "revision_requested",
     "error_generation",
     "preview_ready",
@@ -154,6 +155,7 @@ export async function POST(
   }
 
   // ── Transition to generating_text ──
+  // payment_pending → generating_text is the post-payment path (webhook triggers this)
   const preGeneratingStatus: OrderStatus =
     currentStatus === "enrichment_complete" ? "photos_uploaded" : currentStatus;
 

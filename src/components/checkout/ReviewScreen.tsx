@@ -87,10 +87,10 @@ export function ReviewScreen({ orderId, token, personName, responses, albumType 
           size="lg"
           className="flex-1 rounded-xl text-base"
           onClick={() =>
-            router.push(`/order/${orderId}/select-product?token=${token}`)
+            router.push(`/order/${orderId}/photos?token=${token}`)
           }
         >
-          המשך לבחירת מוצר
+          המשך להעלאת תמונות
         </Button>
         <Button
           variant="outline"

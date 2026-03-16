@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   parseWebhookPayload,
@@ -129,12 +129,12 @@ async function processSuccessfulPayment(
     })
     .eq("id", attempt.id);
 
-  // Update order — mark as paid and advance to photos_uploaded
+  // Update order — mark as paid. Keep status in payment_pending so
+  // generate-story can transition payment_pending → generating_text.
   const orderUpdate: Record<string, unknown> = {
     payment_status: "paid",
     payment_method: "cardcom",
     payment_date: now,
-    status: "photos_uploaded",
   };
 
   // Invoice tracking on order
@@ -157,8 +157,43 @@ async function processSuccessfulPayment(
     );
   } else {
     console.log(
-      `[cardcom-webhook] Order ${attempt.order_id} marked as paid, status → photos_uploaded`
+      `[cardcom-webhook] Order ${attempt.order_id} marked as paid, triggering story generation`
     );
+  }
+
+  // Trigger story generation in the background after payment
+  const { data: order } = await supabase
+    .from("orders")
+    .select("access_token")
+    .eq("id", attempt.order_id)
+    .single();
+
+  if (order?.access_token) {
+    const accessToken = order.access_token as string;
+    const orderId = attempt.order_id;
+    after(async () => {
+      try {
+        // Determine origin from env or fallback
+        const origin =
+          process.env.NEXT_PUBLIC_SITE_URL ||
+          (process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : "http://localhost:3000");
+        console.log(`[cardcom-webhook] Triggering generate-story for order ${orderId}`);
+        const res = await fetch(
+          `${origin}/api/orders/${orderId}/generate-story?token=${accessToken}`,
+          { method: "POST" }
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          console.error(`[cardcom-webhook] generate-story returned ${res.status}:`, body);
+        } else {
+          console.log(`[cardcom-webhook] generate-story started: pages_saved=${body.pages_saved}`);
+        }
+      } catch (err) {
+        console.error("[cardcom-webhook] Failed to trigger story generation:", err);
+      }
+    });
   }
 }
 

@@ -1,16 +1,14 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeOrderRequest } from "@/lib/order-auth";
 import { assertTransition } from "@/lib/state-machine";
 import type { OrderStatus } from "@/types/order";
 
-// Allow up to 300s so after() can wait for the synchronous generate-story pipeline.
-export const maxDuration = 300;
-
 // POST /api/orders/[orderId]/photos/complete?token=...
 //
 // Marks photo upload as done and transitions the order to photos_uploaded.
 // Requires at least one uploaded photo.
+// Story generation is NOT triggered here — it starts after payment.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }
@@ -64,27 +62,6 @@ export async function POST(
   if (updateError) {
     return NextResponse.json({ error: "Failed to update order status" }, { status: 500 });
   }
-
-  // Fire story generation in the background after responding to the client
-  const accessToken = auth.order.access_token;
-  const baseUrl = new URL(request.url).origin;
-  after(async () => {
-    try {
-      console.log(`[photos/complete] Triggering generate-story for order ${orderId}`);
-      const res = await fetch(
-        `${baseUrl}/api/orders/${orderId}/generate-story?token=${accessToken}`,
-        { method: "POST" }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        console.error(`[photos/complete] generate-story returned ${res.status}:`, body);
-      } else {
-        console.log(`[photos/complete] generate-story started: pages_saved=${body.pages_saved}`);
-      }
-    } catch (err) {
-      console.error("[photos/complete] Failed to trigger story generation:", err);
-    }
-  });
 
   return NextResponse.json({ status: "photos_uploaded" });
 }

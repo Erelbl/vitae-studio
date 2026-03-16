@@ -99,17 +99,17 @@ export function PaymentReturnClient({
           התשלום התקבל בהצלחה
         </h1>
         <p className="mt-3 text-base text-muted-foreground">
-          הסיפור של {personName || "היקר/ה שלכם"} בדרך. עכשיו נמשיך להעלות
-          תמונות.
+          הסיפור של {personName || "היקר/ה שלכם"} בדרך. התחלנו ליצור את האלבום
+          שלכם.
         </p>
         <Button
           size="lg"
           className="mt-8 rounded-xl text-base"
           onClick={() =>
-            router.push(`/order/${orderId}/photos?token=${token}`)
+            router.push(`/order/${orderId}/status?token=${token}`)
           }
         >
-          המשך להעלאת תמונות
+          מעבר למעקב הזמנה
         </Button>
       </div>
     );

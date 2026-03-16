@@ -45,9 +45,9 @@ export default async function PaymentReturnPage({
     );
   }
 
-  // If already paid, redirect to photos upload
+  // If already paid, redirect to status page (story generation starts after payment)
   if (order.payment_status === "paid") {
-    redirect(`/order/${orderId}/photos?token=${token}`);
+    redirect(`/order/${orderId}/status?token=${token}`);
   }
 
   // If provider returned failure, go back to ready page

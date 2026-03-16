@@ -17,7 +17,7 @@ const CUSTOMER_STEPS: { statuses: OrderStatus[]; label: string; desc: string }[]
     desc: "קיבלנו את כל פרטי הסיפור",
   },
   {
-    statuses: ["photos_uploaded"],
+    statuses: ["photos_uploaded", "ready_for_payment", "payment_pending"],
     label: "תמונות הועלו",
     desc: "התמונות שלכם הגיעו אלינו",
   },
