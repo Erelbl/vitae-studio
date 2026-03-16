@@ -288,7 +288,7 @@ export function parseWebhookPayload(
  * Falls back to JSON (some CardCom endpoints) and then URL-encoded as a
  * last resort.
  */
-function parseCardComResponse(text: string): Record<string, string> {
+export function parseCardComResponse(text: string): Record<string, string> {
   const result: Record<string, string> = {};
 
   // Try JSON first

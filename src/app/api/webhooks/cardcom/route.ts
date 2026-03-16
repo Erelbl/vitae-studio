@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   parseWebhookPayload,
+  parseCardComResponse,
   type CardComWebhookPayload,
 } from "@/services/payment/cardcom";
 
@@ -23,14 +24,14 @@ export async function POST(request: NextRequest) {
     return new NextResponse("OK", { status: 200 });
   }
 
-  // Parse form-encoded or JSON payload
+  // Parse webhook body. CardCom may send semicolon-delimited key=value (same
+  // format as its API responses) or standard URL-encoded form data. Use the
+  // shared parser that handles both, with JSON as a further fallback.
   let payload: CardComWebhookPayload;
   try {
-    // CardCom typically sends form-encoded
-    const params = new URLSearchParams(rawBody);
-    payload = Object.fromEntries(params.entries()) as CardComWebhookPayload;
+    payload = parseCardComResponse(rawBody) as CardComWebhookPayload;
   } catch {
-    console.error("[cardcom-webhook] Failed to parse payload:", rawBody);
+    console.error("[cardcom-webhook] Failed to parse payload:", rawBody.slice(0, 500));
     return new NextResponse("OK", { status: 200 });
   }
 
@@ -56,7 +57,8 @@ export async function POST(request: NextRequest) {
 
   if (findError || !attempt) {
     console.error(
-      `[cardcom-webhook] No payment attempt found for ReturnValue=${parsed.returnValue}`
+      `[cardcom-webhook] No payment attempt found for ReturnValue=${parsed.returnValue}`,
+      findError
     );
     return new NextResponse("OK", { status: 200 });
   }
@@ -64,18 +66,8 @@ export async function POST(request: NextRequest) {
   // Idempotency: if already completed, skip processing but still return OK
   if (attempt.status === "completed") {
     console.log(
-      `[cardcom-webhook] Payment attempt ${attempt.id} already completed, skipping`
+      `[cardcom-webhook] attempt=${attempt.id} order=${attempt.order_id} already completed, skipping`
     );
-    return new NextResponse("OK", { status: 200 });
-  }
-
-  // Also check idempotency by transaction ID if available
-  if (
-    parsed.transactionId &&
-    attempt.provider_transaction_id &&
-    attempt.provider_transaction_id === parsed.transactionId &&
-    attempt.status === "completed"
-  ) {
     return new NextResponse("OK", { status: 200 });
   }
 

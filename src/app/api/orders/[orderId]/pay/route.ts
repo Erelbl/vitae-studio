@@ -88,7 +88,7 @@ export async function POST(
     .single();
 
   if (insertError || !attempt) {
-    console.error("Failed to create payment attempt:", insertError);
+    console.error(`[pay] order=${orderId} failed to create payment attempt:`, insertError);
     return NextResponse.json(
       { error: "Failed to create payment attempt" },
       { status: 500 }
@@ -96,11 +96,27 @@ export async function POST(
   }
 
   // Build URLs
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const accessToken = order.access_token as string;
-  const successUrl = `${appUrl}/order/${orderId}/payment-return?token=${accessToken}&status=success`;
-  const failureUrl = `${appUrl}/order/${orderId}/payment-return?token=${accessToken}&status=failed`;
-  const webhookUrl = `${appUrl}/api/webhooks/cardcom`;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (!appUrl) {
+    console.warn("[pay] NEXT_PUBLIC_APP_URL is not set — webhook and redirect URLs will be wrong in production");
+  }
+  const baseUrl = appUrl || "http://localhost:3000";
+
+  const accessToken = order.access_token as string | null;
+  if (!accessToken) {
+    console.error(`[pay] order=${orderId} has no access_token — cannot build redirect URLs`);
+    await supabase
+      .from("payment_attempts")
+      .update({ status: "failed", error_message: "Order missing access token" })
+      .eq("id", attempt.id);
+    return NextResponse.json(
+      { error: "Order configuration error" },
+      { status: 500 }
+    );
+  }
+  const successUrl = `${baseUrl}/order/${orderId}/payment-return?token=${accessToken}&status=success`;
+  const failureUrl = `${baseUrl}/order/${orderId}/payment-return?token=${accessToken}&status=failed`;
+  const webhookUrl = `${baseUrl}/api/webhooks/cardcom`;
 
   // Build product name for CardCom
   const DELIVERY_LABELS: Record<string, string> = {
@@ -126,7 +142,7 @@ export async function POST(
       invoiceDescription: productName,
     });
   } catch (err) {
-    console.error("[pay] CardCom call threw:", (err as Error).message, (err as Error).stack);
+    console.error(`[pay] order=${orderId} attempt=${attempt.id} CardCom call threw:`, (err as Error).message, (err as Error).stack);
     // Record failure on the payment attempt
     await supabase
       .from("payment_attempts")
@@ -153,7 +169,7 @@ export async function POST(
     .eq("id", attempt.id);
 
   if (!result.success || !result.redirectUrl) {
-    console.error("[pay] CardCom page creation failed:", result.error, result.rawResponse);
+    console.error(`[pay] order=${orderId} attempt=${attempt.id} CardCom page creation failed:`, result.error, result.rawResponse);
     return NextResponse.json(
       { error: result.error || "Failed to create payment page" },
       { status: 502 }
