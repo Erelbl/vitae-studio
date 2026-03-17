@@ -20,6 +20,7 @@ export const memorialConfig: QuestionnaireConfig = {
         },
         { name: "person_birth_date", label: "תאריך לידה", type: "date", required: false, dir: "ltr" },
         { name: "person_passing_date", label: "תאריך פטירה", type: "date", required: false, dir: "ltr" },
+        { name: "passing_circumstances", label: "ספרו על נסיבות הפטירה", type: "textarea", required: false, maxLength: 500 },
         { name: "nickname", label: "כינוי חיבה", type: "text", required: false },
       ],
     },
@@ -53,6 +54,7 @@ export const memorialConfig: QuestionnaireConfig = {
       fields: [
         { name: "partner", label: "בן/בת זוג", type: "text", required: false },
         { name: "how_they_met", label: "איך הכירו", type: "textarea", required: false, maxLength: 400 },
+        { name: "proposal_story", label: "במידה והייתה הצעת נישואין ספרו לנו עליה", type: "textarea", required: false, maxLength: 400 },
         { name: "wedding_story", label: "סיפור חתונה", type: "textarea", required: false, maxLength: 400 },
         { name: "children", label: "ילדים ושמותיהם", type: "text", required: false },
         { name: "parenting_style", label: "איך היית מתאר/ת אותו/ה כהורה", type: "textarea", required: false, maxLength: 300 },
@@ -62,13 +64,13 @@ export const memorialConfig: QuestionnaireConfig = {
       key: "personality",
       label: "האדם שמאחורי הסיפור",
       fields: [
-        { name: "personality_traits", label: "שלוש התכונות הבולטות ביותר", type: "textarea", required: true, maxLength: 300 },
-        { name: "known_for", label: "מה הדבר הכי אופייני לו/לה", type: "textarea", required: true, maxLength: 300 },
-        { name: "one_sentence_description", label: "תיאור במשפט אחד", type: "textarea", required: true, maxLength: 200 },
-        { name: "first_impression", label: "מה הדבר הראשון שאנשים שמים לב אליו?", type: "text", required: false },
+        { name: "known_for", label: "איזה תכונות בולטות אפיינו אותו/ה?", type: "textarea", required: true, maxLength: 300 },
+        { name: "one_sentence_description", label: "תארו אותו/ה במשפט אחד", type: "textarea", required: true, maxLength: 200 },
+        { name: "first_impression", label: "מה הדבר הראשון שהיית מבחין בו אצלו/ה", type: "text", required: false },
         { name: "favorite_sayings", label: "משפט שהוא/היא תמיד אמר/ה", type: "text", required: false },
         { name: "hobbies", label: "תחביבים", type: "text", required: false },
-        { name: "what_we_miss", label: "מה הכי חסר לכם", type: "textarea", required: false, maxLength: 400 },
+        { name: "favorite_food", label: "מאכל שהיה אהוב במיוחד עליו/ה", type: "text", required: false },
+        { name: "what_we_miss", label: "מה הדבר שאתם הכי מתגעגעים לעשות יחד איתו/ה?", type: "textarea", required: false, maxLength: 400 },
       ],
     },
     {
@@ -87,7 +89,7 @@ export const memorialConfig: QuestionnaireConfig = {
       fields: [
         { name: "important_values", label: "ערכים שהוא/היא חי/ה לפיהם", type: "textarea", required: false, maxLength: 300 },
         { name: "most_proud_of", label: "במה היה/היתה הכי גאה", type: "textarea", required: false, maxLength: 400 },
-        { name: "taught_children", label: "מה לימד/ה את הילדים והנכדים", type: "textarea", required: false, maxLength: 400 },
+        { name: "taught_children", label: "מה היה המסר שלו/ה לעולם?", type: "textarea", required: false, maxLength: 400 },
         { name: "how_they_changed_us", label: "איך הוא/היא שינה את חיינו", type: "textarea", required: false, maxLength: 400 },
       ],
     },

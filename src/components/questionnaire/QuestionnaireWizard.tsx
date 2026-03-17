@@ -117,6 +117,16 @@ export function QuestionnaireWizard({
 
   return (
     <div className="mx-auto max-w-xl px-4 py-8 sm:max-w-2xl sm:px-8 sm:py-10">
+      {/* Back to album type selection */}
+      <div className="mb-4">
+        <a
+          href={`/order/${orderId}/album-type?token=${token}`}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          ← חזרה לבחירת סוג האלבום
+        </a>
+      </div>
+
       {/* Intro notice – visible on first step */}
       {currentStep === 0 && (
         <div className="mb-5 rounded-xl border border-border/50 bg-muted/40 px-4 py-3 text-sm text-muted-foreground leading-relaxed sm:text-base">

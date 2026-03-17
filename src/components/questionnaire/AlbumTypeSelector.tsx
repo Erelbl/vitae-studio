@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { User, Heart, Flame } from "lucide-react";
 import type { AlbumType } from "@/questionnaires/types";
 
 interface Props {
@@ -11,29 +12,31 @@ interface Props {
   currentAlbumType?: string;
 }
 
+const ICON_COLOR = "#757D65";
+
 const ALBUM_TYPE_CARDS: {
   type: AlbumType;
   title: string;
   description: string;
-  icon: string;
+  Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number; className?: string }>;
 }[] = [
   {
     type: "single",
     title: "סיפור חיים אישי",
-    description: "אלבום סיפור חיים מרגש לאדם אחד — ליום הולדת, פרישה, או סתם כי מגיע לו",
-    icon: "👤",
+    description: "אלבום שמספר את סיפורו של אדם לכבוד יום ההולדת, פרישה או סתם כי הוא יקר לליבכם",
+    Icon: User,
   },
   {
     type: "couple",
-    title: "לזוג / חתונה / יום נישואין",
-    description: "סיפור זוגי מרגש — מההכרות ועד היום, לחגיגת האהבה שלכם",
-    icon: "💑",
+    title: "סיפור בחרוזים לספר לנכדים",
+    description: "סיפור זוגי מרגע ההיכרות ועד היום, יתאים לכל חגיגת אהבה, יום נישואין או חתונה",
+    Icon: Heart,
   },
   {
     type: "memorial",
-    title: "הנצחה",
-    description: "אלבום זיכרון מכבד ומרגש לאדם יקר שאיננו עוד",
-    icon: "🕯️",
+    title: "זוכרים ומתגעגעים",
+    description: "סיפור חייו של אדם יקר שאיננו עוד, דרכו ננציח את הערכים והמורשת שהשאיר אחריו",
+    Icon: Flame,
   },
 ];
 
@@ -67,9 +70,6 @@ export function AlbumTypeSelector({ orderId, token, currentAlbumType }: Props) {
         <h1 className="text-2xl font-semibold sm:text-3xl">
           איזה סיפור תרצו לספר?
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          בחרו את סוג האלבום כדי שנתאים את השאלון בדיוק עבורכם
-        </p>
       </div>
 
       <div className="grid gap-4">
@@ -85,7 +85,12 @@ export function AlbumTypeSelector({ orderId, token, currentAlbumType }: Props) {
                 : "border-border/60 bg-card hover:border-primary/40 hover:shadow-sm"
             } ${saving ? "opacity-60 cursor-wait" : "cursor-pointer"}`}
           >
-            <span className="text-3xl sm:text-4xl" role="img">{card.icon}</span>
+            <card.Icon
+              size={24}
+              color={ICON_COLOR}
+              strokeWidth={1.5}
+              className="mt-1 shrink-0"
+            />
             <div className="flex-1">
               <h2 className="text-base font-semibold sm:text-lg">{card.title}</h2>
               <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
