@@ -27,9 +27,9 @@ export function FounderSection() {
 
             {/* Text — end side (left in RTL) */}
             <div className="flex flex-1 flex-col items-center text-center lg:items-start lg:text-start">
-              <span className="mb-4 inline-block text-sm font-medium text-primary">
+              <h2 className="mb-4 text-2xl font-semibold sm:text-3xl">
                 {FOUNDER.sectionLabel}
-              </span>
+              </h2>
 
               {/* Opening greeting — displayed prominently */}
               <p className="mb-5 text-xl font-semibold leading-relaxed text-foreground sm:text-2xl">
@@ -51,8 +51,6 @@ export function FounderSection() {
                   </p>
                 ))}
               </div>
-
-              <div className="my-2 h-px w-12 bg-primary/30" />
 
               <Image
                 src="/images/landing/signature-dor.png"

@@ -15,12 +15,9 @@ export function UseCases() {
 
         <FadeIn>
           <div className="mb-10 text-center">
-            <span className="mb-3 inline-block text-sm font-medium text-primary">
-              {USE_CASES.sectionLabel}
-            </span>
-            <h2 className="text-3xl font-semibold sm:text-4xl">{USE_CASES.title}</h2>
+            <h2 className="text-3xl font-semibold sm:text-4xl">{USE_CASES.sectionLabel}</h2>
             <p className="mt-3 text-base text-muted-foreground sm:text-lg">
-              {USE_CASES.subtitle}
+              {USE_CASES.title}
             </p>
           </div>
         </FadeIn>

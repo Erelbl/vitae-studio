@@ -46,7 +46,7 @@ export const HOW_IT_WORKS = {
 };
 
 export const USE_CASES = {
-  sectionLabel: "למי מתאים?",
+  sectionLabel: "למי זה מתאים?",
   title: "מתנה אישית לכל אירוע מיוחד",
   subtitle: "הנה כמה רגעים שחשבנו עליהם בשבילכם",
   cases: [

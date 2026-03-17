@@ -30,7 +30,7 @@ export function FinalCta({ onStartOrder, loading }: Props) {
           {loading ? "טוען..." : FINAL_CTA.ctaLabel}
         </Button>
 
-        <p className="mt-5 text-xs text-white/50">{FINAL_CTA.trustNote}</p>
+        <p className="mt-5 text-sm font-medium text-white/80">{FINAL_CTA.trustNote}</p>
 
       </div>
     </section>

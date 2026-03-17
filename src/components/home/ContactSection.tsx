@@ -1,3 +1,4 @@
+import { Mail } from "lucide-react";
 import { FadeIn } from "@/components/home/FadeIn";
 import { CONTACT } from "@/content/landing-content";
 
@@ -15,10 +16,6 @@ export function ContactSection() {
       <div className="mx-auto max-w-xl text-center">
         <FadeIn>
 
-          <span className="mb-3 inline-block text-sm font-medium text-primary">
-            יצירת קשר
-          </span>
-
           <h2 className="mb-2 text-xl font-semibold sm:text-2xl">{CONTACT.name}</h2>
 
           <p className="mb-8 text-base leading-relaxed text-muted-foreground">
@@ -28,12 +25,11 @@ export function ContactSection() {
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <a
               href={`mailto:${CONTACT.email}`}
-              className="text-sm text-muted-foreground transition-colors hover:text-primary"
+              className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/8 px-5 py-2.5 text-sm font-medium text-primary transition-all hover:bg-primary/15 hover:shadow-sm"
             >
+              <Mail size={15} strokeWidth={1.5} />
               {CONTACT.email}
             </a>
-
-            <span className="hidden text-border/70 sm:block" aria-hidden="true">·</span>
 
             <a
               href={CONTACT.whatsapp}

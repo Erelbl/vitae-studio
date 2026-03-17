@@ -167,7 +167,7 @@ export function GalleryCarousel({
 
       {showCaption && (
         <p className="mt-3 text-center text-xs text-muted-foreground/60 sm:text-sm">
-          דוגמאות מאלבומים אמיתיים — כל אלבום נוצר מאפס עבור לקוח אחד
+          דוגמאות מאלבומים אמיתיים — כל סיפור נוצר במיוחד עבור הגיבור שלו
         </p>
       )}
     </div>
