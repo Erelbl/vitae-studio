@@ -48,11 +48,27 @@ interface CropParams {
   scale: number;
 }
 
-/** Resolve a slot's image URL + crop params, falling back to legacy image_url for slot 1. */
+// ─── Frame style clip-path presets ────────────────────────────────────────────
+// Applied to the image container div when frame_style is set on a slot.
+// Each value is a CSS clip-path polygon that simulates a torn-paper edge.
+// Coordinates are percentages relative to the container element.
+
+const FRAME_CLIP_PATHS: Record<string, string> = {
+  torn_top:
+    "polygon(0% 6%, 7% 3%, 14% 7%, 21% 2%, 28% 6%, 35% 2%, 42% 7%, 49% 2%, 56% 6%, 63% 2%, 70% 7%, 77% 2%, 84% 6%, 91% 2%, 98% 5%, 100% 3%, 100% 100%, 0% 100%)",
+  torn_bottom:
+    "polygon(0% 0%, 100% 0%, 100% 95%, 93% 98%, 86% 94%, 79% 98%, 72% 94%, 65% 98%, 58% 94%, 51% 98%, 44% 94%, 37% 98%, 30% 94%, 23% 98%, 16% 94%, 9% 98%, 2% 95%, 0% 97%)",
+  torn_left:
+    "polygon(6% 0%, 100% 0%, 100% 100%, 5% 100%, 2% 93%, 7% 86%, 1% 79%, 6% 72%, 2% 65%, 7% 58%, 1% 51%, 6% 44%, 2% 37%, 7% 30%, 1% 23%, 6% 16%, 2% 9%, 6% 0%)",
+  torn_right:
+    "polygon(0% 0%, 94% 0%, 98% 7%, 93% 14%, 98% 21%, 93% 28%, 98% 35%, 93% 42%, 98% 49%, 93% 56%, 98% 63%, 93% 70%, 98% 77%, 93% 84%, 98% 91%, 95% 97%, 100% 100%, 0% 100%)",
+};
+
+/** Resolve a slot's image URL + crop params + frame style, falling back to legacy image_url for slot 1. */
 function resolveSlot(
   page: PreviewPage,
   slot: 1 | 2
-): { url: string | null; crop: CropParams } {
+): { url: string | null; crop: CropParams; frameStyle: string | null } {
   const slotData = (page.images ?? []).find((i) => i.slot === slot);
   if (slotData) {
     return {
@@ -62,13 +78,14 @@ function resolveSlot(
         crop_y: slotData.crop_y,
         scale: slotData.scale,
       },
+      frameStyle: slotData.frame_style ?? null,
     };
   }
   // Legacy fallback: use pages.illustration_storage_path URL for slot 1 only
   if (slot === 1) {
-    return { url: page.image_url, crop: { crop_x: 0, crop_y: 0, scale: 1 } };
+    return { url: page.image_url, crop: { crop_x: 0, crop_y: 0, scale: 1 }, frameStyle: null };
   }
-  return { url: null, crop: { crop_x: 0, crop_y: 0, scale: 1 } };
+  return { url: null, crop: { crop_x: 0, crop_y: 0, scale: 1 }, frameStyle: null };
 }
 
 // ─── Cover ────────────────────────────────────────────────────────────────────
@@ -84,7 +101,7 @@ function CoverPage({
   return (
     <PageShell className="bg-secondary">
       {/* Optional manually-uploaded background image */}
-      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} />}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/18" />
       <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8">
         <div className={`border-2 border-primary/20 rounded-xl p-6 w-full max-w-[80%] ${slot1.url ? "bg-black/40 backdrop-blur-sm" : ""}`}>
@@ -118,7 +135,7 @@ function DedicationPage({ page }: { page: PreviewPage }) {
   return (
     <PageShell className="bg-secondary/50 border border-border/40">
       {/* Optional manually-uploaded background image */}
-      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} />}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
       <div className={`flex h-full flex-col items-center justify-center text-center p-10 relative z-10`}>
         <Ornament className="mb-6" />
         {page.text_content ? (
@@ -144,6 +161,9 @@ function ContentPage({ page }: { page: PreviewPage }) {
   const layout: LayoutType = page.layout_type ?? "FULL_IMAGE";
   const slot1 = resolveSlot(page, 1);
   const slot2 = resolveSlot(page, 2);
+  // Short aliases used at call sites below
+  const fs1 = slot1.frameStyle;
+  const fs2 = slot2.frameStyle;
   const ts = page.text_size;
   const fspx = page.font_size_px ?? null;
   const align = (page.text_align ?? "center") as TextAlign;
@@ -165,7 +185,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
         <PageShell className="bg-card border border-border/60">
           <div className="flex flex-col h-full">
             <div className="relative h-[60%]">
-              <ImageFill url={slot1.url} crop={slot1.crop} />
+              <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
             </div>
             <div className="flex items-center justify-center flex-1 px-5 py-4">
               <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
@@ -183,7 +203,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
             </div>
             <div className="relative flex-1">
-              <ImageFill url={slot1.url} crop={slot1.crop} />
+              <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -196,7 +216,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
           {/* Force LTR so "left" is always physical-left regardless of page dir */}
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="relative w-[55%]">
-              <ImageFill url={slot1.url} crop={slot1.crop} />
+              <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
             </div>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
               <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
@@ -214,7 +234,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
               <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
             </div>
             <div className="relative w-[55%]">
-              <ImageFill url={slot1.url} crop={slot1.crop} />
+              <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -226,10 +246,10 @@ function ContentPage({ page }: { page: PreviewPage }) {
         <PageShell className="bg-card border border-border/60">
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="relative w-1/2">
-              <ImageFill url={slot1.url} crop={slot1.crop} />
+              <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
             </div>
             <div className="relative w-1/2">
-              <ImageFill url={slot2.url} crop={slot2.crop} />
+              <ImageFill url={slot2.url} crop={slot2.crop} frameStyle={fs2} />
             </div>
           </div>
           {/* Optional caption at bottom */}
@@ -254,7 +274,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
     case "FULL_IMAGE_TEXT_TOP":
       return (
         <PageShell className="bg-secondary">
-          <ImageFill url={slot1.url} crop={slot1.crop} />
+          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
           {page.text_content && (
             <TextOverlayTop
               text={page.text_content}
@@ -273,7 +293,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
     case "FULL_IMAGE_TEXT_CENTER":
       return (
         <PageShell className="bg-secondary">
-          <ImageFill url={slot1.url} crop={slot1.crop} />
+          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
           {page.text_content && (
             <TextOverlayCenter
               text={page.text_content}
@@ -293,7 +313,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
     default:
       return (
         <PageShell className="bg-secondary">
-          <ImageFill url={slot1.url} crop={slot1.crop} />
+          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
           {page.text_content && (
             <TextOverlay
               text={page.text_content}
@@ -342,7 +362,7 @@ function BackCoverPage({ page }: { page: PreviewPage }) {
   return (
     <PageShell className="bg-secondary">
       {/* Optional manually-uploaded background image */}
-      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} />}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
       <div className="absolute inset-0 bg-gradient-to-tl from-primary/10 via-transparent to-primary/16" />
       <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8 gap-5">
         <Ornament size="lg" />
@@ -379,13 +399,16 @@ function BackCoverPage({ page }: { page: PreviewPage }) {
  *   crop_y 0-1 → vertical pan   (0 = top  edge visible, 1 = bottom edge visible)
  *
  * When scale = 1, the image fills the container and crop has no effect.
+ * frameStyle applies a CSS clip-path preset to the container for decorative torn-paper edges.
  */
 function ImageFill({
   url,
   crop,
+  frameStyle,
 }: {
   url: string | null;
   crop: CropParams;
+  frameStyle?: string | null;
 }) {
   if (!url) {
     return (
@@ -398,13 +421,19 @@ function ImageFill({
 
   const { crop_x, crop_y, scale } = crop;
   const s = Math.max(1, scale);
+  const clipPath = frameStyle ? (FRAME_CLIP_PATHS[frameStyle] ?? undefined) : undefined;
 
   return (
-    <div className="absolute inset-0 overflow-hidden">
+    <div
+      className="absolute inset-0 overflow-hidden"
+      style={clipPath ? { clipPath } : undefined}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={url}
         alt=""
+        loading="lazy"
+        decoding="async"
         draggable={false}
         style={{
           position: "absolute",

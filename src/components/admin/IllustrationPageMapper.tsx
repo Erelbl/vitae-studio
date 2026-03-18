@@ -132,6 +132,8 @@ export function IllustrationPageMapper({
                     <img
                       src={assignedPhoto.illustrationUrl}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="h-8 w-8 rounded object-cover shrink-0"
                     />
                   ) : (
@@ -197,6 +199,8 @@ export function IllustrationPageMapper({
                         <img
                           src={photo.illustrationUrl}
                           alt={photo.original_filename}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover"
                         />
                       ) : (

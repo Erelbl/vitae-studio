@@ -204,8 +204,9 @@ function parsePageSplit(raw: string, totalPages: number): AlbumPageText[] {
           .map((item) => {
             const pageNum = Number(item.page_number);
             const isIllustration = item.page_type === "illustration";
-            const pageType: AlbumPageType =
-              pageNum === 2 ? "dedication" : "illustration_and_text";
+            // All content pages (2 onward) are illustration_and_text.
+            // Dedication pages are no longer part of the album structure.
+            const pageType: AlbumPageType = "illustration_and_text";
 
             return {
               page_number: pageNum,

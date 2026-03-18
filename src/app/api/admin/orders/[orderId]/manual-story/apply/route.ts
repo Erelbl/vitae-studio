@@ -101,15 +101,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // Page 1: cover
   allPages.push({ page_number: 1, page_type: "cover", text_content: null });
 
-  // Content pages from active spreads (page 2 onward)
-  // First spread's right page = page 2 (dedication/opening), consistent with pipeline
+  // Content pages from active spreads (page 2 onward).
+  // All content pages are illustration_and_text; dedication pages are no longer used.
   let pageNum = 2;
   for (const spread of activeSpreads) {
     // Right page (lower number)
     allPages.push({
       page_number: pageNum,
-      page_type:
-        pageNum === 2 ? "dedication" : "illustration_and_text",
+      page_type: "illustration_and_text",
       text_content: spread.rightPageText.trim() || null,
     });
     pageNum++;

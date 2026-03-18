@@ -142,12 +142,17 @@ interface Spread {
   pages: PageRow[];
 }
 
-const SPECIAL_PAGE_TYPES = new Set(["cover", "back_cover", "dedication"]);
+// "dedication" is intentionally excluded: dedication pages are no longer created for new
+// albums. Any legacy page with page_type="dedication" will be treated as a content page
+// and paired into a spread, matching the album preview rendering (which also falls through
+// to ContentPage for unknown/legacy page types).
+const SPECIAL_PAGE_TYPES = new Set(["cover", "back_cover"]);
 
 /**
  * Groups album pages into spreads for the film timeline.
- * Special pages (cover, dedication, back_cover) become standalone scenes.
- * Content pages are paired into 2-page spreads, matching the album preview.
+ * Special pages (cover, back_cover) become standalone scenes.
+ * All other pages (illustration_and_text, text_only, and legacy dedication) are
+ * paired into 2-page spreads, matching the album preview.
  */
 function buildSpreads(pages: PageRow[]): Spread[] {
   const spreads: Spread[] = [];
@@ -186,7 +191,6 @@ function buildSpreads(pages: PageRow[]): Spread[] {
 
 function spreadSortOrder(key: string): number {
   if (key === "cover") return 0;
-  if (key === "dedication") return 1;
   if (key.startsWith("spread_")) return 100 + parseInt(key.split("_")[1], 10);
   if (key === "back_cover") return 9999;
   return 500;
@@ -198,8 +202,6 @@ function spreadTitle(pageType: string): string | null {
       return "כריכה קדמית";
     case "back_cover":
       return "כריכה אחורית";
-    case "dedication":
-      return "הקדשה";
     default:
       return null;
   }

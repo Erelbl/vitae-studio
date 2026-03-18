@@ -779,6 +779,79 @@ Prev/next buttons + dot indicators (one dot per spread). Animation: `albumSpread
 
 ---
 
+## Phase 1 Cleanup Decisions (2026-03)
+
+These decisions were implemented in the Phase 1 editor/content consistency cleanup. They should be preserved in future work.
+
+### Text Versioning — Working-Version Model
+Admin text edits no longer create a new `page_versions` row on every save. Instead:
+- **First admin edit after generation**: creates a new version row (increments `text_version`).
+- **Subsequent admin edits on the same page**: update the existing `admin_edit` version row in place — no new row, no version counter increment.
+- Generation-created versions are never overwritten; they are always preserved as separate rows.
+- This keeps version history meaningful: each entry represents a genuine content milestone, not every keystroke-save.
+- Implemented in: `src/app/api/admin/orders/[orderId]/pages/[pageId]/edit/route.ts`
+
+### Dedication Pages Removed
+Dedication pages (`page_type = "dedication"`) are no longer generated for new albums.
+- Story content begins immediately on page 2 (right after the cover).
+- Album structure: `page 1 = cover → pages 2..N-1 = story content → page N = back_cover`.
+- The `dedication` type is preserved in `PAGE_TYPES` and `AlbumPageView` rendering for backward compatibility with any existing DB records.
+- Legacy `dedication` pages in the film pipeline are now treated as content pages (paired into spreads) rather than standalone scenes.
+- Files changed: `full-story-generator.ts`, `outline-generator.ts`, `manual-story/apply/route.ts`, `build-scenes.ts`.
+
+### Canonical Text Source for Narration
+`pages.text_content` is the single source of truth for both album display and film narration.
+- The film pipeline (`build-scenes.ts`) reads `text_content` from `pages` when building scene narration text.
+- `film_scenes.narration_text` is a cleaned/derived copy for TTS — it is never mutated back into `pages`.
+- `page_versions.content` stores version history but is NOT used for narration.
+- The admin page editor now shows a warning when a page has an image assigned but no `text_content` — this prevents silent narration gaps from being missed.
+
+### Bidirectional Preview ↔ Editor Sync
+The admin album editor and the large album preview now share selection state bidirectionally:
+- **Editor → Preview**: selecting a page in the editor scrolls the preview to the correct spread (unchanged).
+- **Preview → Editor**: clicking prev/next/dot in the preview updates the editor's selected page.
+- Implemented via `onSpreadChange` callback on `AlbumPreview` + `externalPageId` prop on `AlbumPageEditor`.
+- A `suppressNextChange` ref prevents ping-pong when the editor initiates the navigation.
+- Files changed: `AlbumPreview.tsx`, `AlbumEditorLayout.tsx`, `AlbumPageEditor.tsx`.
+
+---
+
+## Phase 2 Editor Upgrade Decisions (2026-03)
+
+### Interactive Image Placement — SpreadMiniView
+
+The album page editor now has an interactive mini canvas showing both pages of the spread side by side.
+
+**Design decisions:**
+- **No new DB columns for position data.** The existing `crop_x/crop_y/scale` fields encode pan and zoom respectively. Drag = pan (crop), corner handle drag = zoom (scale). This avoids a migration.
+- **`frame_style TEXT NULL` added to `page_images`.** Stores a CSS clip-path preset name (`null | torn_top | torn_bottom | torn_left | torn_right`). Applied as `clipPath` in `AlbumPageView`. PDF renderer ignores it (clip-path unsupported by @react-pdf/renderer). Film pipeline (Remotion browser renderer) applies it naturally.
+- **Page-based data model preserved.** No spread-based DB refactor. The mini canvas visually groups the two pages but all data remains per-page.
+- **Partner page selection.** Clicking the dimmed partner page in the mini canvas switches the editor's selected page via `onSelectPartner` → `selectPage(partnerPage)`.
+
+**SpreadMiniView layout:**
+- Two PAGE_PX (148px) square canvases, spine gap of 12px with a center guide line.
+- Hebrew book order: lower `page_number` is the right page (physically right). Higher `page_number` is the left page.
+- Standalone pages (cover, back_cover) show only their own canvas; the other side is an empty placeholder.
+- Partner pairing rule: pages 2-39 pair as (2,3), (4,5), …, (38,39). Page N's partner = N+1 if N even, N-1 if N odd.
+
+**Pointer events:**
+- Pan drag: pointer down on slot image → `setPointerCapture` equivalent (parent `onPointerLeave` ends drag). Delta pixels / slot range → crop delta.
+- Scale drag: pointer down on corner handle → drag down = zoom in, drag up = zoom out. Range: `PAGE_PX * 0.5` pixels = 2× scale change.
+- `latestRef` tracks live values during drag; `save=true` is passed on pointer up for DB PATCH.
+
+**FrameStylePicker:**
+- Row of 5 buttons: ללא, קצה עליון, קצה תחתון, קצה שמאל, קצה ימין.
+- Shown below SpreadMiniView when the focused slot has an image.
+- Saves via PATCH `/api/admin/orders/[id]/pages/[pageId]/images` with `{ slot, frame_style }`.
+
+**ImageSlotEditor single-slot mode:**
+- Previously showed all active slots. Now shows only the focused slot (controlled by `focusedSlot` state).
+- For TWO_IMAGES: slot tab selector (1/2 buttons) switches the focused slot. The mini canvas also updates `focusedSlot` when you click a slot container.
+
+**Files changed:** `AlbumPageEditor.tsx`, `AlbumPageView.tsx`, `types/page.ts`, `lib/preview/loader.ts`, `app/admin/orders/[orderId]/preview/page.tsx`, `app/api/admin/orders/[orderId]/pages/[pageId]/images/route.ts`, `supabase/migrations/00030_add_frame_style.sql`.
+
+---
+
 ## Verification Plan
 
 After implementation, test end-to-end:

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createSignedImageUrls } from "@/lib/storage-image";
 import { getMockPreviewPages, MOCK_PERSON_NAME } from "./mock-data";
 import type { LayoutType, PageImageSlot, PageType, PreviewData, PreviewPage, TextAlign, TextColor, TextSize } from "@/types/page";
 
@@ -33,7 +34,7 @@ export async function loadPreviewData(
   // Load page_images for all pages in one query
   const { data: pageImagesRaw } = await supabase
     .from("page_images")
-    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale, manual_image_path")
+    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale, manual_image_path, frame_style")
     .in("page_id", pageIds);
 
   // Collect all photo_ids referenced by page_images to resolve their paths
@@ -73,18 +74,15 @@ export async function loadPreviewData(
     if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
   }
 
-  // Batch-sign all paths in a single Supabase Storage call
-  const signedUrlMap = new Map<string, string>();
-  if (allPaths.size > 0) {
-    const { data: signedResults } = await supabase.storage
-      .from(ILLUSTRATIONS_BUCKET)
-      .createSignedUrls(Array.from(allPaths), 3600);
-    for (const item of signedResults ?? []) {
-      if (item.signedUrl && item.path) {
-        signedUrlMap.set(item.path, item.signedUrl);
-      }
-    }
-  }
+  // Sign all paths with albumPreview transform (1400px, q75) for browser display.
+  // Uses parallel individual calls to enable Supabase image transforms.
+  const signedUrlMap = await createSignedImageUrls(
+    supabase,
+    ILLUSTRATIONS_BUCKET,
+    Array.from(allPaths),
+    3600,
+    "albumPreview"
+  );
 
   // Build page_images map: page_id → sorted slot array
   const pageImagesMap = new Map<string, PageImageSlot[]>();
@@ -103,6 +101,7 @@ export async function loadPreviewData(
       crop_x: (pi.crop_x as number) ?? 0,
       crop_y: (pi.crop_y as number) ?? 0,
       scale: (pi.scale as number) ?? 1,
+      frame_style: (pi.frame_style as string | null) ?? null,
       image_url,
     };
 

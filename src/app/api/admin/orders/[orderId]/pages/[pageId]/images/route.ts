@@ -38,6 +38,7 @@ export async function PUT(
     crop_x?: number;
     crop_y?: number;
     scale?: number;
+    frame_style?: string | null;
   };
   try {
     body = await req.json();
@@ -100,18 +101,20 @@ export async function PUT(
 
   // Upsert: insert or update on conflict (page_id, slot)
   // Clear manual_image_path when assigning a photo so they don't coexist.
-  const { error } = await adminClient.from("page_images").upsert(
-    {
-      page_id: pageId,
-      photo_id: photoId,
-      manual_image_path: null,
-      slot,
-      crop_x: body.crop_x ?? 0,
-      crop_y: body.crop_y ?? 0,
-      scale: body.scale ?? 1,
-    },
-    { onConflict: "page_id,slot" }
-  );
+  const upsertData: Record<string, unknown> = {
+    page_id: pageId,
+    photo_id: photoId,
+    manual_image_path: null,
+    slot,
+    crop_x: body.crop_x ?? 0,
+    crop_y: body.crop_y ?? 0,
+    scale: body.scale ?? 1,
+  };
+  if (body.frame_style !== undefined) upsertData.frame_style = body.frame_style;
+
+  const { error } = await adminClient
+    .from("page_images")
+    .upsert(upsertData, { onConflict: "page_id,slot" });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -141,7 +144,7 @@ export async function PATCH(
 
   const { orderId, pageId } = await params;
 
-  let body: { slot?: unknown; crop_x?: number; crop_y?: number; scale?: number };
+  let body: { slot?: unknown; crop_x?: number; crop_y?: number; scale?: number; frame_style?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -167,10 +170,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
 
-  const cropUpdate: Record<string, number> = {};
+  const cropUpdate: Record<string, unknown> = {};
   if (body.crop_x !== undefined) cropUpdate.crop_x = Math.max(0, Math.min(1, body.crop_x));
   if (body.crop_y !== undefined) cropUpdate.crop_y = Math.max(0, Math.min(1, body.crop_y));
   if (body.scale !== undefined) cropUpdate.scale = Math.max(1, body.scale);
+  if (body.frame_style !== undefined) cropUpdate.frame_style = body.frame_style; // null clears the style
 
   if (Object.keys(cropUpdate).length === 0) {
     return NextResponse.json({ ok: true });

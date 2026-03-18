@@ -20,6 +20,7 @@ import { ManualStoryEditor } from "@/components/admin/ManualStoryEditor";
 import { AlbumLengthControl } from "@/components/admin/AlbumLengthControl";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 import type { FilmProject, FilmScene } from "@/types/film";
+import { createSignedImageUrl } from "@/lib/storage-image";
 
 function fmtDate(ts: string) {
   return new Date(ts).toLocaleString("he-IL", {
@@ -136,27 +137,23 @@ export default async function AdminOrderDetailPage({
     .eq("is_uploaded", true)
     .order("display_order");
 
-  // Resolve signed URLs for original photos (originals bucket) + illustrations (illustrations bucket)
+  // Resolve signed URLs with thumb transforms for gallery display (300px, q70)
   const photosForGallery: PhotoForGallery[] = photos
     ? await Promise.all(
         photos.map(async (photo) => {
-          const [originalResult, illustrationResult] = await Promise.all([
-            adminClient.storage
-              .from("originals")
-              .createSignedUrl(photo.original_storage_path as string, 3600),
+          const [originalUrl, illustrationUrl] = await Promise.all([
+            createSignedImageUrl(adminClient, "originals", photo.original_storage_path as string, 3600, "thumb"),
             photo.illustration_storage_path
-              ? adminClient.storage
-                  .from("illustrations")
-                  .createSignedUrl(photo.illustration_storage_path as string, 3600)
-              : Promise.resolve({ data: null }),
+              ? createSignedImageUrl(adminClient, "illustrations", photo.illustration_storage_path as string, 3600, "thumb")
+              : Promise.resolve(null),
           ]);
 
           return {
             id: photo.id as string,
             original_filename: photo.original_filename as string,
             life_stage: photo.life_stage as string | null,
-            originalUrl: originalResult.data?.signedUrl ?? null,
-            illustrationUrl: illustrationResult.data?.signedUrl ?? null,
+            originalUrl,
+            illustrationUrl,
             illustration_status: photo.illustration_status as string | null,
             illustration_error: photo.illustration_error as string | null,
           };

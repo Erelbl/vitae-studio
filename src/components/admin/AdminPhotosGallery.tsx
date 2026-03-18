@@ -246,6 +246,8 @@ export function AdminPhotosGallery({
                   <img
                     src={photo.originalUrl}
                     alt={photo.original_filename}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full aspect-square object-cover rounded-lg"
                   />
                 ) : (
@@ -273,6 +275,8 @@ export function AdminPhotosGallery({
                   <img
                     src={photo.illustrationUrl}
                     alt={`איור - ${photo.original_filename}`}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full aspect-square object-cover rounded-lg border"
                   />
                 </div>

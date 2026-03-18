@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
+import { createSignedImageUrl } from "@/lib/storage-image";
 import { PhotoGallery } from "@/components/photos/PhotoGallery";
 import type { Photo } from "@/types/questionnaire";
 
@@ -54,13 +55,13 @@ export default async function PhotosPage({
     .eq("is_uploaded", true)
     .order("display_order");
 
-  // Generate signed display URLs for uploaded photos
+  // Generate signed display URLs with questionnairePreview transform (400px, q70)
   const photosWithUrls = await Promise.all(
     (photos ?? []).map(async (photo) => {
-      const { data: signed } = await supabase.storage
-        .from("originals")
-        .createSignedUrl(photo.original_storage_path, 3600);
-      return { ...photo, display_url: signed?.signedUrl ?? null };
+      const display_url = await createSignedImageUrl(
+        supabase, "originals", photo.original_storage_path, 3600, "questionnairePreview"
+      );
+      return { ...photo, display_url };
     })
   );
 

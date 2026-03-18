@@ -111,6 +111,19 @@ export function AlbumEditorLayout({
     setTextDragMode(false); // exit drag mode when switching pages
   }
 
+  /**
+   * Called when the user navigates prev/next in the large AlbumPreview.
+   * Resolves the first page of the new spread and pushes it back to the editor
+   * so the editor selection stays in sync with the preview.
+   */
+  function handlePreviewSpreadChange(firstPageNumber: number) {
+    const page = livePreviewData.pages.find((p) => p.page_number === firstPageNumber);
+    if (!page) return;
+    setSelectedPageId(page.id);
+    setTextDragMode(false);
+    // No need to update focusedSpreadIndex here — the preview already navigated there.
+  }
+
   /** Toggle text drag mode for the currently selected page. */
   function handleTextDragToggle(active: boolean) {
     setTextDragMode(active);
@@ -189,6 +202,7 @@ export function AlbumEditorLayout({
             onClearTextPosition={handleClearTextPosition}
             currentTextX={currentTextX}
             currentTextY={currentTextY}
+            externalPageId={selectedPageId}
           />
         )}
       </section>
@@ -209,6 +223,7 @@ export function AlbumEditorLayout({
           textDragPageId={textDragMode && selectedPageId ? selectedPageId : undefined}
           textDragMode={textDragMode}
           onTextDrop={handleTextDrop}
+          onSpreadChange={handlePreviewSpreadChange}
         />
       </div>
 

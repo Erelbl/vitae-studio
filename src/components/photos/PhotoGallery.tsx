@@ -216,6 +216,8 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
               <img
                 src={u.preview}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 className="h-10 w-10 rounded-lg object-cover"
               />
               <span className="flex-1 truncate text-sm">{u.name}</span>
@@ -237,6 +239,8 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
                   <img
                     src={photo.display_url}
                     alt={photo.original_filename}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-full rounded-xl object-cover shadow-sm"
                   />
                 ) : (

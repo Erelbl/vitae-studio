@@ -115,6 +115,11 @@ export interface PageImageSlot {
   crop_x: number;  // 0-1: horizontal pan (0 = left edge, 1 = right edge)
   crop_y: number;  // 0-1: vertical pan (0 = top edge, 1 = bottom edge)
   scale: number;   // ≥1: zoom level (1 = fill frame, 2 = 2× zoom)
+  /**
+   * Decorative frame mask preset. Applied as CSS clip-path on the image container.
+   * null = no mask (default). Values: torn_top | torn_bottom | torn_left | torn_right
+   */
+  frame_style: string | null;
   /** Pre-resolved signed URL. null when photo has no illustration or URL expired. */
   image_url: string | null;
 }

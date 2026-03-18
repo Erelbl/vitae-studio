@@ -14,6 +14,11 @@ interface AlbumPreviewProps {
   textDragMode?: boolean;
   /** Called when user drops text position on a page — (x, y) are 0–1 normalized coords. */
   onTextDrop?: (pageId: string, x: number, y: number) => void;
+  /**
+   * Called whenever the user navigates to a different spread (prev/next/dot click).
+   * Provides the right (first) page's page_number so the editor can sync its selection.
+   */
+  onSpreadChange?: (firstPageNumber: number) => void;
 }
 
 /** Groups a flat page list into consecutive pairs (spreads). */
@@ -31,6 +36,7 @@ export function AlbumPreview({
   textDragPageId,
   textDragMode,
   onTextDrop,
+  onSpreadChange,
 }: AlbumPreviewProps) {
   const { pages, personName } = data;
   const spreads = buildSpreads(pages);
@@ -39,10 +45,15 @@ export function AlbumPreview({
   const [spreadIndex, setSpreadIndex] = useState(0);
   const [animKey, setAnimKey] = useState(0);
 
-  // Sync with external navigation requests (e.g. editor page selection)
+  // Sync with external navigation requests (e.g. editor page selection).
+  // Use a ref to suppress the onSpreadChange echo when the editor drives navigation —
+  // otherwise we'd get a ping-pong between editor → preview → editor.
+  const suppressNextChange = useRef(false);
+
   useEffect(() => {
     if (focusedSpreadIndex === undefined) return;
     const clamped = Math.max(0, Math.min(focusedSpreadIndex, totalSpreads - 1));
+    suppressNextChange.current = true;
     setSpreadIndex(clamped);
     setAnimKey((k) => k + 1);
   }, [focusedSpreadIndex, totalSpreads]);
@@ -50,6 +61,11 @@ export function AlbumPreview({
   function navigate(next: number) {
     setSpreadIndex(next);
     setAnimKey((k) => k + 1);
+    if (!suppressNextChange.current && onSpreadChange) {
+      const rightPage = spreads[next]?.[0];
+      if (rightPage) onSpreadChange(rightPage.page_number);
+    }
+    suppressNextChange.current = false;
   }
 
   const goPrev = () => navigate(Math.max(0, spreadIndex - 1));

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createSignedImageUrls } from "@/lib/storage-image";
 import { loadPreviewData } from "@/lib/preview/loader";
 import { AlbumEditorLayout } from "@/components/admin/AlbumEditorLayout";
 import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
@@ -97,11 +98,12 @@ export default async function AdminOrderPreviewPage({
     editorPageIds.length > 0
       ? await adminClient
           .from("page_images")
-          .select("page_id, slot, photo_id, crop_x, crop_y, scale, manual_image_path")
+          .select("page_id, slot, photo_id, crop_x, crop_y, scale, manual_image_path, frame_style")
           .in("page_id", editorPageIds)
       : { data: [] as {
           page_id: unknown; slot: unknown; photo_id: unknown;
           crop_x: unknown; crop_y: unknown; scale: unknown; manual_image_path: unknown;
+          frame_style: unknown;
         }[] };
 
   // ── Completed illustrations for the picker ────────────────────────────────
@@ -145,18 +147,14 @@ export default async function AdminOrderPreviewPage({
     if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
   }
 
-  // Batch sign all paths
-  const signedUrlMap = new Map<string, string>();
-  if (allPaths.size > 0) {
-    const { data: signedResults } = await adminClient.storage
-      .from(BUCKET)
-      .createSignedUrls(Array.from(allPaths), 3600);
-    for (const item of signedResults ?? []) {
-      if (item.signedUrl && item.path) {
-        signedUrlMap.set(item.path, item.signedUrl);
-      }
-    }
-  }
+  // Sign all paths with thumb transform (300px, q70) for editor/picker display
+  const signedUrlMap = await createSignedImageUrls(
+    adminClient,
+    BUCKET,
+    Array.from(allPaths),
+    3600,
+    "thumb"
+  );
 
   // Build completed photos for picker
   const completedPhotos: PhotoForEditor[] = (completedPhotosRaw ?? []).map((ph) => {
@@ -186,6 +184,7 @@ export default async function AdminOrderPreviewPage({
       crop_x: (pi.crop_x as number) ?? 0,
       crop_y: (pi.crop_y as number) ?? 0,
       scale: (pi.scale as number) ?? 1,
+      frame_style: (pi.frame_style as string | null) ?? null,
       image_url,
     });
     pageImagesMap.set(pid, existing);

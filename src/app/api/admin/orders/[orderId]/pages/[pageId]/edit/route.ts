@@ -49,6 +49,23 @@ export async function PUT(
     .eq("order_id", orderId)
     .single();
 
+  // Check whether the current text version was already created by an admin edit.
+  // If so, subsequent edits overwrite that same version row rather than adding a new one.
+  // This prevents noisy version history from routine editing.
+  let latestAdminVersionId: string | null = null;
+  if (page && body.text_content !== undefined) {
+    const { data: latestVersion } = await adminClient
+      .from("page_versions")
+      .select("id, created_by")
+      .eq("page_id", pageId)
+      .eq("version_type", "text")
+      .eq("version_number", (page.text_version as number) ?? 1)
+      .maybeSingle();
+    if (latestVersion?.created_by === "admin_edit") {
+      latestAdminVersionId = latestVersion.id as string;
+    }
+  }
+
   if (!page) {
     return NextResponse.json({ error: "Page not found" }, { status: 404 });
   }
@@ -112,13 +129,22 @@ export async function PUT(
   const updates: Record<string, unknown> = {};
   let newTextVersion: number | null = null;
 
-  // Handle text_content change with versioning
+  // Handle text_content change with versioning.
+  // If the current version was already an admin edit, we overwrite it in place
+  // (no version number increment) — routine editing should not create version noise.
+  // Only when overwriting a generation-created version do we increment and create a new row.
   if (
     body.text_content !== undefined &&
     body.text_content !== page.text_content
   ) {
     const currentVersion = (page.text_version as number) ?? 1;
-    newTextVersion = currentVersion + 1;
+    if (latestAdminVersionId) {
+      // Overwrite the existing admin-edit version in place — same version number
+      newTextVersion = currentVersion; // unchanged
+    } else {
+      // First admin edit after a generation-created version → new version number
+      newTextVersion = currentVersion + 1;
+    }
     updates.text_content = body.text_content;
     updates.text_version = newTextVersion;
     updates.admin_text_override = true;
@@ -179,15 +205,24 @@ export async function PUT(
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  // If text changed, record a page_version entry
+  // If text changed, record or update the page_version entry.
+  // When latestAdminVersionId is set we UPDATE the existing row (same version number).
+  // Otherwise we INSERT a new version row (first admin edit after a generation).
   if (newTextVersion !== null && body.text_content !== undefined) {
-    await adminClient.from("page_versions").insert({
-      page_id: pageId,
-      version_type: "text",
-      version_number: newTextVersion,
-      content: body.text_content ?? "",
-      created_by: "admin_edit",
-    });
+    if (latestAdminVersionId) {
+      await adminClient
+        .from("page_versions")
+        .update({ content: body.text_content ?? "" })
+        .eq("id", latestAdminVersionId);
+    } else {
+      await adminClient.from("page_versions").insert({
+        page_id: pageId,
+        version_type: "text",
+        version_number: newTextVersion,
+        content: body.text_content ?? "",
+        created_by: "admin_edit",
+      });
+    }
   }
 
   return NextResponse.json({ ok: true, changed: true });

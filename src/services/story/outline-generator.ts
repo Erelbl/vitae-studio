@@ -174,8 +174,11 @@ function buildDefaultOutline(): AlbumOutlineItem[] {
     { stage: "חיים", theme: "ברכה" },
     { stage: "סיכום", theme: "שלווה" },
     { stage: "סיום", theme: "אהבה" },
+    { stage: "ברכה", theme: "עתיד" },
   ];
 
+  // Album structure: page 1 = cover, pages 2–(N-1) = story, page N = back_cover.
+  // No dedication page — story begins immediately on page 2.
   const items: AlbumOutlineItem[] = [
     {
       page_number: 1,
@@ -184,18 +187,11 @@ function buildDefaultOutline(): AlbumOutlineItem[] {
       description: "כריכה קדמית",
       page_type: "cover",
     },
-    {
-      page_number: 2,
-      life_stage: "dedication",
-      emotional_theme: "אהבה",
-      description: "הקדשה מהמשפחה",
-      page_type: "dedication",
-    },
   ];
 
   storyStages.forEach((s, i) => {
     items.push({
-      page_number: i + 3,
+      page_number: i + 2,
       life_stage: s.stage,
       emotional_theme: s.theme,
       description: `${s.stage} — ${s.theme}`,

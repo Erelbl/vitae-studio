@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -38,6 +38,7 @@ export type EditorPage = {
     crop_x: number;
     crop_y: number;
     scale: number;
+    frame_style: string | null;
     image_url: string | null;
   }>;
 };
@@ -120,6 +121,7 @@ type SlotState = {
   crop_x: number;
   crop_y: number;
   scale: number;
+  frame_style: string | null;
 };
 
 /** Convert the local slots map → PageImageSlot[] suitable for an onPageUpdate override. */
@@ -133,9 +135,38 @@ function buildImages(slotsMap: Record<number, SlotState>): PageImageSlot[] {
       crop_x: s.crop_x,
       crop_y: s.crop_y,
       scale: s.scale,
+      frame_style: s.frame_style ?? null,
       image_url: s.image_url!,
     }));
 }
+
+// ─── Spread canvas constants ──────────────────────────────────────────────────
+
+/** Size in CSS pixels of each page square inside the spread mini-canvas. */
+const PAGE_PX = 148;
+
+/** Position of each image slot within a page (0-1 fractions of page width/height). */
+type SlotBounds = { x: number; y: number; w: number; h: number };
+const SLOT_BOUNDS: Partial<Record<string, Record<number, SlotBounds>>> = {
+  FULL_IMAGE:             { 1: { x: 0, y: 0, w: 1,    h: 1 } },
+  FULL_IMAGE_TEXT_TOP:    { 1: { x: 0, y: 0, w: 1,    h: 1 } },
+  FULL_IMAGE_TEXT_CENTER: { 1: { x: 0, y: 0, w: 1,    h: 1 } },
+  IMAGE_TOP_TEXT_BOTTOM:  { 1: { x: 0, y: 0, w: 1,    h: 0.6 } },
+  TEXT_TOP_IMAGE_BOTTOM:  { 1: { x: 0, y: 0.4, w: 1,  h: 0.6 } },
+  IMAGE_LEFT_TEXT_RIGHT:  { 1: { x: 0, y: 0, w: 0.55, h: 1 } },
+  IMAGE_RIGHT_TEXT_LEFT:  { 1: { x: 0.45, y: 0, w: 0.55, h: 1 } },
+  TWO_IMAGES:             { 1: { x: 0, y: 0, w: 0.5,  h: 1 }, 2: { x: 0.5, y: 0, w: 0.5, h: 1 } },
+  TEXT_ONLY:              {},
+};
+
+/** Decorative frame style presets displayed in the frame-style picker. */
+const FRAME_STYLES = [
+  { id: null,           label: "ללא" },
+  { id: "torn_top",     label: "קצה עליון" },
+  { id: "torn_bottom",  label: "קצה תחתון" },
+  { id: "torn_left",    label: "קצה שמאל" },
+  { id: "torn_right",   label: "קצה ימין" },
+] as const;
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -150,6 +181,7 @@ export function AlbumPageEditor({
   onClearTextPosition,
   currentTextX,
   currentTextY,
+  externalPageId,
 }: {
   orderId: string;
   pages: EditorPage[];
@@ -174,12 +206,41 @@ export function AlbumPageEditor({
   currentTextX?: number | null;
   /** Current text_y of the selected page from livePreviewData (for "clear" button). */
   currentTextY?: number | null;
+  /**
+   * When the large preview navigates, the parent passes the new active page ID here.
+   * The editor syncs its local selection to stay in step with the preview.
+   */
+  externalPageId?: string | null;
 }) {
   const router = useRouter();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
 
+  // Sync selection when the preview navigates (bidirectional sync).
+  // We only adopt the external page ID if it differs — avoids re-render loops.
+  useEffect(() => {
+    if (externalPageId !== undefined && externalPageId !== selectedPageId) {
+      setSelectedPageId(externalPageId ?? null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalPageId]);
+
   const selectedPage = pages.find((p) => p.id === selectedPageId) ?? null;
   const selectedIndex = pages.findIndex((p) => p.id === selectedPageId);
+
+  /**
+   * Find the spread partner of the selected page.
+   * Illustration pages pair up as (2,3), (4,5), …, (38,39).
+   * Cover and back_cover are singletons with no partner.
+   */
+  const partnerPage: EditorPage | null = (() => {
+    if (!selectedPage || selectedPage.page_type !== "illustration_and_text") return null;
+    const n = selectedPage.page_number;
+    // Even → partner is n+1, Odd (≥3) → partner is n-1
+    const partnerNum = n % 2 === 0 ? n + 1 : n - 1;
+    return pages.find(
+      (p) => p.page_number === partnerNum && p.page_type === "illustration_and_text"
+    ) ?? null;
+  })();
 
   function selectPage(page: EditorPage) {
     setSelectedPageId(page.id);
@@ -270,9 +331,13 @@ export function AlbumPageEditor({
             key={selectedPage.id}
             orderId={orderId}
             page={selectedPage}
+            partnerPage={partnerPage}
             completedPhotos={completedPhotos}
             onSaved={() => router.refresh()}
             onPageUpdate={onPageUpdate}
+            onSelectPartner={
+              partnerPage ? () => selectPage(partnerPage) : undefined
+            }
             textDragMode={textDragMode}
             onTextDragToggle={
               onTextDragToggle
@@ -307,9 +372,11 @@ export function AlbumPageEditor({
 function PageEditorPanel({
   orderId,
   page,
+  partnerPage,
   completedPhotos,
   onSaved,
   onPageUpdate,
+  onSelectPartner,
   textDragMode,
   onTextDragToggle,
   onClearTextPosition,
@@ -318,9 +385,13 @@ function PageEditorPanel({
 }: {
   orderId: string;
   page: EditorPage;
+  /** The other page of the same spread (for SpreadMiniView). Null for cover/back_cover. */
+  partnerPage?: EditorPage | null;
   completedPhotos: PhotoForEditor[];
   onSaved: () => void;
   onPageUpdate?: (pageId: string, overrides: Partial<PreviewPage>) => void;
+  /** Called when user clicks the partner page in SpreadMiniView to switch selection. */
+  onSelectPartner?: () => void;
   textDragMode?: boolean;
   /** Toggle drag mode for current page. */
   onTextDragToggle?: () => void;
@@ -348,6 +419,7 @@ function PageEditorPanel({
         crop_x: img.crop_x,
         crop_y: img.crop_y,
         scale: img.scale,
+        frame_style: img.frame_style ?? null,
       };
     }
     return m;
@@ -355,6 +427,8 @@ function PageEditorPanel({
 
   const [savingText, setSavingText] = useState(false);
   const [textDirty, setTextDirty] = useState(false);
+  /** Which slot is focused in the spread mini canvas (for frame picker + single slot editor). */
+  const [focusedSlot, setFocusedSlot] = useState<1 | 2>(1);
 
   const canDragText = OVERLAY_LAYOUTS.includes(layoutType) && Boolean(text);
   const hasCustomPosition = currentTextX != null || currentTextY != null;
@@ -435,7 +509,7 @@ function PageEditorPanel({
     const prevSlots = slots;
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 },
+      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1, frame_style: null },
     };
     setSlots(newSlots);
     // Push to large preview immediately for instant visual feedback
@@ -486,17 +560,72 @@ function PageEditorPanel({
   function handleManualUpload(slot: 1 | 2, imageUrl: string) {
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 },
+      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1, frame_style: null },
     };
     setSlots(newSlots);
     onPageUpdate?.(page.id, { images: buildImages(newSlots) });
     onSaved();
   }
 
+  /** Called by SpreadMiniView when the user drags to pan/scale an image. */
+  function handleMiniCropUpdate(
+    slotNum: 1 | 2,
+    cx: number,
+    cy: number,
+    scale: number,
+    save: boolean
+  ) {
+    const currentSlot = slots[slotNum];
+    if (!currentSlot?.image_url) return;
+    const newSlots = { ...slots, [slotNum]: { ...currentSlot, crop_x: cx, crop_y: cy, scale } };
+    setSlots(newSlots);
+    onPageUpdate?.(page.id, { images: buildImages(newSlots) });
+    if (save) {
+      fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot: slotNum, crop_x: cx, crop_y: cy, scale }),
+      });
+    }
+  }
+
+  /** Save a frame style change for a slot. */
+  async function handleFrameStyleSave(slotNum: 1 | 2, style: string | null) {
+    const currentSlot = slots[slotNum];
+    if (!currentSlot) return;
+    const newSlots = { ...slots, [slotNum]: { ...currentSlot, frame_style: style } };
+    setSlots(newSlots);
+    onPageUpdate?.(page.id, { images: buildImages(newSlots) });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot: slotNum, frame_style: style }),
+    });
+  }
+
   const activeSlots = LAYOUT_SLOTS[layoutType] ?? [];
 
   return (
     <div className="space-y-6 pt-1">
+      {/* Spread mini canvas — both pages side by side with interactive crop/zoom */}
+      <SpreadMiniView
+        activePage={page}
+        partnerPage={partnerPage ?? null}
+        slots={slots}
+        focusedSlotNum={focusedSlot}
+        onSlotFocus={setFocusedSlot}
+        onCropUpdate={handleMiniCropUpdate}
+        onSelectPartner={() => onSelectPartner?.()}
+      />
+
+      {/* Frame style picker — shown when focused slot has an image */}
+      {slots[focusedSlot]?.image_url && (
+        <FrameStylePicker
+          value={slots[focusedSlot]?.frame_style ?? null}
+          onChange={(style) => handleFrameStyleSave(focusedSlot, style)}
+        />
+      )}
+
       {/* Text editor */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground">
@@ -522,6 +651,14 @@ function PageEditorPanel({
           >
             {savingText ? "שומר..." : "שמור טקסט ←"}
           </button>
+        )}
+        {/* Warn when an image is assigned but there is no story text.
+            pages.text_content is the canonical text source for narration —
+            if it is empty the film narration will be silent for this spread. */}
+        {!text && Object.values(slots).some((s) => s.photo_id) && (
+          <p className="text-[11px] text-amber-600/80 leading-snug">
+            לעמוד זה יש איור אך אין טקסט סיפור — הנארציה תהיה שקטה לפריסה זו
+          </p>
         )}
       </div>
 
@@ -670,29 +807,65 @@ function PageEditorPanel({
         </div>
       </div>
 
-      {/* Image slot editors */}
+      {/* Image slot editor — shows only the focused slot.
+          For TWO_IMAGES, click the other slot in the mini canvas above to switch. */}
       {activeSlots.length > 0 && (
         <div className="space-y-4">
-          <p className="text-xs font-medium text-muted-foreground">
-            {activeSlots.length === 1 ? "איור" : "איורים"}
-          </p>
-          {activeSlots.map((slotNum) => (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              {activeSlots.length === 1 ? "איור" : `איור ${focusedSlot}`}
+            </p>
+            {activeSlots.length > 1 && (
+              <div className="flex gap-1">
+                {activeSlots.map((sn) => (
+                  <button
+                    key={sn}
+                    onClick={() => setFocusedSlot(sn as 1 | 2)}
+                    className={`h-6 w-6 rounded text-[10px] border transition-colors ${
+                      focusedSlot === sn
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted border-border text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {sn}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {activeSlots.includes(focusedSlot) ? (
             <ImageSlotEditor
-              key={slotNum}
-              slot={slotNum as 1 | 2}
-              slotState={slots[slotNum] ?? null}
+              key={focusedSlot}
+              slot={focusedSlot}
+              slotState={slots[focusedSlot] ?? null}
               completedPhotos={completedPhotos}
               orderId={orderId}
               pageId={page.id}
-              onAssign={(photo) => handleSlotAssign(slotNum as 1 | 2, photo)}
+              onAssign={(photo) => handleSlotAssign(focusedSlot, photo)}
               onCropSave={(crop_x, crop_y, scale) =>
-                handleCropSave(slotNum as 1 | 2, crop_x, crop_y, scale)
+                handleCropSave(focusedSlot, crop_x, crop_y, scale)
               }
               onManualUpload={(imageUrl) =>
-                handleManualUpload(slotNum as 1 | 2, imageUrl)
+                handleManualUpload(focusedSlot, imageUrl)
               }
             />
-          ))}
+          ) : (
+            <ImageSlotEditor
+              key={activeSlots[0]}
+              slot={activeSlots[0] as 1 | 2}
+              slotState={slots[activeSlots[0]] ?? null}
+              completedPhotos={completedPhotos}
+              orderId={orderId}
+              pageId={page.id}
+              onAssign={(photo) => handleSlotAssign(activeSlots[0] as 1 | 2, photo)}
+              onCropSave={(crop_x, crop_y, scale) =>
+                handleCropSave(activeSlots[0] as 1 | 2, crop_x, crop_y, scale)
+              }
+              onManualUpload={(imageUrl) =>
+                handleManualUpload(activeSlots[0] as 1 | 2, imageUrl)
+              }
+            />
+          )}
         </div>
       )}
     </div>
@@ -718,8 +891,8 @@ function SpecialPagePanel({
   const [slotState, setSlotState] = useState<SlotState>(() => {
     const img = page.images.find((i) => i.slot === 1);
     return img
-      ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale }
-      : { photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1 };
+      ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale, frame_style: img.frame_style ?? null }
+      : { photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1, frame_style: null };
   });
 
   async function saveText() {
@@ -755,7 +928,7 @@ function SpecialPagePanel({
   }
 
   async function handleRemove() {
-    setSlotState({ photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1 });
+    setSlotState({ photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1, frame_style: null });
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -765,7 +938,7 @@ function SpecialPagePanel({
   }
 
   function handleManualUpload(imageUrl: string) {
-    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1 });
+    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1, frame_style: null });
     onSaved();
   }
 
@@ -987,6 +1160,8 @@ function ImageSlotEditor({
             <img
               src={imageUrl!}
               alt=""
+              loading="lazy"
+              decoding="async"
               draggable={false}
               style={{
                 position: "absolute",
@@ -1150,6 +1325,8 @@ function ImageSlotEditor({
                         <img
                           src={photo.illustrationUrl}
                           alt={photo.original_filename}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -1189,5 +1366,297 @@ function NudgeButton({ label, onClick }: { label: string; onClick: () => void })
     >
       {label}
     </button>
+  );
+}
+
+// ─── SpreadMiniView ───────────────────────────────────────────────────────────
+// Side-by-side mini canvas for both pages of the spread.
+// Active page: drag to pan, drag corner handle to zoom.
+// Partner page: dimmed, click to switch selection.
+
+type MiniDragState =
+  | { type: "pan";   slotNum: 1 | 2; ox: number; oy: number; cx: number; cy: number; scale: number }
+  | { type: "scale"; slotNum: 1 | 2; oy: number; initScale: number; cx: number; cy: number }
+  | null;
+
+function SpreadMiniView({
+  activePage,
+  partnerPage,
+  slots,
+  focusedSlotNum,
+  onSlotFocus,
+  onCropUpdate,
+  onSelectPartner,
+}: {
+  activePage: EditorPage;
+  partnerPage: EditorPage | null;
+  slots: Record<number, SlotState>;
+  focusedSlotNum: 1 | 2;
+  onSlotFocus: (slot: 1 | 2) => void;
+  onCropUpdate: (slotNum: 1 | 2, cx: number, cy: number, scale: number, save: boolean) => void;
+  onSelectPartner: () => void;
+}) {
+  const dragRef = useRef<MiniDragState>(null);
+  const latestRef = useRef<{ slotNum: 1 | 2; cx: number; cy: number; scale: number } | null>(null);
+
+  // Convert partner page images to SlotState map for rendering
+  const partnerSlots: Record<number, SlotState> = {};
+  if (partnerPage) {
+    for (const img of partnerPage.images) {
+      partnerSlots[img.slot] = {
+        photo_id: img.photo_id,
+        image_url: img.image_url,
+        crop_x: img.crop_x,
+        crop_y: img.crop_y,
+        scale: img.scale,
+        frame_style: img.frame_style ?? null,
+      };
+    }
+  }
+
+  function onPanDown(e: React.PointerEvent, slotNum: 1 | 2) {
+    e.stopPropagation();
+    const s = slots[slotNum];
+    dragRef.current = {
+      type: "pan",
+      slotNum,
+      ox: e.clientX,
+      oy: e.clientY,
+      cx: s?.crop_x ?? 0,
+      cy: s?.crop_y ?? 0,
+      scale: s?.scale ?? 1,
+    };
+    latestRef.current = { slotNum, cx: s?.crop_x ?? 0, cy: s?.crop_y ?? 0, scale: s?.scale ?? 1 };
+    onSlotFocus(slotNum);
+  }
+
+  function onScaleDown(e: React.PointerEvent, slotNum: 1 | 2) {
+    e.stopPropagation();
+    const s = slots[slotNum];
+    dragRef.current = {
+      type: "scale",
+      slotNum,
+      oy: e.clientY,
+      initScale: s?.scale ?? 1,
+      cx: s?.crop_x ?? 0,
+      cy: s?.crop_y ?? 0,
+    };
+    latestRef.current = { slotNum, cx: s?.crop_x ?? 0, cy: s?.crop_y ?? 0, scale: s?.scale ?? 1 };
+    onSlotFocus(slotNum);
+  }
+
+  function onMove(e: React.PointerEvent) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const bounds = SLOT_BOUNDS[activePage.layout_type]?.[drag.slotNum];
+    if (!bounds) return;
+
+    if (drag.type === "pan") {
+      const rangeX = bounds.w * PAGE_PX * (drag.scale - 1);
+      const rangeY = bounds.h * PAGE_PX * (drag.scale - 1);
+      const newCX = rangeX > 0 ? Math.max(0, Math.min(1, drag.cx - (e.clientX - drag.ox) / rangeX)) : drag.cx;
+      const newCY = rangeY > 0 ? Math.max(0, Math.min(1, drag.cy - (e.clientY - drag.oy) / rangeY)) : drag.cy;
+      latestRef.current = { slotNum: drag.slotNum, cx: newCX, cy: newCY, scale: drag.scale };
+      onCropUpdate(drag.slotNum, newCX, newCY, drag.scale, false);
+    } else {
+      // Drag DOWN = zoom in (increase scale)
+      const dy = e.clientY - drag.oy;
+      const newScale = Math.max(1, Math.min(4, drag.initScale + dy / (PAGE_PX * 0.5)));
+      latestRef.current = { slotNum: drag.slotNum, cx: drag.cx, cy: drag.cy, scale: newScale };
+      onCropUpdate(drag.slotNum, drag.cx, drag.cy, newScale, false);
+    }
+  }
+
+  function onUp() {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    if (latestRef.current) {
+      const { slotNum, cx, cy, scale } = latestRef.current;
+      latestRef.current = null;
+      onCropUpdate(slotNum, cx, cy, scale, true);
+    }
+  }
+
+  function renderPageCanvas(
+    page: EditorPage,
+    pageSlots: Record<number, SlotState>,
+    isActive: boolean
+  ) {
+    const slotBoundsMap = SLOT_BOUNDS[page.layout_type] ?? {};
+    return (
+      <div
+        className={`relative shrink-0 overflow-hidden rounded border ${
+          isActive
+            ? "border-primary/40"
+            : "border-border/30 cursor-pointer"
+        }`}
+        style={{ width: PAGE_PX, height: PAGE_PX, opacity: isActive ? 1 : 0.65 }}
+        onClick={!isActive ? onSelectPartner : undefined}
+      >
+        {/* Slot containers */}
+        {Object.entries(slotBoundsMap).map(([snStr, bounds]) => {
+          const sn = Number(snStr) as 1 | 2;
+          const ss = pageSlots[sn];
+          const isFocused = isActive && sn === focusedSlotNum;
+          const imgScale = Math.max(1, ss?.scale ?? 1);
+          return (
+            <div
+              key={sn}
+              className="absolute overflow-hidden"
+              style={{
+                left: bounds.x * PAGE_PX,
+                top: bounds.y * PAGE_PX,
+                width: bounds.w * PAGE_PX,
+                height: bounds.h * PAGE_PX,
+                outline: isFocused
+                  ? "2px dashed hsl(var(--primary))"
+                  : isActive
+                  ? "1px dashed hsl(var(--border))"
+                  : undefined,
+                outlineOffset: isFocused ? "-2px" : "-1px",
+                cursor: isActive
+                  ? ss?.image_url && imgScale > 1
+                    ? "grab"
+                    : "crosshair"
+                  : "pointer",
+              }}
+              onPointerDown={
+                isActive
+                  ? ss?.image_url
+                    ? (e) => onPanDown(e, sn)
+                    : (e) => { e.stopPropagation(); onSlotFocus(sn); }
+                  : undefined
+              }
+            >
+              {ss?.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={ss.image_url}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    position: "absolute",
+                    width: `${imgScale * 100}%`,
+                    height: `${imgScale * 100}%`,
+                    left: `${-(ss.crop_x ?? 0) * (imgScale - 1) * 100}%`,
+                    top: `${-(ss.crop_y ?? 0) * (imgScale - 1) * 100}%`,
+                    objectFit: "cover",
+                    userSelect: "none",
+                    pointerEvents: "none",
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full bg-muted/40 flex items-center justify-center">
+                  <span className="text-[8px] text-muted-foreground/40">ריק</span>
+                </div>
+              )}
+              {/* Corner handles on focused slot with image */}
+              {isFocused && ss?.image_url && (
+                <>
+                  {[
+                    "top-0 start-0",
+                    "top-0 end-0",
+                    "bottom-0 start-0",
+                    "bottom-0 end-0",
+                  ].map((pos, i) => (
+                    <div
+                      key={i}
+                      className={`absolute ${pos} z-10 w-2 h-2 bg-white border border-primary/80 rounded-[1px]`}
+                      style={{ margin: 1 }}
+                      onPointerDown={(e) => onScaleDown(e, sn)}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          );
+        })}
+        {/* Empty state for TEXT_ONLY */}
+        {Object.keys(slotBoundsMap).length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-[9px] text-muted-foreground/40">טקסט בלבד</span>
+          </div>
+        )}
+        {/* Page number */}
+        <div
+          className="absolute bottom-0 inset-x-0 text-[8px] text-center py-0.5 pointer-events-none select-none"
+          style={{ background: "rgba(0,0,0,0.25)", color: "white" }}
+        >
+          {page.page_number}
+        </div>
+      </div>
+    );
+  }
+
+  // Hebrew book order: lower page_number = right page (physically on the right)
+  // We display: left-side canvas = higher page#, right-side canvas = lower page#
+  const activeIsRight = !partnerPage || activePage.page_number <= partnerPage.page_number;
+
+  const leftContent = activeIsRight
+    ? partnerPage
+      ? renderPageCanvas(partnerPage, partnerSlots, false)
+      : <div style={{ width: PAGE_PX, height: PAGE_PX }} className="rounded border border-dashed border-border/20" />
+    : renderPageCanvas(activePage, slots, true);
+
+  const rightContent = activeIsRight
+    ? renderPageCanvas(activePage, slots, true)
+    : partnerPage
+      ? renderPageCanvas(partnerPage, partnerSlots, false)
+      : <div style={{ width: PAGE_PX, height: PAGE_PX }} className="rounded border border-dashed border-border/20" />;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">תצוגת פריסה</p>
+      <div
+        dir="ltr"
+        className="flex items-start select-none"
+        style={{ touchAction: "none" }}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerLeave={onUp}
+      >
+        {leftContent}
+        {/* Spine guide */}
+        <div
+          className="shrink-0 self-stretch relative"
+          style={{ width: 12 }}
+        >
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/50" />
+        </div>
+        {rightContent}
+      </div>
+    </div>
+  );
+}
+
+// ─── FrameStylePicker ─────────────────────────────────────────────────────────
+// Row of buttons to select a decorative frame preset for the focused slot.
+
+function FrameStylePicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (style: string | null) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">מסגרת</p>
+      <div className="flex flex-wrap gap-1.5">
+        {FRAME_STYLES.map((fs) => (
+          <button
+            key={String(fs.id)}
+            onClick={() => onChange(fs.id as string | null)}
+            className={`rounded-md px-2.5 py-1.5 text-xs border transition-colors ${
+              value === fs.id
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {fs.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

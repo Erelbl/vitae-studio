@@ -184,6 +184,8 @@ export function AdminPhotoUpload({ orderId }: { orderId: string }) {
                 <img
                   src={URL.createObjectURL(entry.file)}
                   alt={entry.file.name}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full aspect-square object-cover"
                 />
               ) : (
