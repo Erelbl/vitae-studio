@@ -108,7 +108,6 @@ function DraggableComparisonPair({
 export function ImageComparisonSection() {
   const allPairs = [
     { before: IMAGE_COMPARISON.beforeImage, after: IMAGE_COMPARISON.afterImage },
-    ...IMAGE_COMPARISON.additionalPairs.map((p) => ({ before: p.before, after: p.after })),
   ];
 
   return (
