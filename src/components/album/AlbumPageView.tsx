@@ -3,21 +3,23 @@ import type { LayoutType, PageImageSlot, PreviewPage, TextAlign, TextColor, Text
 interface AlbumPageViewProps {
   page: PreviewPage;
   personName: string;
+  /** When true, removes overflow:hidden so an image can bleed across the spread gutter. */
+  editMode?: boolean;
 }
 
-export function AlbumPageView({ page, personName }: AlbumPageViewProps) {
+export function AlbumPageView({ page, personName, editMode = false }: AlbumPageViewProps) {
   switch (page.page_type) {
     case "cover":
-      return <CoverPage page={page} personName={personName} />;
+      return <CoverPage page={page} personName={personName} editMode={editMode} />;
     case "dedication":
-      return <DedicationPage page={page} />;
+      return <DedicationPage page={page} editMode={editMode} />;
     case "back_cover":
-      return <BackCoverPage page={page} />;
+      return <BackCoverPage page={page} editMode={editMode} />;
     case "text_only":
       return <TextOnlyPage page={page} />;
     case "illustration_and_text":
     default:
-      return <ContentPage page={page} />;
+      return <ContentPage page={page} editMode={editMode} />;
   }
 }
 
@@ -27,13 +29,15 @@ export function AlbumPageView({ page, personName }: AlbumPageViewProps) {
 function PageShell({
   children,
   className = "",
+  editMode = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  editMode?: boolean;
 }) {
   return (
     <div
-      className={`relative aspect-square w-full overflow-hidden shadow-md ${className}`}
+      className={`relative aspect-square w-full shadow-md ${editMode ? "" : "overflow-hidden"} ${className}`}
     >
       {children}
     </div>
@@ -104,13 +108,15 @@ function resolveSlot(
 function CoverPage({
   page,
   personName,
+  editMode,
 }: {
   page: PreviewPage;
   personName: string;
+  editMode?: boolean;
 }) {
   const slot1 = resolveSlot(page, 1);
   return (
-    <PageShell className="bg-secondary">
+    <PageShell className="bg-secondary" editMode={editMode}>
       {/* Optional manually-uploaded background image */}
       {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/18" />
@@ -141,10 +147,10 @@ function CoverPage({
 
 // ─── Dedication ───────────────────────────────────────────────────────────────
 
-function DedicationPage({ page }: { page: PreviewPage }) {
+function DedicationPage({ page, editMode }: { page: PreviewPage; editMode?: boolean }) {
   const slot1 = resolveSlot(page, 1);
   return (
-    <PageShell className="bg-secondary/50 border border-border/40">
+    <PageShell className="bg-secondary/50 border border-border/40" editMode={editMode}>
       {/* Optional manually-uploaded background image */}
       {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
       <div className={`flex h-full flex-col items-center justify-center text-center p-10 relative z-10`}>
@@ -168,7 +174,7 @@ function DedicationPage({ page }: { page: PreviewPage }) {
 
 // ─── Content (illustration + text) — layout-aware ────────────────────────────
 
-function ContentPage({ page }: { page: PreviewPage }) {
+function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean }) {
   const layout: LayoutType = page.layout_type ?? "FULL_IMAGE";
   const slot1 = resolveSlot(page, 1);
   const slot2 = resolveSlot(page, 2);
@@ -185,7 +191,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
   switch (layout) {
     case "TEXT_ONLY":
       return (
-        <PageShell className="bg-card border border-border/60">
+        <PageShell className="bg-card border border-border/60" editMode={editMode}>
           <TextCenter content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
           <PageNumber number={page.page_number} />
         </PageShell>
@@ -193,7 +199,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
     case "IMAGE_TOP_TEXT_BOTTOM":
       return (
-        <PageShell className="bg-card border border-border/60">
+        <PageShell className="bg-card border border-border/60" editMode={editMode}>
           <div className="flex flex-col h-full">
             <div className="relative h-[60%]">
               <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
@@ -208,7 +214,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
     case "TEXT_TOP_IMAGE_BOTTOM":
       return (
-        <PageShell className="bg-card border border-border/60">
+        <PageShell className="bg-card border border-border/60" editMode={editMode}>
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-[40%] px-5 py-4">
               <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
@@ -223,7 +229,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
     case "IMAGE_LEFT_TEXT_RIGHT":
       return (
-        <PageShell className="bg-card border border-border/60">
+        <PageShell className="bg-card border border-border/60" editMode={editMode}>
           {/* Force LTR so "left" is always physical-left regardless of page dir */}
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="relative w-[55%]">
@@ -239,7 +245,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
     case "IMAGE_RIGHT_TEXT_LEFT":
       return (
-        <PageShell className="bg-card border border-border/60">
+        <PageShell className="bg-card border border-border/60" editMode={editMode}>
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
               <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
@@ -254,7 +260,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
     case "TWO_IMAGES":
       return (
-        <PageShell className="bg-card border border-border/60">
+        <PageShell className="bg-card border border-border/60" editMode={editMode}>
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="relative w-1/2">
               <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
@@ -284,7 +290,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
     case "FULL_IMAGE_TEXT_TOP":
       return (
-        <PageShell className="bg-secondary">
+        <PageShell className="bg-secondary" editMode={editMode}>
           <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
           {page.text_content && (
             <TextOverlayTop
@@ -303,7 +309,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
     case "FULL_IMAGE_TEXT_CENTER":
       return (
-        <PageShell className="bg-secondary">
+        <PageShell className="bg-secondary" editMode={editMode}>
           <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
           {page.text_content && (
             <TextOverlayCenter
@@ -323,7 +329,7 @@ function ContentPage({ page }: { page: PreviewPage }) {
     case "FULL_IMAGE":
     default:
       return (
-        <PageShell className="bg-secondary">
+        <PageShell className="bg-secondary" editMode={editMode}>
           <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
           {page.text_content && (
             <TextOverlay
@@ -344,9 +350,9 @@ function ContentPage({ page }: { page: PreviewPage }) {
 
 // ─── Text only page type ──────────────────────────────────────────────────────
 
-function TextOnlyPage({ page }: { page: PreviewPage }) {
+function TextOnlyPage({ page, editMode }: { page: PreviewPage; editMode?: boolean }) {
   return (
-    <PageShell className="bg-card border border-border/60">
+    <PageShell className="bg-card border border-border/60" editMode={editMode}>
       <div className="flex h-full flex-col items-center justify-center p-10">
         <Ornament className="mb-7" />
         {page.text_content ? (
@@ -368,10 +374,10 @@ function TextOnlyPage({ page }: { page: PreviewPage }) {
 
 // ─── Back cover ───────────────────────────────────────────────────────────────
 
-function BackCoverPage({ page }: { page: PreviewPage }) {
+function BackCoverPage({ page, editMode }: { page: PreviewPage; editMode?: boolean }) {
   const slot1 = resolveSlot(page, 1);
   return (
-    <PageShell className="bg-secondary">
+    <PageShell className="bg-secondary" editMode={editMode}>
       {/* Optional manually-uploaded background image */}
       {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
       <div className="absolute inset-0 bg-gradient-to-tl from-primary/10 via-transparent to-primary/16" />
@@ -437,6 +443,12 @@ function ImageFill({
     ? { maskImage: maskUrl, maskSize: "100% 100%" }
     : undefined;
 
+  // Centered-position model:
+  //   crop_x, crop_y = center of the image as a fraction of the container (default 0.5)
+  //   scale          = image size as a fraction of the container (1 = fills container)
+  // Formula: left = (crop_x - scale/2) × 100%, top = (crop_y - scale/2) × 100%
+  // This allows the image to be freely positioned and sized, including cross-spread overflow.
+
   return (
     <div
       className="absolute inset-0 overflow-hidden"
@@ -453,10 +465,9 @@ function ImageFill({
           position: "absolute",
           width: `${s * 100}%`,
           height: `${s * 100}%`,
-          // Pan: offset is fraction of the extra space (scale-1) × container size
-          left: `${-crop_x * (s - 1) * 100}%`,
-          top: `${-crop_y * (s - 1) * 100}%`,
-          objectFit: "cover",
+          left: `${(crop_x - s / 2) * 100}%`,
+          top: `${(crop_y - s / 2) * 100}%`,
+          objectFit: "contain",
           userSelect: "none",
           pointerEvents: "none",
         }}

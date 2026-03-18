@@ -65,6 +65,11 @@ export function AlbumEditorLayout({
   /** Whether text drag mode is active for the currently selected page. */
   const [textDragMode, setTextDragMode] = useState(false);
 
+  /** Page being image-edited on the large preview canvas. */
+  const [imageEditPageId, setImageEditPageId] = useState<string | null>(null);
+  /** Slot being image-edited (1 or 2). */
+  const [imageEditSlot] = useState<1 | 2>(1);
+
   /**
    * Per-page style overrides accumulated from the editor without requiring a
    * full server refresh. Only fields that the editor can change without
@@ -115,10 +120,60 @@ export function AlbumEditorLayout({
     [previewData, pageOverrides]
   );
 
+  /**
+   * Called when the user makes a final image drag/resize on the large preview.
+   * Updates pageOverrides immediately for instant feedback, then PATCHes the DB.
+   */
+  function handleImageUpdate(
+    pageId: string,
+    slot: 1 | 2,
+    cropX: number,
+    cropY: number,
+    scale: number,
+    final: boolean
+  ) {
+    setPageOverrides((prev) => {
+      const existing = prev.get(pageId);
+      const serverPage = previewData.pages.find((p) => p.id === pageId);
+      if (!serverPage) return prev;
+      const baseImages = (existing?.images ?? serverPage.images ?? []) as NonNullable<PreviewPage["images"]>;
+      const slotExists = baseImages.some((img) => img.slot === slot);
+      const newImages = slotExists
+        ? baseImages.map((img) =>
+            img.slot === slot ? { ...img, crop_x: cropX, crop_y: cropY, scale } : img
+          )
+        : [
+            ...baseImages,
+            {
+              id: `local-${slot}`,
+              slot,
+              crop_x: cropX,
+              crop_y: cropY,
+              scale,
+              photo_id: null,
+              image_url: null,
+              frame_style: null,
+            },
+          ];
+      const next = new Map(prev);
+      next.set(pageId, { ...(existing ?? {}), images: newImages });
+      return next;
+    });
+
+    if (final) {
+      fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot, crop_x: cropX, crop_y: cropY, scale }),
+      }).catch(console.error);
+    }
+  }
+
   /** Called when the user selects a page in the editor. */
   function handlePageSelect(pageNumber: number, pageId: string) {
     setFocusedSpreadIndex(pageToSpreadIndex(pageNumber, livePreviewData.pages));
     setSelectedPageId(pageId);
+    setImageEditPageId(pageId); // auto-activate image editing for the selected page
     setTextDragMode(false); // exit drag mode when switching pages
   }
 
@@ -235,6 +290,10 @@ export function AlbumEditorLayout({
           textDragMode={textDragMode}
           onTextDrop={handleTextDrop}
           onSpreadChange={handlePreviewSpreadChange}
+          imageEditPageId={imageEditPageId}
+          imageEditSlot={imageEditSlot}
+          onImageUpdate={handleImageUpdate}
+          onImageEditDeactivate={() => setImageEditPageId(null)}
         />
       </div>
 

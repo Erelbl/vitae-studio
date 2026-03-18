@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -509,7 +509,7 @@ function PageEditorPanel({
     const prevSlots = slots;
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1, frame_style: null },
+      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null },
     };
     setSlots(newSlots);
     // Push to large preview immediately for instant visual feedback
@@ -518,7 +518,7 @@ function PageEditorPanel({
     const res = await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slot, photoId, crop_x: 0, crop_y: 0, scale: 1 }),
+      body: JSON.stringify({ slot, photoId, crop_x: 0.5, crop_y: 0.5, scale: 1 }),
     });
 
     if (!res.ok) {
@@ -560,7 +560,7 @@ function PageEditorPanel({
   function handleManualUpload(slot: 1 | 2, imageUrl: string) {
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1, frame_style: null },
+      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null },
     };
     setSlots(newSlots);
     onPageUpdate?.(page.id, { images: buildImages(newSlots) });
@@ -892,7 +892,7 @@ function SpecialPagePanel({
     const img = page.images.find((i) => i.slot === 1);
     return img
       ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale, frame_style: img.frame_style ?? null }
-      : { photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1, frame_style: null };
+      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null };
   });
 
   async function saveText() {
@@ -928,7 +928,7 @@ function SpecialPagePanel({
   }
 
   async function handleRemove() {
-    setSlotState({ photo_id: null, image_url: null, crop_x: 0, crop_y: 0, scale: 1, frame_style: null });
+    setSlotState({ photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null });
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -938,7 +938,7 @@ function SpecialPagePanel({
   }
 
   function handleManualUpload(imageUrl: string) {
-    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0, crop_y: 0, scale: 1, frame_style: null });
+    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null });
     onSaved();
   }
 
@@ -1015,59 +1015,18 @@ function ImageSlotEditor({
   onManualUpload: (imageUrl: string) => void;
 }) {
   const [showPicker, setShowPicker] = useState(false);
-  const [cropX, setCropX] = useState(slotState?.crop_x ?? 0);
-  const [cropY, setCropY] = useState(slotState?.crop_y ?? 0);
   const [scale, setScale] = useState(slotState?.scale ?? 1);
   const [uploading, setUploading] = useState(false);
 
-  const frameRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isDraggingRef = useRef(false);
-  const dragOriginRef = useRef({ px: 0, py: 0, cx: 0, cy: 0 });
-  const latestCropRef = useRef({ crop_x: cropX, crop_y: cropY });
 
   const imageUrl = slotState?.image_url ?? null;
   const hasImage = Boolean(imageUrl);
   const isManual = hasImage && !slotState?.photo_id;
 
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (scale <= 1 || !imageUrl) return;
-      e.currentTarget.setPointerCapture(e.pointerId);
-      isDraggingRef.current = true;
-      dragOriginRef.current = { px: e.clientX, py: e.clientY, cx: cropX, cy: cropY };
-    },
-    [scale, imageUrl, cropX, cropY]
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!isDraggingRef.current || !frameRef.current) return;
-      const rect = frameRef.current.getBoundingClientRect();
-      const rangeX = rect.width * (scale - 1);
-      const rangeY = rect.height * (scale - 1);
-      if (rangeX === 0 || rangeY === 0) return;
-
-      const dx = (e.clientX - dragOriginRef.current.px) / rangeX;
-      const dy = (e.clientY - dragOriginRef.current.py) / rangeY;
-      const newCX = Math.max(0, Math.min(1, dragOriginRef.current.cx - dx));
-      const newCY = Math.max(0, Math.min(1, dragOriginRef.current.cy - dy));
-      setCropX(newCX);
-      setCropY(newCY);
-      latestCropRef.current = { crop_x: newCX, crop_y: newCY };
-    },
-    [scale]
-  );
-
-  const handlePointerUp = useCallback(() => {
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
-    onCropSave(latestCropRef.current.crop_x, latestCropRef.current.crop_y, scale);
-  }, [scale, onCropSave]);
-
   function handleScaleChange(newScale: number) {
     setScale(newScale);
-    onCropSave(cropX, cropY, newScale);
+    onCropSave(slotState?.crop_x ?? 0.5, slotState?.crop_y ?? 0.5, newScale);
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1088,8 +1047,6 @@ function ImageSlotEditor({
 
     if (res.ok) {
       const data = await res.json();
-      setCropX(0);
-      setCropY(0);
       setScale(1);
       onManualUpload(data.imageUrl);
     } else {
@@ -1099,7 +1056,6 @@ function ImageSlotEditor({
   }
 
   const slotLabel = slot === 1 ? "איור 1 (ראשי)" : "איור 2 (משני)";
-  const s = Math.max(1, scale);
 
   return (
     <div className="rounded-xl border border-border/60 p-4 space-y-3">
@@ -1125,8 +1081,6 @@ function ImageSlotEditor({
           <button
             onClick={() => {
               onAssign(null);
-              setCropX(0);
-              setCropY(0);
               setScale(1);
             }}
             className="text-xs text-destructive hover:underline"
@@ -1136,61 +1090,22 @@ function ImageSlotEditor({
         )}
       </div>
 
-      {/* Image frame / drag canvas */}
+      {/* Image controls */}
       {hasImage ? (
         <div className="space-y-3">
-          {/* Drag-to-pan frame */}
-          <div
-            ref={frameRef}
-            className="relative aspect-square w-48 overflow-hidden rounded-lg border border-border bg-muted"
-            style={{
-              cursor:
-                scale > 1
-                  ? isDraggingRef.current
-                    ? "grabbing"
-                    : "grab"
-                  : "default",
-            }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageUrl!}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              style={{
-                position: "absolute",
-                width: `${s * 100}%`,
-                height: `${s * 100}%`,
-                left: `${-cropX * (s - 1) * 100}%`,
-                top: `${-cropY * (s - 1) * 100}%`,
-                objectFit: "cover",
-                userSelect: "none",
-                pointerEvents: "none",
-              }}
-            />
-            {scale > 1 && (
-              <div className="absolute inset-0 flex items-end justify-center pb-1.5 pointer-events-none">
-                <span className="text-white/70 text-[10px] bg-black/40 rounded px-1.5 py-0.5">
-                  גרור להזזה
-                </span>
-              </div>
-            )}
-          </div>
+          {/* Hint: editing happens on the large preview */}
+          <p className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+            גרור ושנה גודל ישירות על התצוגה הגדולה
+          </p>
 
-          {/* Zoom slider */}
+          {/* Zoom slider — supplemental control */}
           <div className="flex items-center gap-3">
             <span className="text-[10px] text-muted-foreground w-12 shrink-0 tabular-nums">
               זום {scale.toFixed(1)}×
             </span>
             <input
               type="range"
-              min={1}
+              min={0.1}
               max={4}
               step={0.05}
               value={scale}
@@ -1198,56 +1113,6 @@ function ImageSlotEditor({
               className="flex-1 h-1.5 appearance-none bg-border rounded accent-primary"
             />
           </div>
-
-          {/* Fine-grained nudge controls */}
-          {scale > 1 && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground shrink-0">כיוון:</span>
-              <div className="grid grid-cols-3 gap-0.5">
-                <div />
-                <NudgeButton
-                  label="↑"
-                  onClick={() => {
-                    const next = Math.max(0, cropY - 0.05);
-                    setCropY(next);
-                    latestCropRef.current = { crop_x: cropX, crop_y: next };
-                    onCropSave(cropX, next, scale);
-                  }}
-                />
-                <div />
-                <NudgeButton
-                  label="←"
-                  onClick={() => {
-                    const next = Math.max(0, cropX - 0.05);
-                    setCropX(next);
-                    latestCropRef.current = { crop_x: next, crop_y: cropY };
-                    onCropSave(next, cropY, scale);
-                  }}
-                />
-                <div />
-                <NudgeButton
-                  label="→"
-                  onClick={() => {
-                    const next = Math.min(1, cropX + 0.05);
-                    setCropX(next);
-                    latestCropRef.current = { crop_x: next, crop_y: cropY };
-                    onCropSave(next, cropY, scale);
-                  }}
-                />
-                <div />
-                <NudgeButton
-                  label="↓"
-                  onClick={() => {
-                    const next = Math.min(1, cropY + 0.05);
-                    setCropY(next);
-                    latestCropRef.current = { crop_x: cropX, crop_y: next };
-                    onCropSave(cropX, next, scale);
-                  }}
-                />
-                <div />
-              </div>
-            </div>
-          )}
 
           {/* Replace buttons */}
           <div className="flex items-center gap-3 flex-wrap">
@@ -1309,8 +1174,6 @@ function ImageSlotEditor({
                       key={photo.id}
                       onClick={() => {
                         onAssign(photo);
-                        setCropX(0);
-                        setCropY(0);
                         setScale(1);
                         setShowPicker(false);
                       }}
@@ -1353,19 +1216,6 @@ function ImageSlotEditor({
         </Dialog>
       )}
     </div>
-  );
-}
-
-// ─── NudgeButton ──────────────────────────────────────────────────────────────
-
-function NudgeButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="h-7 w-7 rounded border border-border bg-muted hover:bg-muted/60 text-xs font-mono flex items-center justify-center transition-colors"
-    >
-      {label}
-    </button>
   );
 }
 
@@ -1422,11 +1272,11 @@ function SpreadMiniView({
       slotNum,
       ox: e.clientX,
       oy: e.clientY,
-      cx: s?.crop_x ?? 0,
-      cy: s?.crop_y ?? 0,
+      cx: s?.crop_x ?? 0.5,
+      cy: s?.crop_y ?? 0.5,
       scale: s?.scale ?? 1,
     };
-    latestRef.current = { slotNum, cx: s?.crop_x ?? 0, cy: s?.crop_y ?? 0, scale: s?.scale ?? 1 };
+    latestRef.current = { slotNum, cx: s?.crop_x ?? 0.5, cy: s?.crop_y ?? 0.5, scale: s?.scale ?? 1 };
     onSlotFocus(slotNum);
   }
 
@@ -1438,10 +1288,10 @@ function SpreadMiniView({
       slotNum,
       oy: e.clientY,
       initScale: s?.scale ?? 1,
-      cx: s?.crop_x ?? 0,
-      cy: s?.crop_y ?? 0,
+      cx: s?.crop_x ?? 0.5,
+      cy: s?.crop_y ?? 0.5,
     };
-    latestRef.current = { slotNum, cx: s?.crop_x ?? 0, cy: s?.crop_y ?? 0, scale: s?.scale ?? 1 };
+    latestRef.current = { slotNum, cx: s?.crop_x ?? 0.5, cy: s?.crop_y ?? 0.5, scale: s?.scale ?? 1 };
     onSlotFocus(slotNum);
   }
 
@@ -1498,7 +1348,7 @@ function SpreadMiniView({
           const sn = Number(snStr) as 1 | 2;
           const ss = pageSlots[sn];
           const isFocused = isActive && sn === focusedSlotNum;
-          const imgScale = Math.max(1, ss?.scale ?? 1);
+          const imgScale = Math.max(0.1, ss?.scale ?? 1);
           return (
             <div
               key={sn}
@@ -1515,7 +1365,7 @@ function SpreadMiniView({
                   : undefined,
                 outlineOffset: isFocused ? "-2px" : "-1px",
                 cursor: isActive
-                  ? ss?.image_url && imgScale > 1
+                  ? ss?.image_url
                     ? "grab"
                     : "crosshair"
                   : "pointer",
@@ -1538,9 +1388,9 @@ function SpreadMiniView({
                     position: "absolute",
                     width: `${imgScale * 100}%`,
                     height: `${imgScale * 100}%`,
-                    left: `${-(ss.crop_x ?? 0) * (imgScale - 1) * 100}%`,
-                    top: `${-(ss.crop_y ?? 0) * (imgScale - 1) * 100}%`,
-                    objectFit: "cover",
+                    left: `${((ss.crop_x ?? 0.5) - imgScale / 2) * 100}%`,
+                    top: `${((ss.crop_y ?? 0.5) - imgScale / 2) * 100}%`,
+                    objectFit: "contain",
                     userSelect: "none",
                     pointerEvents: "none",
                   }}
