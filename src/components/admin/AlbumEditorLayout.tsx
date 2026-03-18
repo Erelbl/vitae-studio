@@ -6,11 +6,22 @@ import { AlbumPageEditor } from "@/components/admin/AlbumPageEditor";
 import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
 import type { PreviewData, PreviewPage } from "@/types/page";
 
-/** Resolves which spread index contains a page with the given page_number. */
+/**
+ * Resolves which spread index contains a page with the given page_number.
+ * Mirrors buildSpreads() in AlbumPreview: cover + back_cover are singletons.
+ */
 function pageToSpreadIndex(pageNumber: number, pages: PreviewData["pages"]): number {
-  const idx = pages.findIndex((p) => p.page_number === pageNumber);
-  if (idx === -1) return 0;
-  return Math.floor(idx / 2);
+  let spreadIdx = 0;
+  let i = 0;
+  while (i < pages.length) {
+    const page = pages[i];
+    const isSingleton = page.page_type === "cover" || page.page_type === "back_cover";
+    if (page.page_number === pageNumber) return spreadIdx;
+    if (!isSingleton && pages[i + 1]?.page_number === pageNumber) return spreadIdx;
+    spreadIdx++;
+    i += isSingleton ? 1 : 2;
+  }
+  return 0;
 }
 
 /**
@@ -179,7 +190,7 @@ export function AlbumEditorLayout({
         <div>
           <h2 className="text-base font-semibold">עריכת עמודים</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            ערוך טקסט, פריסה ואיורים לכל עמוד. טקסט נשמר עם ניהול גרסאות.
+            ערוך טקסט, פריסה ואיורים לכל עמוד. שינויים נשמרים אוטומטית.
           </p>
         </div>
 

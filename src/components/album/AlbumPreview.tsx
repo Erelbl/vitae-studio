@@ -21,11 +21,23 @@ interface AlbumPreviewProps {
   onSpreadChange?: (firstPageNumber: number) => void;
 }
 
-/** Groups a flat page list into consecutive pairs (spreads). */
+/**
+ * Groups pages into spreads:
+ * - cover and back_cover appear alone (singleton spreads)
+ * - all other pages pair up: (2,3), (4,5), (6,7), …
+ */
 function buildSpreads(pages: PreviewPage[]): [PreviewPage, PreviewPage | null][] {
   const spreads: [PreviewPage, PreviewPage | null][] = [];
-  for (let i = 0; i < pages.length; i += 2) {
-    spreads.push([pages[i], pages[i + 1] ?? null]);
+  let i = 0;
+  while (i < pages.length) {
+    const page = pages[i];
+    if (page.page_type === "cover" || page.page_type === "back_cover") {
+      spreads.push([page, null]);
+      i += 1;
+    } else {
+      spreads.push([pages[i], pages[i + 1] ?? null]);
+      i += 2;
+    }
   }
   return spreads;
 }

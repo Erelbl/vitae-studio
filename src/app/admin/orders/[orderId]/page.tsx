@@ -21,6 +21,7 @@ import { AlbumLengthControl } from "@/components/admin/AlbumLengthControl";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 import type { FilmProject, FilmScene } from "@/types/film";
 import { createSignedImageUrl } from "@/lib/storage-image";
+import { QUESTIONNAIRE_LABELS as QL } from "@/lib/questionnaire-labels";
 
 function fmtDate(ts: string) {
   return new Date(ts).toLocaleString("he-IL", {
@@ -628,11 +629,11 @@ export default async function AdminOrderDetailPage({
         <Section title="תשובות השאלון">
           <div className="space-y-4">
             <ResponseGroup label="בואו נכיר">
-              <Field label="תיאור קצר" value={responses.one_sentence_description} />
-              <Field label="כינוי" value={responses.nickname} />
-              <Field label="דבר ראשון שרואים" value={responses.first_impression} />
+              <Field label={QL.one_sentence_description} value={responses.one_sentence_description} />
+              <Field label={QL.nickname} value={responses.nickname} />
+              <Field label={QL.first_impression} value={responses.first_impression} />
               <Field
-                label="סוג האלבום"
+                label={QL.album_type}
                 value={
                   responses.album_type
                     ? ALBUM_TYPE_LABELS[responses.album_type] ?? responses.album_type
@@ -641,48 +642,48 @@ export default async function AdminOrderDetailPage({
               />
             </ResponseGroup>
             <ResponseGroup label="ילדות ושורשים">
-              <Field label="עיר לידה" value={responses.person_birth_city} />
-              <Field label="עיר גדילה" value={responses.childhood_city} />
-              <Field label="אחים ואחיות" value={responses.siblings} />
-              <Field label="שמות ההורים" value={responses.parent_names} />
-              <Field label="תיאור כילד/ה" value={responses.childhood_memories} />
-              <Field label="זיכרון מיוחד" value={responses.childhood_special_memory} />
-              <Field label="תחביבים בילדות" value={responses.childhood_hobbies} />
+              <Field label={QL.person_birth_city} value={responses.person_birth_city} />
+              <Field label={QL.childhood_city} value={responses.childhood_city} />
+              <Field label={QL.siblings} value={responses.siblings} />
+              <Field label={QL.parent_names} value={responses.parent_names} />
+              <Field label={QL.childhood_memories} value={responses.childhood_memories} />
+              <Field label={QL.childhood_special_memory} value={responses.childhood_special_memory} />
+              <Field label={QL.childhood_hobbies} value={responses.childhood_hobbies} />
             </ResponseGroup>
             <ResponseGroup label="תחנות משמעותיות">
-              <Field label="עיסוק מרכזי" value={responses.profession} />
-              <Field label="אפיון בעבודה" value={responses.work_characteristics} />
-              <Field label="שירות צבאי" value={responses.military_service} />
-              <Field label="מקומות מגורים" value={responses.cities_over_years} />
-              <Field label="רגע משמעותי" value={responses.defining_moments} />
+              <Field label={QL.profession} value={responses.profession} />
+              <Field label={QL.work_characteristics} value={responses.work_characteristics} />
+              <Field label={QL.military_service} value={responses.military_service} />
+              <Field label={QL.cities_over_years} value={responses.cities_over_years} />
+              <Field label={QL.defining_moments} value={responses.defining_moments} />
             </ResponseGroup>
             <ResponseGroup label="אהבה ומשפחה">
-              <Field label="בן/בת זוג" value={responses.partner} />
-              <Field label="איך הכירו" value={responses.how_they_met} />
-              <Field label="סיפור חתונה" value={responses.wedding_story} />
-              <Field label="ילדים" value={responses.children} />
-              <Field label="כהורה" value={responses.parenting_style} />
+              <Field label={QL.partner} value={responses.partner} />
+              <Field label={QL.how_they_met} value={responses.how_they_met} />
+              <Field label={QL.wedding_story} value={responses.wedding_story} />
+              <Field label={QL.children} value={responses.children} />
+              <Field label={QL.parenting_style} value={responses.parenting_style} />
             </ResponseGroup>
             <ResponseGroup label="האדם שמאחורי הסיפור">
-              <Field label="תכונות בולטות" value={responses.personality_traits} />
-              <Field label="הדבר הכי אופייני" value={responses.known_for} />
-              <Field label="משפט חוזר" value={responses.favorite_sayings} />
-              <Field label="תחביבים" value={responses.hobbies} />
-              <Field label="פרט מצחיק" value={responses.funny_detail} />
+              <Field label={QL.personality_traits} value={responses.personality_traits} />
+              <Field label={QL.known_for} value={responses.known_for} />
+              <Field label={QL.favorite_sayings} value={responses.favorite_sayings} />
+              <Field label={QL.hobbies} value={responses.hobbies} />
+              <Field label={QL.funny_detail} value={responses.funny_detail} />
             </ResponseGroup>
             <ResponseGroup label="רגעים מיוחדים">
-              <Field label="רגע מצחיק" value={responses.funny_moment} />
-              <Field label="רגע מרגש" value={responses.emotional_moment} />
-              <Field label="רגע מאפיין" value={responses.characteristic_moment} />
+              <Field label={QL.funny_moment} value={responses.funny_moment} />
+              <Field label={QL.emotional_moment} value={responses.emotional_moment} />
+              <Field label={QL.characteristic_moment} value={responses.characteristic_moment} />
             </ResponseGroup>
             <ResponseGroup label="מורשת וערכים">
-              <Field label="ערכים חשובים" value={responses.important_values} />
-              <Field label="גאוות גדולה" value={responses.most_proud_of} />
-              <Field label="מה לימדו את הילדים" value={responses.taught_children} />
+              <Field label={QL.important_values} value={responses.important_values} />
+              <Field label={QL.most_proud_of} value={responses.most_proud_of} />
+              <Field label={QL.taught_children} value={responses.taught_children} />
             </ResponseGroup>
             <ResponseGroup label="ברכה">
-              <Field label="איחול" value={responses.blessing_wish} />
-              <Field label="משפט נוסף" value={responses.extra_description} />
+              <Field label={QL.blessing_wish} value={responses.blessing_wish} />
+              <Field label={QL.extra_description} value={responses.extra_description} />
             </ResponseGroup>
           </div>
         </Section>

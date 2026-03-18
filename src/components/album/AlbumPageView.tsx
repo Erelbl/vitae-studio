@@ -48,20 +48,31 @@ interface CropParams {
   scale: number;
 }
 
-// ─── Frame style clip-path presets ────────────────────────────────────────────
+// ─── Frame style SVG mask presets ─────────────────────────────────────────────
 // Applied to the image container div when frame_style is set on a slot.
-// Each value is a CSS clip-path polygon that simulates a torn-paper edge.
-// Coordinates are percentages relative to the container element.
+// Uses CSS mask-image with an inline SVG containing cubic-bezier paths for
+// organic torn-paper edges. Far more natural than CSS clip-path polygons.
 
-const FRAME_CLIP_PATHS: Record<string, string> = {
-  torn_top:
-    "polygon(0% 6%, 7% 3%, 14% 7%, 21% 2%, 28% 6%, 35% 2%, 42% 7%, 49% 2%, 56% 6%, 63% 2%, 70% 7%, 77% 2%, 84% 6%, 91% 2%, 98% 5%, 100% 3%, 100% 100%, 0% 100%)",
-  torn_bottom:
-    "polygon(0% 0%, 100% 0%, 100% 95%, 93% 98%, 86% 94%, 79% 98%, 72% 94%, 65% 98%, 58% 94%, 51% 98%, 44% 94%, 37% 98%, 30% 94%, 23% 98%, 16% 94%, 9% 98%, 2% 95%, 0% 97%)",
-  torn_left:
-    "polygon(6% 0%, 100% 0%, 100% 100%, 5% 100%, 2% 93%, 7% 86%, 1% 79%, 6% 72%, 2% 65%, 7% 58%, 1% 51%, 6% 44%, 2% 37%, 7% 30%, 1% 23%, 6% 16%, 2% 9%, 6% 0%)",
-  torn_right:
-    "polygon(0% 0%, 94% 0%, 98% 7%, 93% 14%, 98% 21%, 93% 28%, 98% 35%, 93% 42%, 98% 49%, 93% 56%, 98% 63%, 93% 70%, 98% 77%, 93% 84%, 98% 91%, 95% 97%, 100% 100%, 0% 100%)",
+const svgMask = (d: string) =>
+  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpath d='${d}' fill='white'/%3E%3C/svg%3E")`;
+
+const FRAME_MASKS: Record<string, string> = {
+  // Tear along the top edge; rest of image is fully visible
+  torn_top: svgMask(
+    "M0,100 L100,100 L100,10 C93,5 87,14 80,8 C73,2 67,13 60,6 C53,1 47,12 40,5 C33,0 27,11 20,4 C13,1 7,13 0,6 Z"
+  ),
+  // Tear along the bottom edge
+  torn_bottom: svgMask(
+    "M0,0 L100,0 L100,90 C93,95 87,86 80,92 C73,98 67,87 60,94 C53,99 47,88 40,95 C33,100 27,89 20,96 C13,99 7,87 0,94 Z"
+  ),
+  // Tear along the left edge
+  torn_left: svgMask(
+    "M100,0 L100,100 L10,100 C5,93 14,87 8,80 C2,73 13,67 6,60 C1,53 12,47 5,40 C0,33 11,27 4,20 C1,13 13,7 6,0 Z"
+  ),
+  // Tear along the right edge
+  torn_right: svgMask(
+    "M0,0 L0,100 L90,100 C95,93 86,87 92,80 C98,73 87,67 94,60 C99,53 88,47 95,40 C100,33 89,27 96,20 C99,13 87,7 94,0 Z"
+  ),
 };
 
 /** Resolve a slot's image URL + crop params + frame style, falling back to legacy image_url for slot 1. */
@@ -420,13 +431,16 @@ function ImageFill({
   }
 
   const { crop_x, crop_y, scale } = crop;
-  const s = Math.max(1, scale);
-  const clipPath = frameStyle ? (FRAME_CLIP_PATHS[frameStyle] ?? undefined) : undefined;
+  const s = Math.max(0.1, scale);
+  const maskUrl = frameStyle ? (FRAME_MASKS[frameStyle] ?? undefined) : undefined;
+  const maskStyle = maskUrl
+    ? { maskImage: maskUrl, maskSize: "100% 100%" }
+    : undefined;
 
   return (
     <div
       className="absolute inset-0 overflow-hidden"
-      style={clipPath ? { clipPath } : undefined}
+      style={maskStyle}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
