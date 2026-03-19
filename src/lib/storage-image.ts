@@ -21,11 +21,11 @@ export type ImageProfile =
 
 const TRANSFORM_PROFILES: Record<
   Exclude<ImageProfile, "original">,
-  { width: number; quality: number }
+  { width: number; quality: number; resize: "contain" }
 > = {
-  thumb: { width: 300, quality: 70 },
-  questionnairePreview: { width: 400, quality: 70 },
-  albumPreview: { width: 1400, quality: 75 },
+  thumb: { width: 300, quality: 70, resize: "contain" },
+  questionnairePreview: { width: 400, quality: 70, resize: "contain" },
+  albumPreview: { width: 1400, quality: 75, resize: "contain" },
 };
 
 /**
