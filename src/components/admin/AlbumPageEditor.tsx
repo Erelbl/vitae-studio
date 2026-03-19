@@ -528,8 +528,9 @@ function PageEditorPanel({
       alert(body.error ?? "שגיאה בשמירת האיור");
       return;
     }
-
-    onSaved();
+    // No router.refresh() here — the optimistic update via onPageUpdate is already visible
+    // and the signed URL from completedPhotos is valid for the session.
+    // Refreshing can cause the image to disappear if the server can't re-sign the URL.
   }
 
   async function handleCropSave(
@@ -564,7 +565,7 @@ function PageEditorPanel({
     };
     setSlots(newSlots);
     onPageUpdate?.(page.id, { images: buildImages(newSlots) });
-    onSaved();
+    // Optimistic update already shows the image — no router.refresh() to avoid clearing it.
   }
 
   /** Called by SpreadMiniView when the user drags to pan/scale an image. */

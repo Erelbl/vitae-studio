@@ -282,6 +282,18 @@ export function AlbumEditorLayout({
           סיפורו של {personName}
         </h1>
 
+        {/* PDF download */}
+        <div className="flex justify-center">
+          <a
+            href={`/api/admin/orders/${orderId}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+          >
+            ↓ הורד אלבום (PDF)
+          </a>
+        </div>
+
         {/* Large album preview — the real editing surface */}
         <AlbumPreview
           data={livePreviewData}

@@ -98,9 +98,9 @@ function resolveSlot(
   }
   // Legacy fallback: use pages.illustration_storage_path URL for slot 1 only
   if (slot === 1) {
-    return { url: page.image_url, crop: { crop_x: 0, crop_y: 0, scale: 1 }, frameStyle: null };
+    return { url: page.image_url, crop: { crop_x: 0.5, crop_y: 0.5, scale: 1 }, frameStyle: null };
   }
-  return { url: null, crop: { crop_x: 0, crop_y: 0, scale: 1 }, frameStyle: null };
+  return { url: null, crop: { crop_x: 0.5, crop_y: 0.5, scale: 1 }, frameStyle: null };
 }
 
 // ─── Cover ────────────────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ function CoverPage({
   return (
     <PageShell className="bg-secondary" editMode={editMode}>
       {/* Optional manually-uploaded background image */}
-      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} editMode={editMode} />}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/18" />
       <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8">
         <div className={`border-2 border-primary/20 rounded-xl p-6 w-full max-w-[80%] ${slot1.url ? "bg-black/40 backdrop-blur-sm" : ""}`}>
@@ -152,7 +152,7 @@ function DedicationPage({ page, editMode }: { page: PreviewPage; editMode?: bool
   return (
     <PageShell className="bg-secondary/50 border border-border/40" editMode={editMode}>
       {/* Optional manually-uploaded background image */}
-      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} editMode={editMode} />}
       <div className={`flex h-full flex-col items-center justify-center text-center p-10 relative z-10`}>
         <Ornament className="mb-6" />
         {page.text_content ? (
@@ -291,7 +291,7 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
     case "FULL_IMAGE_TEXT_TOP":
       return (
         <PageShell className="bg-secondary" editMode={editMode}>
-          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
+          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} editMode={editMode} />
           {page.text_content && (
             <TextOverlayTop
               text={page.text_content}
@@ -310,7 +310,7 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
     case "FULL_IMAGE_TEXT_CENTER":
       return (
         <PageShell className="bg-secondary" editMode={editMode}>
-          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
+          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} editMode={editMode} />
           {page.text_content && (
             <TextOverlayCenter
               text={page.text_content}
@@ -330,7 +330,7 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
     default:
       return (
         <PageShell className="bg-secondary" editMode={editMode}>
-          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
+          <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} editMode={editMode} />
           {page.text_content && (
             <TextOverlay
               text={page.text_content}
@@ -379,7 +379,7 @@ function BackCoverPage({ page, editMode }: { page: PreviewPage; editMode?: boole
   return (
     <PageShell className="bg-secondary" editMode={editMode}>
       {/* Optional manually-uploaded background image */}
-      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} />}
+      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} editMode={editMode} />}
       <div className="absolute inset-0 bg-gradient-to-tl from-primary/10 via-transparent to-primary/16" />
       <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8 gap-5">
         <Ornament size="lg" />
@@ -422,10 +422,13 @@ function ImageFill({
   url,
   crop,
   frameStyle,
+  editMode = false,
 }: {
   url: string | null;
   crop: CropParams;
   frameStyle?: string | null;
+  /** When true, removes overflow:hidden so the image can bleed across the spread gutter. */
+  editMode?: boolean;
 }) {
   if (!url) {
     return (
@@ -451,7 +454,7 @@ function ImageFill({
 
   return (
     <div
-      className="absolute inset-0 overflow-hidden"
+      className={`absolute inset-0 ${editMode ? "" : "overflow-hidden"}`}
       style={maskStyle}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
