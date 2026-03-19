@@ -180,14 +180,16 @@ export function AdminPhotoUpload({ orderId }: { orderId: string }) {
               {/* Thumbnail preview */}
               {entry.file.type.startsWith("image/") &&
               !entry.file.type.includes("heic") ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={URL.createObjectURL(entry.file)}
-                  alt={entry.file.name}
-                  loading="lazy"
-                  decoding="async"
-                  className="w-full aspect-square object-contain"
-                />
+                <div className="w-full aspect-square">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={URL.createObjectURL(entry.file)}
+                    alt={entry.file.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-contain"
+                  />
+                </div>
               ) : (
                 <div className="w-full aspect-square bg-muted flex items-center justify-center text-xs text-muted-foreground">
                   {entry.file.name.split(".").pop()?.toUpperCase()}

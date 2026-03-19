@@ -240,7 +240,7 @@ export function AdminPhotosGallery({
               onClick={() => togglePhoto(photo.id)}
             >
               {/* Original thumbnail */}
-              <div className="relative">
+              <div className="relative aspect-square">
                 {photo.originalUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -248,10 +248,10 @@ export function AdminPhotosGallery({
                     alt={photo.original_filename}
                     loading="lazy"
                     decoding="async"
-                    className="w-full aspect-square object-contain rounded-lg"
+                    className="h-full w-full object-contain rounded-lg"
                   />
                 ) : (
-                  <div className="w-full aspect-square rounded-lg bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                  <div className="h-full w-full rounded-lg bg-muted flex items-center justify-center text-xs text-muted-foreground">
                     N/A
                   </div>
                 )}
@@ -271,14 +271,16 @@ export function AdminPhotosGallery({
               {isDone && photo.illustrationUrl && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-1 text-center">איור</p>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.illustrationUrl}
-                    alt={`איור - ${photo.original_filename}`}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full aspect-square object-contain rounded-lg border"
-                  />
+                  <div className="w-full aspect-square">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.illustrationUrl}
+                      alt={`איור - ${photo.original_filename}`}
+                      loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-contain rounded-lg border"
+                    />
+                  </div>
                 </div>
               )}
 
