@@ -218,7 +218,7 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
                 alt=""
                 loading="lazy"
                 decoding="async"
-                className="h-10 w-10 rounded-lg object-cover"
+                className="h-10 w-10 rounded-lg object-contain"
               />
               <span className="flex-1 truncate text-sm">{u.name}</span>
               <span className={`text-xs ${u.progress === "error" ? "text-destructive" : "text-muted-foreground"}`}>

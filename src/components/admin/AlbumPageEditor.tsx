@@ -1114,7 +1114,7 @@ function ImageSlotEditor({
                           alt={photo.original_filename}
                           loading="lazy"
                           decoding="async"
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain"
                         />
                       ) : (
                         <div className="w-full h-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground">

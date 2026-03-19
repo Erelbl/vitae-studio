@@ -134,7 +134,7 @@ export function IllustrationPageMapper({
                       alt=""
                       loading="lazy"
                       decoding="async"
-                      className="h-8 w-8 rounded object-cover shrink-0"
+                      className="h-8 w-8 rounded object-contain shrink-0"
                     />
                   ) : (
                     <div className="h-8 w-8 rounded bg-muted/70 flex items-center justify-center shrink-0">
@@ -201,7 +201,7 @@ export function IllustrationPageMapper({
                           alt={photo.original_filename}
                           loading="lazy"
                           decoding="async"
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain"
                         />
                       ) : (
                         <div className="w-full h-full bg-muted" />

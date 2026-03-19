@@ -793,7 +793,7 @@ export function FilmPanel({
                     <img
                       src={finalThumbnailUrl}
                       alt="תמונה ממוזערת — סרט סופי"
-                      className="w-full aspect-video object-cover"
+                      className="w-full aspect-video object-contain"
                     />
                   </div>
                 )}
@@ -947,7 +947,7 @@ function SceneRow({
             <img
               src={thumbnailUrl}
               alt={`תמונה ממוזערת — סצנה ${scene.scene_order}`}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-muted-foreground/50 text-[8px]">
