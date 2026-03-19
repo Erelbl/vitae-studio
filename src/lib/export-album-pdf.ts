@@ -106,7 +106,7 @@ function buildImageFill(
     maxWidth: "none",
     left: `${(cropX - s / 2) * 100}%`,
     top: `${(cropY - s / 2) * 100}%`,
-    objectFit: "cover",
+    objectFit: "contain",
   });
 
   wrapper.appendChild(img);

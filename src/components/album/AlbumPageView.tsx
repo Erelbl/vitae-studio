@@ -474,7 +474,7 @@ function ImageFill({
           maxWidth: "none",    // Override Tailwind preflight max-width:100% which caps zoom
           left: `${(crop_x - s / 2) * 100}%`,
           top: `${(crop_y - s / 2) * 100}%`,
-          objectFit: "cover",
+          objectFit: "contain",
           userSelect: "none",
           pointerEvents: "none",
         }}
