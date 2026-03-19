@@ -86,11 +86,14 @@ function resolveSlot(
 ): { url: string | null; crop: CropParams; frameStyle: string | null } {
   const slotData = (page.images ?? []).find((i) => i.slot === slot);
   if (slotData) {
+    // Legacy compatibility: old DB rows stored (0, 0) as "no crop" before the centered model.
+    // In the new model (0, 0) would place the image at top-left corner, not centered.
+    const isLegacyZero = slotData.crop_x === 0 && slotData.crop_y === 0;
     return {
       url: slotData.image_url,
       crop: {
-        crop_x: slotData.crop_x,
-        crop_y: slotData.crop_y,
+        crop_x: isLegacyZero ? 0.5 : slotData.crop_x,
+        crop_y: isLegacyZero ? 0.5 : slotData.crop_y,
         scale: slotData.scale,
       },
       frameStyle: slotData.frame_style ?? null,
@@ -579,7 +582,7 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, text
   }
 
   return (
-    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/72 via-black/40 to-transparent px-5 pb-6 pt-16">
+    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/72 via-black/40 to-transparent px-5 pb-6 pt-16" style={{ zIndex: 10 }}>
       <p
         className="leading-relaxed whitespace-pre-line"
         style={{
@@ -628,7 +631,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, t
   }
 
   return (
-    <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/72 via-black/40 to-transparent px-5 pt-6 pb-16">
+    <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/72 via-black/40 to-transparent px-5 pt-6 pb-16" style={{ zIndex: 10 }}>
       <p
         className="leading-relaxed whitespace-pre-line"
         style={{
@@ -677,7 +680,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
   }
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none">
+    <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none" style={{ zIndex: 10 }}>
       <div
         className="rounded-2xl px-5 py-4 max-w-[86%]"
         style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", textAlign: align }}

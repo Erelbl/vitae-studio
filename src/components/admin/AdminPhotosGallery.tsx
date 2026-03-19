@@ -248,7 +248,7 @@ export function AdminPhotosGallery({
                     alt={photo.original_filename}
                     loading="lazy"
                     decoding="async"
-                    className="w-full aspect-square object-cover rounded-lg"
+                    className="w-full aspect-square object-contain rounded-lg"
                   />
                 ) : (
                   <div className="w-full aspect-square rounded-lg bg-muted flex items-center justify-center text-xs text-muted-foreground">
@@ -277,7 +277,7 @@ export function AdminPhotosGallery({
                     alt={`איור - ${photo.original_filename}`}
                     loading="lazy"
                     decoding="async"
-                    className="w-full aspect-square object-cover rounded-lg border"
+                    className="w-full aspect-square object-contain rounded-lg border"
                   />
                 </div>
               )}

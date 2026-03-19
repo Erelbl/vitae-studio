@@ -186,7 +186,7 @@ export function AdminPhotoUpload({ orderId }: { orderId: string }) {
                   alt={entry.file.name}
                   loading="lazy"
                   decoding="async"
-                  className="w-full aspect-square object-cover"
+                  className="w-full aspect-square object-contain"
                 />
               ) : (
                 <div className="w-full aspect-square bg-muted flex items-center justify-center text-xs text-muted-foreground">

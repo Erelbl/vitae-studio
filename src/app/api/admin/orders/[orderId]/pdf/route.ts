@@ -48,7 +48,7 @@ export async function GET(
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${safeName}.pdf"`,
+        "Content-Disposition": `attachment; filename="album-preview.pdf"`,
       },
     });
   } catch (err) {

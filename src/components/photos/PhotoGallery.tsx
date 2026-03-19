@@ -241,7 +241,7 @@ export function PhotoGallery({ orderId, token, initialPhotos }: Props) {
                     alt={photo.original_filename}
                     loading="lazy"
                     decoding="async"
-                    className="h-full w-full rounded-xl object-cover shadow-sm"
+                    className="h-full w-full rounded-xl object-contain shadow-sm"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
