@@ -140,25 +140,6 @@ function buildImages(slotsMap: Record<number, SlotState>): PageImageSlot[] {
     }));
 }
 
-// ─── Spread canvas constants ──────────────────────────────────────────────────
-
-/** Size in CSS pixels of each page square inside the spread mini-canvas. */
-const PAGE_PX = 148;
-
-/** Position of each image slot within a page (0-1 fractions of page width/height). */
-type SlotBounds = { x: number; y: number; w: number; h: number };
-const SLOT_BOUNDS: Partial<Record<string, Record<number, SlotBounds>>> = {
-  FULL_IMAGE:             { 1: { x: 0, y: 0, w: 1,    h: 1 } },
-  FULL_IMAGE_TEXT_TOP:    { 1: { x: 0, y: 0, w: 1,    h: 1 } },
-  FULL_IMAGE_TEXT_CENTER: { 1: { x: 0, y: 0, w: 1,    h: 1 } },
-  IMAGE_TOP_TEXT_BOTTOM:  { 1: { x: 0, y: 0, w: 1,    h: 0.6 } },
-  TEXT_TOP_IMAGE_BOTTOM:  { 1: { x: 0, y: 0.4, w: 1,  h: 0.6 } },
-  IMAGE_LEFT_TEXT_RIGHT:  { 1: { x: 0, y: 0, w: 0.55, h: 1 } },
-  IMAGE_RIGHT_TEXT_LEFT:  { 1: { x: 0.45, y: 0, w: 0.55, h: 1 } },
-  TWO_IMAGES:             { 1: { x: 0, y: 0, w: 0.5,  h: 1 }, 2: { x: 0.5, y: 0, w: 0.5, h: 1 } },
-  TEXT_ONLY:              {},
-};
-
 /** Decorative frame style presets displayed in the frame-style picker. */
 const FRAME_STYLES = [
   { id: null,           label: "ללא" },
@@ -226,21 +207,6 @@ export function AlbumPageEditor({
 
   const selectedPage = pages.find((p) => p.id === selectedPageId) ?? null;
   const selectedIndex = pages.findIndex((p) => p.id === selectedPageId);
-
-  /**
-   * Find the spread partner of the selected page.
-   * Illustration pages pair up as (2,3), (4,5), …, (38,39).
-   * Cover and back_cover are singletons with no partner.
-   */
-  const partnerPage: EditorPage | null = (() => {
-    if (!selectedPage || selectedPage.page_type !== "illustration_and_text") return null;
-    const n = selectedPage.page_number;
-    // Even → partner is n+1, Odd (≥3) → partner is n-1
-    const partnerNum = n % 2 === 0 ? n + 1 : n - 1;
-    return pages.find(
-      (p) => p.page_number === partnerNum && p.page_type === "illustration_and_text"
-    ) ?? null;
-  })();
 
   function selectPage(page: EditorPage) {
     setSelectedPageId(page.id);
@@ -331,13 +297,9 @@ export function AlbumPageEditor({
             key={selectedPage.id}
             orderId={orderId}
             page={selectedPage}
-            partnerPage={partnerPage}
             completedPhotos={completedPhotos}
             onSaved={() => router.refresh()}
             onPageUpdate={onPageUpdate}
-            onSelectPartner={
-              partnerPage ? () => selectPage(partnerPage) : undefined
-            }
             textDragMode={textDragMode}
             onTextDragToggle={
               onTextDragToggle
@@ -372,11 +334,9 @@ export function AlbumPageEditor({
 function PageEditorPanel({
   orderId,
   page,
-  partnerPage,
   completedPhotos,
   onSaved,
   onPageUpdate,
-  onSelectPartner,
   textDragMode,
   onTextDragToggle,
   onClearTextPosition,
@@ -385,13 +345,9 @@ function PageEditorPanel({
 }: {
   orderId: string;
   page: EditorPage;
-  /** The other page of the same spread (for SpreadMiniView). Null for cover/back_cover. */
-  partnerPage?: EditorPage | null;
   completedPhotos: PhotoForEditor[];
   onSaved: () => void;
   onPageUpdate?: (pageId: string, overrides: Partial<PreviewPage>) => void;
-  /** Called when user clicks the partner page in SpreadMiniView to switch selection. */
-  onSelectPartner?: () => void;
   textDragMode?: boolean;
   /** Toggle drag mode for current page. */
   onTextDragToggle?: () => void;
@@ -568,28 +524,6 @@ function PageEditorPanel({
     // Optimistic update already shows the image — no router.refresh() to avoid clearing it.
   }
 
-  /** Called by SpreadMiniView when the user drags to pan/scale an image. */
-  function handleMiniCropUpdate(
-    slotNum: 1 | 2,
-    cx: number,
-    cy: number,
-    scale: number,
-    save: boolean
-  ) {
-    const currentSlot = slots[slotNum];
-    if (!currentSlot?.image_url) return;
-    const newSlots = { ...slots, [slotNum]: { ...currentSlot, crop_x: cx, crop_y: cy, scale } };
-    setSlots(newSlots);
-    onPageUpdate?.(page.id, { images: buildImages(newSlots) });
-    if (save) {
-      fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot: slotNum, crop_x: cx, crop_y: cy, scale }),
-      });
-    }
-  }
-
   /** Save a frame style change for a slot. */
   async function handleFrameStyleSave(slotNum: 1 | 2, style: string | null) {
     const currentSlot = slots[slotNum];
@@ -608,17 +542,6 @@ function PageEditorPanel({
 
   return (
     <div className="space-y-6 pt-1">
-      {/* Spread mini canvas — both pages side by side with interactive crop/zoom */}
-      <SpreadMiniView
-        activePage={page}
-        partnerPage={partnerPage ?? null}
-        slots={slots}
-        focusedSlotNum={focusedSlot}
-        onSlotFocus={setFocusedSlot}
-        onCropUpdate={handleMiniCropUpdate}
-        onSelectPartner={() => onSelectPartner?.()}
-      />
-
       {/* Frame style picker — shown when focused slot has an image */}
       {slots[focusedSlot]?.image_url && (
         <FrameStylePicker
@@ -1216,266 +1139,6 @@ function ImageSlotEditor({
           </DialogContent>
         </Dialog>
       )}
-    </div>
-  );
-}
-
-// ─── SpreadMiniView ───────────────────────────────────────────────────────────
-// Side-by-side mini canvas for both pages of the spread.
-// Active page: drag to pan, drag corner handle to zoom.
-// Partner page: dimmed, click to switch selection.
-
-type MiniDragState =
-  | { type: "pan";   slotNum: 1 | 2; ox: number; oy: number; cx: number; cy: number; scale: number }
-  | { type: "scale"; slotNum: 1 | 2; oy: number; initScale: number; cx: number; cy: number }
-  | null;
-
-function SpreadMiniView({
-  activePage,
-  partnerPage,
-  slots,
-  focusedSlotNum,
-  onSlotFocus,
-  onCropUpdate,
-  onSelectPartner,
-}: {
-  activePage: EditorPage;
-  partnerPage: EditorPage | null;
-  slots: Record<number, SlotState>;
-  focusedSlotNum: 1 | 2;
-  onSlotFocus: (slot: 1 | 2) => void;
-  onCropUpdate: (slotNum: 1 | 2, cx: number, cy: number, scale: number, save: boolean) => void;
-  onSelectPartner: () => void;
-}) {
-  const dragRef = useRef<MiniDragState>(null);
-  const latestRef = useRef<{ slotNum: 1 | 2; cx: number; cy: number; scale: number } | null>(null);
-
-  // Convert partner page images to SlotState map for rendering
-  const partnerSlots: Record<number, SlotState> = {};
-  if (partnerPage) {
-    for (const img of partnerPage.images) {
-      partnerSlots[img.slot] = {
-        photo_id: img.photo_id,
-        image_url: img.image_url,
-        crop_x: img.crop_x,
-        crop_y: img.crop_y,
-        scale: img.scale,
-        frame_style: img.frame_style ?? null,
-      };
-    }
-  }
-
-  function onPanDown(e: React.PointerEvent, slotNum: 1 | 2) {
-    e.stopPropagation();
-    const s = slots[slotNum];
-    dragRef.current = {
-      type: "pan",
-      slotNum,
-      ox: e.clientX,
-      oy: e.clientY,
-      cx: s?.crop_x ?? 0.5,
-      cy: s?.crop_y ?? 0.5,
-      scale: s?.scale ?? 1,
-    };
-    latestRef.current = { slotNum, cx: s?.crop_x ?? 0.5, cy: s?.crop_y ?? 0.5, scale: s?.scale ?? 1 };
-    onSlotFocus(slotNum);
-  }
-
-  function onScaleDown(e: React.PointerEvent, slotNum: 1 | 2) {
-    e.stopPropagation();
-    const s = slots[slotNum];
-    dragRef.current = {
-      type: "scale",
-      slotNum,
-      oy: e.clientY,
-      initScale: s?.scale ?? 1,
-      cx: s?.crop_x ?? 0.5,
-      cy: s?.crop_y ?? 0.5,
-    };
-    latestRef.current = { slotNum, cx: s?.crop_x ?? 0.5, cy: s?.crop_y ?? 0.5, scale: s?.scale ?? 1 };
-    onSlotFocus(slotNum);
-  }
-
-  function onMove(e: React.PointerEvent) {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const bounds = SLOT_BOUNDS[activePage.layout_type]?.[drag.slotNum];
-    if (!bounds) return;
-
-    if (drag.type === "pan") {
-      const rangeX = bounds.w * PAGE_PX * (drag.scale - 1);
-      const rangeY = bounds.h * PAGE_PX * (drag.scale - 1);
-      const newCX = rangeX > 0 ? Math.max(0, Math.min(1, drag.cx - (e.clientX - drag.ox) / rangeX)) : drag.cx;
-      const newCY = rangeY > 0 ? Math.max(0, Math.min(1, drag.cy - (e.clientY - drag.oy) / rangeY)) : drag.cy;
-      latestRef.current = { slotNum: drag.slotNum, cx: newCX, cy: newCY, scale: drag.scale };
-      onCropUpdate(drag.slotNum, newCX, newCY, drag.scale, false);
-    } else {
-      // Drag DOWN = zoom in (increase scale)
-      const dy = e.clientY - drag.oy;
-      const newScale = Math.max(1, Math.min(4, drag.initScale + dy / (PAGE_PX * 0.5)));
-      latestRef.current = { slotNum: drag.slotNum, cx: drag.cx, cy: drag.cy, scale: newScale };
-      onCropUpdate(drag.slotNum, drag.cx, drag.cy, newScale, false);
-    }
-  }
-
-  function onUp() {
-    if (!dragRef.current) return;
-    dragRef.current = null;
-    if (latestRef.current) {
-      const { slotNum, cx, cy, scale } = latestRef.current;
-      latestRef.current = null;
-      onCropUpdate(slotNum, cx, cy, scale, true);
-    }
-  }
-
-  function renderPageCanvas(
-    page: EditorPage,
-    pageSlots: Record<number, SlotState>,
-    isActive: boolean
-  ) {
-    const slotBoundsMap = SLOT_BOUNDS[page.layout_type] ?? {};
-    return (
-      <div
-        className={`relative shrink-0 overflow-hidden rounded border ${
-          isActive
-            ? "border-primary/40"
-            : "border-border/30 cursor-pointer"
-        }`}
-        style={{ width: PAGE_PX, height: PAGE_PX, opacity: isActive ? 1 : 0.65 }}
-        onClick={!isActive ? onSelectPartner : undefined}
-      >
-        {/* Slot containers */}
-        {Object.entries(slotBoundsMap).map(([snStr, bounds]) => {
-          const sn = Number(snStr) as 1 | 2;
-          const ss = pageSlots[sn];
-          const isFocused = isActive && sn === focusedSlotNum;
-          const imgScale = Math.max(0.1, ss?.scale ?? 1);
-          return (
-            <div
-              key={sn}
-              className="absolute overflow-hidden"
-              style={{
-                left: bounds.x * PAGE_PX,
-                top: bounds.y * PAGE_PX,
-                width: bounds.w * PAGE_PX,
-                height: bounds.h * PAGE_PX,
-                outline: isFocused
-                  ? "2px dashed hsl(var(--primary))"
-                  : isActive
-                  ? "1px dashed hsl(var(--border))"
-                  : undefined,
-                outlineOffset: isFocused ? "-2px" : "-1px",
-                cursor: isActive
-                  ? ss?.image_url
-                    ? "grab"
-                    : "crosshair"
-                  : "pointer",
-              }}
-              onPointerDown={
-                isActive
-                  ? ss?.image_url
-                    ? (e) => onPanDown(e, sn)
-                    : (e) => { e.stopPropagation(); onSlotFocus(sn); }
-                  : undefined
-              }
-            >
-              {ss?.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={ss.image_url}
-                  alt=""
-                  draggable={false}
-                  style={{
-                    position: "absolute",
-                    width: `${imgScale * 100}%`,
-                    height: `${imgScale * 100}%`,
-                    left: `${((ss.crop_x ?? 0.5) - imgScale / 2) * 100}%`,
-                    top: `${((ss.crop_y ?? 0.5) - imgScale / 2) * 100}%`,
-                    objectFit: "contain",
-                    userSelect: "none",
-                    pointerEvents: "none",
-                  }}
-                />
-              ) : (
-                <div className="w-full h-full bg-muted/40 flex items-center justify-center">
-                  <span className="text-[8px] text-muted-foreground/40">ריק</span>
-                </div>
-              )}
-              {/* Corner handles on focused slot with image */}
-              {isFocused && ss?.image_url && (
-                <>
-                  {[
-                    "top-0 start-0",
-                    "top-0 end-0",
-                    "bottom-0 start-0",
-                    "bottom-0 end-0",
-                  ].map((pos, i) => (
-                    <div
-                      key={i}
-                      className={`absolute ${pos} z-10 w-2 h-2 bg-white border border-primary/80 rounded-[1px]`}
-                      style={{ margin: 1 }}
-                      onPointerDown={(e) => onScaleDown(e, sn)}
-                    />
-                  ))}
-                </>
-              )}
-            </div>
-          );
-        })}
-        {/* Empty state for TEXT_ONLY */}
-        {Object.keys(slotBoundsMap).length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-[9px] text-muted-foreground/40">טקסט בלבד</span>
-          </div>
-        )}
-        {/* Page number */}
-        <div
-          className="absolute bottom-0 inset-x-0 text-[8px] text-center py-0.5 pointer-events-none select-none"
-          style={{ background: "rgba(0,0,0,0.25)", color: "white" }}
-        >
-          {page.page_number}
-        </div>
-      </div>
-    );
-  }
-
-  // Hebrew book order: lower page_number = right page (physically on the right)
-  // We display: left-side canvas = higher page#, right-side canvas = lower page#
-  const activeIsRight = !partnerPage || activePage.page_number <= partnerPage.page_number;
-
-  const leftContent = activeIsRight
-    ? partnerPage
-      ? renderPageCanvas(partnerPage, partnerSlots, false)
-      : <div style={{ width: PAGE_PX, height: PAGE_PX }} className="rounded border border-dashed border-border/20" />
-    : renderPageCanvas(activePage, slots, true);
-
-  const rightContent = activeIsRight
-    ? renderPageCanvas(activePage, slots, true)
-    : partnerPage
-      ? renderPageCanvas(partnerPage, partnerSlots, false)
-      : <div style={{ width: PAGE_PX, height: PAGE_PX }} className="rounded border border-dashed border-border/20" />;
-
-  return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">תצוגת פריסה</p>
-      <div
-        dir="ltr"
-        className="flex items-start select-none"
-        style={{ touchAction: "none" }}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerLeave={onUp}
-      >
-        {leftContent}
-        {/* Spine guide */}
-        <div
-          className="shrink-0 self-stretch relative"
-          style={{ width: 12 }}
-        >
-          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/50" />
-        </div>
-        {rightContent}
-      </div>
     </div>
   );
 }

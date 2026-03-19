@@ -106,8 +106,8 @@ export async function PUT(
     photo_id: photoId,
     manual_image_path: null,
     slot,
-    crop_x: body.crop_x ?? 0,
-    crop_y: body.crop_y ?? 0,
+    crop_x: body.crop_x ?? 0.5,
+    crop_y: body.crop_y ?? 0.5,
     scale: body.scale != null ? Math.max(0.1, body.scale) : 1,
   };
   if (body.frame_style !== undefined) upsertData.frame_style = body.frame_style;

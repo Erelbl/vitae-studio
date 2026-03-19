@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlbumPreview } from "@/components/album/AlbumPreview";
 import { AlbumPageEditor } from "@/components/admin/AlbumPageEditor";
 import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
 import type { PreviewData, PreviewPage } from "@/types/page";
+import { exportAlbumPdf } from "@/lib/export-album-pdf";
 
 /**
  * Resolves which spread index contains a page with the given page_number.
@@ -57,6 +58,7 @@ export function AlbumEditorLayout({
   orderId: string;
   personName: string;
 }) {
+  const [pdfProgress, setPdfProgress] = useState<string | null>(null);
   const [focusedSpreadIndex, setFocusedSpreadIndex] = useState<number | undefined>();
 
   /** The page currently open in the editor — needed to target the drag overlay. */
@@ -227,6 +229,22 @@ export function AlbumEditorLayout({
   const currentTextX = selectedPageLive?.text_x ?? null;
   const currentTextY = selectedPageLive?.text_y ?? null;
 
+  const handleExportPdf = useCallback(async () => {
+    if (pdfProgress) return; // already running
+    setPdfProgress("מכין...");
+    try {
+      await exportAlbumPdf(livePreviewData, personName, (current, total) => {
+        setPdfProgress(`${current + 1} / ${total}`);
+      });
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      setPdfProgress("שגיאה");
+      setTimeout(() => setPdfProgress(null), 2000);
+      return;
+    }
+    setPdfProgress(null);
+  }, [livePreviewData, personName, pdfProgress]);
+
   // Diagnostic: preview has real pages but editor failed to load them.
   const previewHasRealPages = !previewData.isMock && previewData.pages.length > 0;
   const editorLoadFailed = previewHasRealPages && editorPages.length === 0;
@@ -284,14 +302,14 @@ export function AlbumEditorLayout({
 
         {/* PDF download */}
         <div className="flex justify-center">
-          <a
-            href={`/api/admin/orders/${orderId}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={!!pdfProgress}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
-            ↓ הורד אלבום (PDF)
-          </a>
+            {pdfProgress ? `⏳ ${pdfProgress}` : "↓ הורד אלבום (PDF)"}
+          </button>
         </div>
 
         {/* Large album preview — the real editing surface */}

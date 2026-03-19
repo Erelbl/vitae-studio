@@ -27,6 +27,8 @@
     "@types/jszip": "^3.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "html2canvas-pro": "^2.0.2",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
@@ -48,13 +50,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^16.4.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "dotenv": "^16.4.0",
     "server-only": "^0.0.1",
     "supabase": "^2.78.1",
-    "tsx": "^4.19.0",
     "tailwindcss": "^4",
+    "tsx": "^4.19.0",
     "typescript": "^5"
   }
 }
