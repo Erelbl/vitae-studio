@@ -449,16 +449,19 @@ function ImageFill({
     ? { maskImage: maskUrl, maskSize: "100% 100%" }
     : undefined;
 
-  // Dual-mode rendering:
+  // Unified continuous transform model — same math at every scale.
   //
-  // DEFAULT (scale ≤ 1): Show the full image with no crop, no positioning math.
-  //   Any stale crop_x/crop_y values from old edits are ignored. The image fits
-  //   naturally inside the container via object-fit: contain.
+  // crop_x, crop_y = image center as a fraction of the container (0.5 = centered)
+  // scale          = image size relative to container (1 = fills container)
   //
-  // ZOOMED (scale > 1): Admin has deliberately zoomed in via drag/resize.
-  //   Use the centered-position model with object-fit: cover so the image fills
-  //   its enlarged box and the container clips to show the zoomed portion.
-  const isZoomed = s > 1;
+  // Formula:
+  //   width/height = scale × 100%
+  //   left = (crop_x − scale/2) × 100%
+  //   top  = (crop_y − scale/2) × 100%
+  //
+  // At default (scale=1, crop=0.5,0.5): width=100%, left=0 → image fills page.
+  // objectFit: contain always → full image visible, no crop at any scale.
+  // The edit overlay uses the same formula, so box and image stay in sync.
 
   return (
     <div
@@ -472,27 +475,17 @@ function ImageFill({
         loading="lazy"
         decoding="async"
         draggable={false}
-        style={
-          isZoomed
-            ? {
-                position: "absolute",
-                width: `${s * 100}%`,
-                height: `${s * 100}%`,
-                maxWidth: "none",
-                left: `${(crop_x - s / 2) * 100}%`,
-                top: `${(crop_y - s / 2) * 100}%`,
-                objectFit: "cover",
-                userSelect: "none",
-                pointerEvents: "none",
-              }
-            : {
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                userSelect: "none",
-                pointerEvents: "none",
-              }
-        }
+        style={{
+          position: "absolute",
+          width: `${s * 100}%`,
+          height: `${s * 100}%`,
+          maxWidth: "none",
+          left: `${(crop_x - s / 2) * 100}%`,
+          top: `${(crop_y - s / 2) * 100}%`,
+          objectFit: "contain",
+          userSelect: "none",
+          pointerEvents: "none",
+        }}
       />
     </div>
   );
