@@ -99,15 +99,27 @@ function buildImageFill(
   img.crossOrigin = "anonymous";
   img.src = url;
   const s = Math.max(0.1, scale);
-  Object.assign(img.style, {
-    position: "absolute",
-    width: `${s * 100}%`,
-    height: `${s * 100}%`,
-    maxWidth: "none",
-    left: `${(cropX - s / 2) * 100}%`,
-    top: `${(cropY - s / 2) * 100}%`,
-    objectFit: "contain",
-  });
+  const isZoomed = s > 1;
+
+  if (isZoomed) {
+    // Admin has deliberately zoomed — use positioning model with cover
+    Object.assign(img.style, {
+      position: "absolute",
+      width: `${s * 100}%`,
+      height: `${s * 100}%`,
+      maxWidth: "none",
+      left: `${(cropX - s / 2) * 100}%`,
+      top: `${(cropY - s / 2) * 100}%`,
+      objectFit: "cover",
+    });
+  } else {
+    // Default — show full image with no crop
+    Object.assign(img.style, {
+      width: "100%",
+      height: "100%",
+      objectFit: "contain",
+    });
+  }
 
   wrapper.appendChild(img);
   container.appendChild(wrapper);

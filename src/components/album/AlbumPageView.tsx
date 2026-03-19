@@ -449,11 +449,16 @@ function ImageFill({
     ? { maskImage: maskUrl, maskSize: "100% 100%" }
     : undefined;
 
-  // Centered-position model:
-  //   crop_x, crop_y = center of the image as a fraction of the container (default 0.5)
-  //   scale          = image size as a fraction of the container (1 = fills container)
-  // Formula: left = (crop_x - scale/2) × 100%, top = (crop_y - scale/2) × 100%
-  // This allows the image to be freely positioned and sized, including cross-spread overflow.
+  // Dual-mode rendering:
+  //
+  // DEFAULT (scale ≤ 1): Show the full image with no crop, no positioning math.
+  //   Any stale crop_x/crop_y values from old edits are ignored. The image fits
+  //   naturally inside the container via object-fit: contain.
+  //
+  // ZOOMED (scale > 1): Admin has deliberately zoomed in via drag/resize.
+  //   Use the centered-position model with object-fit: cover so the image fills
+  //   its enlarged box and the container clips to show the zoomed portion.
+  const isZoomed = s > 1;
 
   return (
     <div
@@ -467,17 +472,27 @@ function ImageFill({
         loading="lazy"
         decoding="async"
         draggable={false}
-        style={{
-          position: "absolute",
-          width: `${s * 100}%`,
-          height: `${s * 100}%`,
-          maxWidth: "none",    // Override Tailwind preflight max-width:100% which caps zoom
-          left: `${(crop_x - s / 2) * 100}%`,
-          top: `${(crop_y - s / 2) * 100}%`,
-          objectFit: "contain",
-          userSelect: "none",
-          pointerEvents: "none",
-        }}
+        style={
+          isZoomed
+            ? {
+                position: "absolute",
+                width: `${s * 100}%`,
+                height: `${s * 100}%`,
+                maxWidth: "none",
+                left: `${(crop_x - s / 2) * 100}%`,
+                top: `${(crop_y - s / 2) * 100}%`,
+                objectFit: "cover",
+                userSelect: "none",
+                pointerEvents: "none",
+              }
+            : {
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                userSelect: "none",
+                pointerEvents: "none",
+              }
+        }
       />
     </div>
   );
