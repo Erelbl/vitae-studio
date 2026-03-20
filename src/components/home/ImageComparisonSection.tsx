@@ -106,9 +106,9 @@ function DraggableComparisonPair({
 }
 
 export function ImageComparisonSection() {
-  const allPairs = [
-    { before: IMAGE_COMPARISON.beforeImage, after: IMAGE_COMPARISON.afterImage },
-  ];
+  const allPairs = (IMAGE_COMPARISON.pairs ?? [
+    { beforeImage: IMAGE_COMPARISON.beforeImage, afterImage: IMAGE_COMPARISON.afterImage },
+  ]).map((p) => ({ before: p.beforeImage, after: p.afterImage }));
 
   return (
     <section className="bg-secondary/20 px-4 py-14 sm:py-20">

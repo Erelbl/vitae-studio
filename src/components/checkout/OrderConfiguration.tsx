@@ -10,6 +10,19 @@ import { Check, Lock, Truck } from "lucide-react";
 import { calculateOrderPricing, requiresShipping, requiresAlbumSize } from "@/lib/pricing";
 import type { DeliveryMode, AlbumSize } from "@/types/order";
 
+const GROW_LINKS: Record<string, string> = {
+  film: "https://pay.grow.link/3124b214459eaf03d8c8fe0fea30af52-MzIwNDQxNg",
+  "print-25x25": "https://pay.grow.link/edbae41148bcea53b9220052c2c657d7-MzIwNDQxNA",
+  "print-30x30": "https://pay.grow.link/1c899426bbe840a727903f48557fb570-MzIwNDQxNQ",
+  "bundle-25x25": "https://pay.grow.link/edbe3fab6cb50f2b4dc9c9e67daa253d-MzIwNDQxOA",
+  "bundle-30x30": "https://pay.grow.link/9f22c34647fc749b1c6b0f9c90c170ba-MzIwNDQxOQ",
+};
+
+function getGrowLink(mode: DeliveryMode, size: AlbumSize | null): string | null {
+  const key = mode === "film" ? "film" : size ? `${mode}-${size}` : null;
+  return key ? (GROW_LINKS[key] ?? null) : null;
+}
+
 interface Props {
   orderId: string;
   token: string;
@@ -153,8 +166,12 @@ export function OrderConfiguration({
         throw new Error(data.error || "שגיאה בשמירת ההזמנה");
       }
 
-      toast.success("ההזמנה נשמרה בהצלחה");
-      router.push(`/order/${orderId}/ready?token=${token}`);
+      const growUrl = getGrowLink(deliveryMode, needsAlbum ? albumSize : null);
+      if (growUrl) {
+        window.location.href = growUrl;
+      } else {
+        router.push(`/order/${orderId}/ready?token=${token}`);
+      }
     } catch (err) {
       toast.error((err as Error).message || "שגיאה. נסו שוב.");
     } finally {

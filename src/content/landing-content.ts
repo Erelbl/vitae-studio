@@ -121,7 +121,7 @@ export const FINAL_CTA = {
   subtitle:
     "",
   ctaLabel: "התחילו את האלבום שלכם",
-  trustNote: "✦ ללא התחייבות מראש · מתחילים תוך דקות",
+  trustNote: "✦ מתחילים תוך דקות",
 };
 
 export const CONTACT = {
@@ -140,8 +140,23 @@ export const IMAGE_COMPARISON = {
   title: "מתמונה לאיור",
   subtitle: "גררו כדי לגלות את התמונה המקורית",
   beforeLabel: "תמונה מקורית",
-  afterLabel: "איור בצבעי מים",
+  afterLabel: "איור",
   // Images from /public/examples/ — replace with real examples when ready
+  pairs: [
+    {
+      beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית" },
+      afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים" },
+    },
+    {
+      beforeImage: { src: "/examples/original2.jpg", alt: "תמונה מקורית" },
+      afterImage: { src: "/examples/illustrated2.jpg", alt: "איור בצבעי מים" },
+    },
+    {
+      beforeImage: { src: "/examples/original3.jpg", alt: "תמונה מקורית" },
+      afterImage: { src: "/examples/illustrated3.jpg", alt: "איור בצבעי מים" },
+    },
+  ],
+  // Legacy single-pair access (kept for backward compat)
   beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית" },
   afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים" },
 };

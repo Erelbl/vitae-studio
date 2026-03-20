@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { HeroSection } from "@/components/home/HeroSection";
 import { HowItWorks } from "@/components/home/HowItWorks";
@@ -81,7 +82,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-50 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           {/* Logo — replace /assets/Logo.png with your final logo file. */}
-          <div className="relative h-12 w-44 shrink-0">
+          <Link href="/" className="relative block h-12 w-44 shrink-0">
             <Image
               src="/assets/Logo.png"
               alt="Vitae Studio"
@@ -89,7 +90,7 @@ export default function LandingPage() {
               priority
               className="object-contain object-start"
             />
-          </div>
+          </Link>
           <Button
             onClick={handleStartOrder}
             disabled={loading}
