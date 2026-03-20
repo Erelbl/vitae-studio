@@ -24,8 +24,9 @@ export async function GET(
 
   const { orderId } = await params;
 
-  // Re-use the same loader that drives the preview — gets signed illustration URLs.
-  const previewData = await loadPreviewData(orderId, "");
+  // Re-use the same loader that drives the preview — use "original" profile for full
+  // resolution images with no Supabase transform compression.
+  const previewData = await loadPreviewData(orderId, "", "original");
   const personName = previewData.personName || "האדם היקר";
 
   // Map PreviewPage → generateAlbumPdf input format.

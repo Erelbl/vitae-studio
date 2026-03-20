@@ -77,6 +77,18 @@ const FRAME_MASKS: Record<string, string> = {
   torn_right: svgMask(
     "M0,0 L0,100 L90,100 C95,93 86,87 92,80 C98,73 87,67 94,60 C99,53 88,47 95,40 C100,33 89,27 96,20 C99,13 87,7 94,0 Z"
   ),
+  // Classic oval / portrait frame
+  oval: svgMask(
+    "M50,4 C76,4 96,25 96,50 C96,75 76,96 50,96 C24,96 4,75 4,50 C4,25 24,4 50,4 Z"
+  ),
+  // Arched window — dome top, straight sides and bottom
+  arch: svgMask(
+    "M4,100 L4,44 C4,18 20,4 50,4 C80,4 96,18 96,44 L96,100 Z"
+  ),
+  // Diamond (45° rotated square) — dramatic geometric crop
+  diamond: svgMask(
+    "M50,3 L97,50 L50,97 L3,50 Z"
+  ),
 };
 
 /** Resolve a slot's image URL + crop params + frame style, falling back to legacy image_url for slot 1. */
@@ -490,7 +502,10 @@ function ImageFill({
           maxWidth: "none",
           left: `${(crop_x - s / 2) * 100}%`,
           top: `${(crop_y - s / 2) * 100}%`,
-          objectFit: "contain",
+          // Use cover when a frame style is active so the image fills its container
+          // completely — no letterbox/pillarbox empty space that would cause the
+          // SVG mask to cut through background instead of actual image content.
+          objectFit: frameStyle ? "cover" : "contain",
           userSelect: "none",
           pointerEvents: "none",
         }}
