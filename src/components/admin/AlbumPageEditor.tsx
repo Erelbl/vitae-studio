@@ -484,9 +484,7 @@ function PageEditorPanel({
       alert(body.error ?? "שגיאה בשמירת האיור");
       return;
     }
-    // No router.refresh() here — the optimistic update via onPageUpdate is already visible
-    // and the signed URL from completedPhotos is valid for the session.
-    // Refreshing can cause the image to disappear if the server can't re-sign the URL.
+    onSaved();
   }
 
   async function handleCropSave(

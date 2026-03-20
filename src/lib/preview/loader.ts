@@ -11,7 +11,7 @@ const ILLUSTRATIONS_BUCKET = "illustrations";
 export async function loadPreviewData(
   orderId: string,
   personName: string,
-  profile: ImageProfile = "albumPreview"
+  profile: ImageProfile = "original"
 ): Promise<PreviewData> {
   const supabase = createAdminClient();
 
@@ -76,8 +76,9 @@ export async function loadPreviewData(
     if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
   }
 
-  // Sign all paths with the requested profile for browser/PDF display.
-  // Uses parallel individual calls to enable Supabase image transforms.
+  // Sign all paths in a single batch call (no transform = original full quality).
+  // "original" uses createSignedUrls (single API call) — reliable and full resolution.
+  // Passing profile explicitly allows callers to override (e.g. pdfExport, thumb).
   const signedUrlMap = await createSignedImageUrls(
     supabase,
     ILLUSTRATIONS_BUCKET,
