@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlbumPreview } from "@/components/album/AlbumPreview";
 import { AlbumPageEditor } from "@/components/admin/AlbumPageEditor";
 import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
@@ -60,6 +61,7 @@ export function AlbumEditorLayout({
   orderId: string;
   personName: string;
 }) {
+  const router = useRouter();
   const [pdfProgress, setPdfProgress] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [focusedSpreadIndex, setFocusedSpreadIndex] = useState<number | undefined>();
@@ -156,7 +158,10 @@ export function AlbumEditorLayout({
               crop_y: cropY,
               scale,
               photo_id: null,
-              image_url: null,
+              // Preserve the legacy image_url (pages.illustration_storage_path) so
+              // the image stays visible in non-edit mode. Without this, the local slot
+              // with image_url:null would shadow the legacy fallback in resolveSlot().
+              image_url: slot === 1 ? (serverPage.image_url ?? null) : null,
               frame_style: null,
             },
           ];
@@ -229,36 +234,67 @@ export function AlbumEditorLayout({
 
   /**
    * Explicitly save all current image position overrides to the DB.
-   * Autosave already fires on every drag-end, but this provides a clear
-   * confirmation that all edits are persisted.
+   * Autosave fires on every drag-end (PATCH), but this button provides a
+   * clear confirmation that all edits are persisted.
+   *
+   * For slots with a photo_id: uses PUT (upsert) to handle the race condition
+   * where the initial photo-assignment PUT may not have completed yet.
+   * For slots without a photo_id (legacy/manual images): uses PATCH (crop-only).
+   * Slots with no image_url are skipped — they have nothing to save.
    */
   async function handleSaveAll() {
     const imagedPages = Array.from(pageOverrides.entries()).filter(
-      ([, ov]) => ov.images && ov.images.length > 0
+      ([, ov]) => (ov.images ?? []).some((img) => img.image_url)
     );
 
-    setSaveState("saving");
-    try {
-      await Promise.all(
-        imagedPages.flatMap(([pageId, ov]) =>
-          (ov.images ?? []).map((img) =>
-            fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                slot: img.slot,
-                crop_x: img.crop_x,
-                crop_y: img.crop_y,
-                scale: img.scale,
-              }),
-            })
-          )
-        )
-      );
+    if (imagedPages.length === 0) {
       setSaveState("saved");
-    } catch {
-      setSaveState("error");
+      setTimeout(() => setSaveState("idle"), 2000);
+      return;
     }
+
+    setSaveState("saving");
+    let anyFailed = false;
+
+    await Promise.all(
+      imagedPages.flatMap(([pageId, ov]) =>
+        (ov.images ?? [])
+          .filter((img) => img.image_url) // skip placeholder/empty slots
+          .map(async (img) => {
+            let res: Response;
+            if (img.photo_id) {
+              // PUT upserts the row — handles the race where initial PUT is still in flight
+              res = await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  slot: img.slot,
+                  photoId: img.photo_id,
+                  crop_x: img.crop_x,
+                  crop_y: img.crop_y,
+                  scale: img.scale,
+                }),
+              });
+            } else {
+              // Crop-only update for legacy / manual-upload image slots
+              res = await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  slot: img.slot,
+                  crop_x: img.crop_x,
+                  crop_y: img.crop_y,
+                  scale: img.scale,
+                }),
+              });
+            }
+            if (!res.ok) anyFailed = true;
+          })
+      )
+    );
+
+    setSaveState(anyFailed ? "error" : "saved");
+    if (!anyFailed) router.refresh();
     setTimeout(() => setSaveState("idle"), 2000);
   }
 

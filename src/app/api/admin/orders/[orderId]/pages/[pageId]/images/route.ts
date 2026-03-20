@@ -171,9 +171,9 @@ export async function PATCH(
   }
 
   const cropUpdate: Record<string, unknown> = {};
-  // Allow crop values outside [0,1] to support cross-spread image positioning
-  if (body.crop_x !== undefined) cropUpdate.crop_x = Math.max(-0.5, Math.min(1.5, body.crop_x));
-  if (body.crop_y !== undefined) cropUpdate.crop_y = Math.max(-0.5, Math.min(1.5, body.crop_y));
+  // Allow wide crop range to support cross-spread image positioning
+  if (body.crop_x !== undefined) cropUpdate.crop_x = Math.max(-2, Math.min(3, body.crop_x));
+  if (body.crop_y !== undefined) cropUpdate.crop_y = Math.max(-2, Math.min(3, body.crop_y));
   if (body.scale !== undefined) cropUpdate.scale = Math.max(0.1, body.scale);
   if (body.frame_style !== undefined) cropUpdate.frame_style = body.frame_style; // null clears the style
 

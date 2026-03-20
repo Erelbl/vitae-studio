@@ -41,6 +41,27 @@ interface AlbumPreviewProps {
 }
 
 /**
+ * Layouts where the image fills the entire page — slot 1 is always managed by the
+ * FloatingImage layer in AlbumPreview (z:2) rather than by ImageFill inside PageShell.
+ * This gives consistent rendering between edit-mode (drag overlay active) and
+ * non-edit-mode, and allows cross-spread bleed via overflow:visible on the container.
+ *
+ * Split layouts (IMAGE_TOP_TEXT_BOTTOM, TWO_IMAGES, etc.) are excluded — their images
+ * sit inside sub-containers whose proportions can't be matched by the full-page anchor.
+ */
+const FULL_IMAGE_LAYOUT_SET = new Set([
+  "FULL_IMAGE",
+  "FULL_IMAGE_TEXT_TOP",
+  "FULL_IMAGE_TEXT_CENTER",
+]);
+
+function isFullImagePage(page: PreviewPage): boolean {
+  // Special pages optionally have a full-bleed background image in slot 1
+  if (["cover", "dedication", "back_cover"].includes(page.page_type)) return true;
+  return FULL_IMAGE_LAYOUT_SET.has(page.layout_type ?? "FULL_IMAGE");
+}
+
+/**
  * Groups pages into spreads:
  * - cover and back_cover appear alone (singleton spreads)
  * - all other pages pair up: (2,3), (4,5), (6,7), …
@@ -132,9 +153,14 @@ export function AlbumPreview({
     if (!page) return <div className="hidden sm:block aspect-square bg-secondary/40" />;
     const isDragTarget = Boolean(textDragMode && page.id === textDragPageId && onTextDrop);
     const isEditTarget = page.id === imageEditPageId;
+    // editMode=true tells ImageFill to suppress its own render and let the
+    // FloatingImage layer in AlbumPreview handle the image at z:2.
+    // Applied to all full-image-layout pages so layering is consistent
+    // regardless of whether the image-edit overlay is currently active.
+    const editModeForPage = isEditTarget || isFullImagePage(page);
     return (
       <div key={page.id} className="relative">
-        <AlbumPageView page={page} personName={personName} editMode={isEditTarget} />
+        <AlbumPageView page={page} personName={personName} editMode={editModeForPage} />
         {isDragTarget && (
           <LargePreviewDragOverlay
             pageId={page.id}
@@ -197,34 +223,73 @@ export function AlbumPreview({
           {leftPage ? renderPage(leftPage) : <div className="hidden sm:block aspect-square bg-secondary/40" />}
 
           {/*
-            Floating image layer — rendered outside both page stacking contexts
-            so it sits at z:2 within the grid's stacking context.
-            Page backgrounds have no z-index (below z:2).
-            Text overlays inside pages are at z:10 (above z:2).
-            Result: backgrounds < image (z:2) < text (z:10) < overlay (z:20).
-            The container is anchored to the correct half of the spread;
-            overflow:visible allows the image to bleed across the gutter.
-            The grid's own overflow:hidden clips it at the spread edges.
+            Floating image layer — one entry per page in the spread that uses a
+            full-image layout. Rendered outside both page stacking contexts so
+            images sit at z:2 within the grid's stacking context.
+            Layer order:  page backgrounds (z:auto) < images (z:2) < text (z:10) < overlay (z:20)
+            Applies to all full-image pages, not just the edit-target, so the
+            rendering is identical whether or not the edit overlay is active.
+            overflow:visible on the anchor container allows cross-spread bleed;
+            the grid's own overflow:hidden clips at the album boundary.
+            For the currently-dragged slot the live edit values (editCropX/Y/Scale)
+            are used so the image moves in real-time with the pointer.
           */}
-          {imageEditPage && editImageUrl && (() => {
-            const s = Math.max(0.1, editScale);
-            return (
+          {[
+            { page: rightPage, isRight: true },
+            ...(leftPage ? [{ page: leftPage, isRight: false }] : []),
+          ].flatMap(({ page, isRight }) => {
+            const isEditTarget = page.id === imageEditPageId;
+
+            // For non-full-image layouts (split, two-images, text-only):
+            // if this page is the edit target, fall back to the legacy single-slot
+            // rendering so the drag overlay still has a visible image to move.
+            if (!isFullImagePage(page)) {
+              if (isEditTarget && editImageUrl) {
+                const s = Math.max(0.1, editScale);
+                return [(
+                  <div
+                    key={`fi-${page.id}-edit`}
+                    style={{
+                      position: "absolute", top: 0, bottom: 0,
+                      ...(isRight ? { right: 0 } : { left: 0 }),
+                      width: "50%", zIndex: 2, overflow: "visible", pointerEvents: "none",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={editImageUrl} alt="" draggable={false} style={{ position: "absolute", width: `${s * 100}%`, height: `${s * 100}%`, maxWidth: "none", left: `${(editCropX - s / 2) * 100}%`, top: `${(editCropY - s / 2) * 100}%`, objectFit: "contain", userSelect: "none", pointerEvents: "none" }} />
+                  </div>
+                )];
+              }
+              return [];
+            }
+
+            // Full-image layout: render slot 1 via floating layer.
+            // Priority: page_images slot → legacy pages.image_url.
+            const pgSlot1 = page.images?.find((i) => i.slot === 1);
+            const slot1Url = pgSlot1?.image_url ?? page.image_url ?? null;
+            if (!slot1Url) return [];
+
+            // When this page is the edit target and slot 1 is the active slot,
+            // substitute the live drag values so the image tracks the pointer.
+            const useEditOverride = isEditTarget && imageEditSlot === 1;
+            const s  = Math.max(0.1, useEditOverride ? editScale  : (pgSlot1?.scale  ?? 1));
+            const cx = useEditOverride ? editCropX : (pgSlot1?.crop_x ?? 0.5);
+            const cy = useEditOverride ? editCropY : (pgSlot1?.crop_y ?? 0.5);
+            const finalUrl = useEditOverride ? (editImageUrl ?? slot1Url) : slot1Url;
+
+            return [(
               <div
+                key={`fi-${page.id}-1`}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  bottom: 0,
+                  position: "absolute", top: 0, bottom: 0,
                   // In RTL grid: rightPage is col-1 (physical right), leftPage is col-2 (physical left)
-                  ...(imageEditIsRight ? { right: 0 } : { left: 0 }),
-                  width: "50%",
-                  zIndex: 2,
-                  overflow: "visible",
-                  pointerEvents: "none",
+                  ...(isRight ? { right: 0 } : { left: 0 }),
+                  width: "50%", zIndex: 2, overflow: "visible", pointerEvents: "none",
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={editImageUrl}
+                  src={finalUrl}
                   alt=""
                   draggable={false}
                   style={{
@@ -232,16 +297,16 @@ export function AlbumPreview({
                     width: `${s * 100}%`,
                     height: `${s * 100}%`,
                     maxWidth: "none",
-                    left: `${(editCropX - s / 2) * 100}%`,
-                    top: `${(editCropY - s / 2) * 100}%`,
+                    left: `${(cx - s / 2) * 100}%`,
+                    top: `${(cy - s / 2) * 100}%`,
                     objectFit: "contain",
                     userSelect: "none",
                     pointerEvents: "none",
                   }}
                 />
               </div>
-            );
-          })()}
+            )];
+          })}
 
           {/* Image edit overlay — spans entire spread for cross-page drag */}
           {imageEditPage && onImageUpdate && (
