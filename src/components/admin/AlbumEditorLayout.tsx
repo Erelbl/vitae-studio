@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AlbumPreview } from "@/components/album/AlbumPreview";
 import { AlbumPageEditor } from "@/components/admin/AlbumPageEditor";
 import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
@@ -61,7 +60,6 @@ export function AlbumEditorLayout({
   orderId: string;
   personName: string;
 }) {
-  const router = useRouter();
   const [pdfProgress, setPdfProgress] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [focusedSpreadIndex, setFocusedSpreadIndex] = useState<number | undefined>();
@@ -294,7 +292,12 @@ export function AlbumEditorLayout({
     );
 
     setSaveState(anyFailed ? "error" : "saved");
-    if (!anyFailed) router.refresh();
+    // Do NOT call router.refresh() here — it clears pageOverrides via the
+    // useEffect, and if the freshly-loaded server previewData returns
+    // image_url:null for any slot (URL signing failure, PATCH silently
+    // updating 0 rows for legacy slots, etc.) the images vanish from the
+    // preview. The PUT already persisted the data; pageOverrides already
+    // holds the correct signed URLs for the session.
     setTimeout(() => setSaveState("idle"), 2000);
   }
 
