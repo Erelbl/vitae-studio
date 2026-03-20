@@ -46,7 +46,10 @@ export default async function AdminOrderPreviewPage({
   // Load both UI-quality (1800px) and PDF-quality (2400px) in parallel.
   const [previewData, pdfPreviewData] = await Promise.all([
     loadPreviewData(orderId, personName),
-    loadPreviewData(orderId, personName, "pdfExport"),
+    // "original" = no Supabase transform → full source resolution, lossless,
+    // and uses efficient batch signing (single API call).
+    // The PDF exporter applies its own contain/no-crop layout via CSS.
+    loadPreviewData(orderId, personName, "original"),
   ]);
 
   // ── Editor data: all pages with text, layout, page_images ────────────────

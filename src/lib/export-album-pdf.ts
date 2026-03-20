@@ -18,8 +18,10 @@ import type { PreviewData, PreviewPage, LayoutType, PageImageSlot } from "@/type
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Render size for each page square (px). Higher = better quality but slower. */
-const PAGE_SIZE_PX = 800;
+/** Render size for each page square (px). Higher = better quality but slower.
+ *  1200 → html2canvas at scale:2 yields 2400px ≈ 289 DPI for a 25 cm page.
+ */
+const PAGE_SIZE_PX = 1200;
 
 /** Physical album page size in mm (25 cm = 250 mm). */
 const PAGE_MM = 250;

@@ -118,18 +118,22 @@ export function AlbumPreview({
     : null;
   const imageEditIsRight = imageEditPage?.id === rightPage?.id;
 
-  // Current crop/scale values for the image being edited (from live preview data)
+  // Current crop/scale/URL values for the image being edited (from live preview data)
   const editSlotData = imageEditPage?.images?.find((img) => img.slot === imageEditSlot) ?? null;
   const editCropX = editSlotData?.crop_x ?? 0.5;
   const editCropY = editSlotData?.crop_y ?? 0.5;
   const editScale = editSlotData?.scale ?? 1;
+  // URL: prefer slot-specific url, fall back to legacy image_url on slot 1
+  const editImageUrl =
+    editSlotData?.image_url ??
+    (imageEditSlot === 1 ? (imageEditPage?.image_url ?? null) : null);
 
   function renderPage(page: PreviewPage | null) {
     if (!page) return <div className="hidden sm:block aspect-square bg-secondary/40" />;
     const isDragTarget = Boolean(textDragMode && page.id === textDragPageId && onTextDrop);
     const isEditTarget = page.id === imageEditPageId;
     return (
-      <div key={page.id} className="relative" style={{ zIndex: isEditTarget ? 2 : 1 }}>
+      <div key={page.id} className="relative">
         <AlbumPageView page={page} personName={personName} editMode={isEditTarget} />
         {isDragTarget && (
           <LargePreviewDragOverlay
@@ -191,6 +195,53 @@ export function AlbumPreview({
 
           {/* Left page (second in RTL spread) */}
           {leftPage ? renderPage(leftPage) : <div className="hidden sm:block aspect-square bg-secondary/40" />}
+
+          {/*
+            Floating image layer — rendered outside both page stacking contexts
+            so it sits at z:2 within the grid's stacking context.
+            Page backgrounds have no z-index (below z:2).
+            Text overlays inside pages are at z:10 (above z:2).
+            Result: backgrounds < image (z:2) < text (z:10) < overlay (z:20).
+            The container is anchored to the correct half of the spread;
+            overflow:visible allows the image to bleed across the gutter.
+            The grid's own overflow:hidden clips it at the spread edges.
+          */}
+          {imageEditPage && editImageUrl && (() => {
+            const s = Math.max(0.1, editScale);
+            return (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  // In RTL grid: rightPage is col-1 (physical right), leftPage is col-2 (physical left)
+                  ...(imageEditIsRight ? { right: 0 } : { left: 0 }),
+                  width: "50%",
+                  zIndex: 2,
+                  overflow: "visible",
+                  pointerEvents: "none",
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={editImageUrl}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    position: "absolute",
+                    width: `${s * 100}%`,
+                    height: `${s * 100}%`,
+                    maxWidth: "none",
+                    left: `${(editCropX - s / 2) * 100}%`,
+                    top: `${(editCropY - s / 2) * 100}%`,
+                    objectFit: "contain",
+                    userSelect: "none",
+                    pointerEvents: "none",
+                  }}
+                />
+              </div>
+            );
+          })()}
 
           {/* Image edit overlay — spans entire spread for cross-page drag */}
           {imageEditPage && onImageUpdate && (

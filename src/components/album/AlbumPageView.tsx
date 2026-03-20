@@ -442,6 +442,14 @@ function ImageFill({
     );
   }
 
+  // When editing, the image is rendered by a dedicated floating layer in
+  // AlbumPreview (at z:2, between page backgrounds and text). Suppress it here
+  // so the floating layer is the only copy, avoiding double-render and the
+  // stacking-context issue that put the image above adjacent-page text.
+  if (editMode) {
+    return <div className="absolute inset-0" />;
+  }
+
   const { crop_x, crop_y, scale } = crop;
   const s = Math.max(0.1, scale);
   const maskUrl = frameStyle ? (FRAME_MASKS[frameStyle] ?? undefined) : undefined;

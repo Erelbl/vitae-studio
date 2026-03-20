@@ -26,7 +26,7 @@ const TRANSFORM_PROFILES: Record<
 > = {
   thumb: { width: 300, quality: 70, resize: "contain" },
   questionnairePreview: { width: 400, quality: 70, resize: "contain" },
-  albumPreview: { width: 1800, quality: 82, resize: "contain" },
+  albumPreview: { width: 2000, quality: 88, resize: "contain" },
   pdfExport: { width: 2400, quality: 92, resize: "contain" },
 };
 
