@@ -98,8 +98,8 @@ export const GALLERY = {
 
 export const FOUNDER = {
   sectionLabel: "מאחורי הקלעים",
-  name: "דור אלירז",
-  title: "מעצבת רב תחומית ויוצרת חוויות",
+  name: "",
+  title: "",
   // Place the founder photo at public/assets/founder.jpeg
   image: {
     src: "/assets/founder.jpeg",
@@ -174,7 +174,7 @@ export const PACKAGES = {
       // Replace / expand these lines with final package inclusions
       inclusions: [
         "שאלון אישי מעמיק",
-        "כתיבת טקסט בחרוזים עבריים",
+        "כתיבת טקסט בחרוזים",
         "עד 40 עמודי איור בצבעי מים",
         "אישור גרסה לפני הדפסה",
         "משלוח עד הבית",
