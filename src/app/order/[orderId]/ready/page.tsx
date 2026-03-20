@@ -110,12 +110,17 @@ export default async function ReadyForPaymentPage({
       )}
 
       {/* Pay button */}
-      <PayButton orderId={orderId} token={token} />
+      <PayButton
+        orderId={orderId}
+        token={token}
+        deliveryMode={order.delivery_mode}
+        albumSize={order.album_size}
+      />
 
       {/* Security note */}
       <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground/70">
         <Shield size={14} />
-        <span>התשלום מאובטח ומעובד באמצעות CardCom</span>
+        <span>התשלום מאובטח</span>
       </div>
     </div>
   );

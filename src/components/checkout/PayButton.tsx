@@ -1,63 +1,50 @@
 "use client";
 
-import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Lock, Loader2 } from "lucide-react";
+import { Lock } from "lucide-react";
+import type { DeliveryMode, AlbumSize } from "@/types/order";
+
+const GROW_LINKS: Record<string, string> = {
+  film: "https://pay.grow.link/3124b214459eaf03d8c8fe0fea30af52-MzIwNDQxNg",
+  "print-25x25": "https://pay.grow.link/edbae41148bcea53b9220052c2c657d7-MzIwNDQxNA",
+  "print-30x30": "https://pay.grow.link/1c899426bbe840a727903f48557fb570-MzIwNDQxNQ",
+  "bundle-25x25": "https://pay.grow.link/edbe3fab6cb50f2b4dc9c9e67daa253d-MzIwNDQxOA",
+  "bundle-30x30": "https://pay.grow.link/9f22c34647fc749b1c6b0f9c90c170ba-MzIwNDQxOQ",
+};
 
 interface Props {
   orderId: string;
   token: string;
+  deliveryMode?: DeliveryMode | null;
+  albumSize?: AlbumSize | null;
 }
 
-export function PayButton({ orderId, token }: Props) {
-  const [loading, setLoading] = useState(false);
+export function PayButton({ orderId, token, deliveryMode, albumSize }: Props) {
+  const key =
+    deliveryMode === "film"
+      ? "film"
+      : deliveryMode && albumSize
+      ? `${deliveryMode}-${albumSize}`
+      : null;
 
-  async function handlePay() {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/orders/${orderId}/pay?token=${token}`, {
-        method: "POST",
-      });
+  const url = key ? GROW_LINKS[key] : null;
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "שגיאה ביצירת התשלום");
-      }
+  if (!url) {
+    return (
+      <Button size="lg" className="w-full gap-2 rounded-xl text-base" disabled>
+        <Lock size={16} />
+        תשלום לא זמין כרגע
+      </Button>
+    );
+  }
 
-      const { redirectUrl } = await res.json();
-
-      if (!redirectUrl) {
-        throw new Error("לא התקבל קישור לתשלום");
-      }
-
-      // Redirect to CardCom
-      window.location.href = redirectUrl;
-    } catch (err) {
-      toast.error((err as Error).message || "שגיאה. נסו שוב.");
-      setLoading(false);
-    }
-    // Don't setLoading(false) on success — page is navigating away
+  function handlePay() {
+    window.location.href = url!;
   }
 
   return (
-    <Button
-      size="lg"
-      className="w-full gap-2 rounded-xl text-base"
-      disabled={loading}
-      onClick={handlePay}
-    >
-      {loading ? (
-        <>
-          <Loader2 size={16} className="animate-spin" />
-          מעבירים אותך לתשלום מאובטח...
-        </>
-      ) : (
-        <>
-          <Lock size={16} />
-          המשך לתשלום מאובטח
-        </>
-      )}
+    <Button size="lg" className="w-full gap-2 rounded-xl text-base" onClick={handlePay}>
+      לתשלום
     </Button>
   );
 }
