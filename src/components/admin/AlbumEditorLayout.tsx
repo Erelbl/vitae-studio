@@ -241,63 +241,63 @@ export function AlbumEditorLayout({
    * Slots with no image_url are skipped — they have nothing to save.
    */
   async function handleSaveAll() {
-    const imagedPages = Array.from(pageOverrides.entries()).filter(
-      ([, ov]) => (ov.images ?? []).some((img) => img.image_url)
-    );
+    // Collect pages to save: those with in-flight overrides + the currently
+    // selected page (captures confirmed-server images that were cleared from
+    // pageOverrides by a prior router.refresh() but are still in livePreviewData).
+    const pageIdsToSave = new Set<string>(pageOverrides.keys());
+    if (selectedPageId) pageIdsToSave.add(selectedPageId);
 
-    if (imagedPages.length === 0) {
-      setSaveState("saved");
-      setTimeout(() => setSaveState("idle"), 2000);
-      return;
+    // For each page, use the full live image state (server data merged with overrides).
+    const slotsToSave: Array<{ pageId: string; img: PreviewPage["images"][number] }> = [];
+    for (const pageId of pageIdsToSave) {
+      const livePage = livePreviewData.pages.find((p) => p.id === pageId);
+      if (!livePage) continue;
+      for (const img of livePage.images) {
+        if (img.photo_id || img.image_url) slotsToSave.push({ pageId, img });
+      }
     }
+
+    // Nothing to write — do not flash "saved".
+    if (slotsToSave.length === 0) return;
 
     setSaveState("saving");
     let anyFailed = false;
 
     await Promise.all(
-      imagedPages.flatMap(([pageId, ov]) =>
-        (ov.images ?? [])
-          .filter((img) => img.image_url) // skip placeholder/empty slots
-          .map(async (img) => {
-            let res: Response;
-            if (img.photo_id) {
-              // PUT upserts the row — handles the race where initial PUT is still in flight
-              res = await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  slot: img.slot,
-                  photoId: img.photo_id,
-                  crop_x: img.crop_x,
-                  crop_y: img.crop_y,
-                  scale: img.scale,
-                }),
-              });
-            } else {
-              // Crop-only update for legacy / manual-upload image slots
-              res = await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  slot: img.slot,
-                  crop_x: img.crop_x,
-                  crop_y: img.crop_y,
-                  scale: img.scale,
-                }),
-              });
-            }
-            if (!res.ok) anyFailed = true;
-          })
-      )
+      slotsToSave.map(async ({ pageId, img }) => {
+        let res: Response;
+        if (img.photo_id) {
+          // PUT upserts the row with full state including frame style.
+          res = await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              slot: img.slot,
+              photoId: img.photo_id,
+              crop_x: img.crop_x,
+              crop_y: img.crop_y,
+              scale: img.scale,
+              frame_style: img.frame_style ?? null,
+            }),
+          });
+        } else {
+          // Crop-only update for legacy / manual-upload image slots.
+          res = await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              slot: img.slot,
+              crop_x: img.crop_x,
+              crop_y: img.crop_y,
+              scale: img.scale,
+            }),
+          });
+        }
+        if (!res.ok) anyFailed = true;
+      })
     );
 
     setSaveState(anyFailed ? "error" : "saved");
-    // Do NOT call router.refresh() here — it clears pageOverrides via the
-    // useEffect, and if the freshly-loaded server previewData returns
-    // image_url:null for any slot (URL signing failure, PATCH silently
-    // updating 0 rows for legacy slots, etc.) the images vanish from the
-    // preview. The PUT already persisted the data; pageOverrides already
-    // holds the correct signed URLs for the session.
     setTimeout(() => setSaveState("idle"), 2000);
   }
 

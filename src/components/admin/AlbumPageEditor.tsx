@@ -474,7 +474,7 @@ function PageEditorPanel({
     const res = await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slot, photoId, crop_x: 0.5, crop_y: 0.5, scale: 1 }),
+      body: JSON.stringify({ slot, photoId, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null }),
     });
 
     if (!res.ok) {
