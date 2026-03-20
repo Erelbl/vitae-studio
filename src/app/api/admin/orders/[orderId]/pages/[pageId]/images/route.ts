@@ -39,6 +39,7 @@ export async function PUT(
     crop_y?: number;
     scale?: number;
     frame_style?: string | null;
+    use_nobg?: boolean;
   };
   try {
     body = await req.json();
@@ -109,8 +110,10 @@ export async function PUT(
     crop_x: body.crop_x ?? 0.5,
     crop_y: body.crop_y ?? 0.5,
     scale: body.scale != null ? Math.max(0.1, body.scale) : 1,
+    use_nobg: false, // reset to false when re-assigning a photo
   };
   if (body.frame_style !== undefined) upsertData.frame_style = body.frame_style;
+  if (body.use_nobg !== undefined) upsertData.use_nobg = Boolean(body.use_nobg);
 
   const { error } = await adminClient
     .from("page_images")
@@ -144,7 +147,7 @@ export async function PATCH(
 
   const { orderId, pageId } = await params;
 
-  let body: { slot?: unknown; crop_x?: number; crop_y?: number; scale?: number; frame_style?: string | null };
+  let body: { slot?: unknown; crop_x?: number; crop_y?: number; scale?: number; frame_style?: string | null; use_nobg?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -176,6 +179,7 @@ export async function PATCH(
   if (body.crop_y !== undefined) cropUpdate.crop_y = Math.max(-2, Math.min(3, body.crop_y));
   if (body.scale !== undefined) cropUpdate.scale = Math.max(0.1, body.scale);
   if (body.frame_style !== undefined) cropUpdate.frame_style = body.frame_style; // null clears the style
+  if (body.use_nobg !== undefined) cropUpdate.use_nobg = Boolean(body.use_nobg);
 
   if (Object.keys(cropUpdate).length === 0) {
     return NextResponse.json({ ok: true });

@@ -161,6 +161,7 @@ export function AlbumEditorLayout({
               // with image_url:null would shadow the legacy fallback in resolveSlot().
               image_url: slot === 1 ? (serverPage.image_url ?? null) : null,
               frame_style: null,
+              use_nobg: false,
             },
           ];
       const next = new Map(prev);

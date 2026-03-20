@@ -40,6 +40,7 @@ export type EditorPage = {
     scale: number;
     frame_style: string | null;
     image_url: string | null;
+    use_nobg: boolean;
   }>;
 };
 
@@ -122,6 +123,7 @@ type SlotState = {
   crop_y: number;
   scale: number;
   frame_style: string | null;
+  use_nobg: boolean;
 };
 
 /** Convert the local slots map → PageImageSlot[] suitable for an onPageUpdate override. */
@@ -137,6 +139,7 @@ function buildImages(slotsMap: Record<number, SlotState>): PageImageSlot[] {
       scale: s.scale,
       frame_style: s.frame_style ?? null,
       image_url: s.image_url!,
+      use_nobg: s.use_nobg,
     }));
 }
 
@@ -376,6 +379,7 @@ function PageEditorPanel({
         crop_y: img.crop_y,
         scale: img.scale,
         frame_style: img.frame_style ?? null,
+        use_nobg: img.use_nobg ?? false,
       };
     }
     return m;
@@ -465,7 +469,7 @@ function PageEditorPanel({
     const prevSlots = slots;
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null },
+      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false },
     };
     setSlots(newSlots);
     // Push to large preview immediately for instant visual feedback
@@ -515,7 +519,7 @@ function PageEditorPanel({
   function handleManualUpload(slot: 1 | 2, imageUrl: string) {
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null },
+      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false },
     };
     setSlots(newSlots);
     onPageUpdate?.(page.id, { images: buildImages(newSlots) });
@@ -534,6 +538,77 @@ function PageEditorPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot: slotNum, frame_style: style }),
     });
+  }
+
+  const [nobgLoadingSlot, setNobgLoadingSlot] = useState<number | null>(null);
+
+  /**
+   * Enable or disable the white-background-removed version for a slot.
+   *
+   * Enable:  calls the remove-background API (idempotent), updates DB use_nobg=true,
+   *          and immediately shows the transparent PNG in the preview.
+   * Disable: updates DB use_nobg=false, clears local image_url so the preview falls
+   *          back to server data (original URL) after the next refresh.
+   */
+  async function handleNobg(slotNum: 1 | 2, enable: boolean) {
+    const currentSlot = slots[slotNum];
+    if (!currentSlot?.photo_id) return;
+
+    if (enable) {
+      setNobgLoadingSlot(slotNum);
+      try {
+        const res = await fetch(
+          `/api/admin/orders/${orderId}/photos/${currentSlot.photo_id}/remove-background`,
+          { method: "POST" }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.error ?? "שגיאה בהסרת הרקע הלבן");
+          return;
+        }
+        const { nobgUrl } = await res.json();
+
+        // Persist use_nobg=true in DB
+        await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slot: slotNum, use_nobg: true }),
+        });
+
+        // Update local state + preview immediately
+        setSlots((prev) => {
+          const updated = {
+            ...prev,
+            [slotNum]: { ...prev[slotNum], use_nobg: true, image_url: nobgUrl },
+          };
+          onPageUpdate?.(page.id, { images: buildImages(updated) });
+          return updated;
+        });
+      } finally {
+        setNobgLoadingSlot(null);
+      }
+    } else {
+      // Persist use_nobg=false in DB
+      await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot: slotNum, use_nobg: false }),
+      });
+
+      // Clear local image_url so buildImages excludes this slot from overrides.
+      // The preview will then fall back to server data (original URL) after refresh.
+      setSlots((prev) => {
+        const updated = {
+          ...prev,
+          [slotNum]: { ...prev[slotNum], use_nobg: false, image_url: null },
+        };
+        onPageUpdate?.(page.id, { images: buildImages(updated) });
+        return updated;
+      });
+
+      // Refresh to reload original signed URL from server
+      onSaved();
+    }
   }
 
   const activeSlots = LAYOUT_SLOTS[layoutType] ?? [];
@@ -763,6 +838,7 @@ function PageEditorPanel({
               completedPhotos={completedPhotos}
               orderId={orderId}
               pageId={page.id}
+              nobgLoading={nobgLoadingSlot === focusedSlot}
               onAssign={(photo) => handleSlotAssign(focusedSlot, photo)}
               onCropSave={(crop_x, crop_y, scale) =>
                 handleCropSave(focusedSlot, crop_x, crop_y, scale)
@@ -770,6 +846,7 @@ function PageEditorPanel({
               onManualUpload={(imageUrl) =>
                 handleManualUpload(focusedSlot, imageUrl)
               }
+              onToggleNobg={(enable) => handleNobg(focusedSlot, enable)}
             />
           ) : (
             <ImageSlotEditor
@@ -779,6 +856,7 @@ function PageEditorPanel({
               completedPhotos={completedPhotos}
               orderId={orderId}
               pageId={page.id}
+              nobgLoading={nobgLoadingSlot === activeSlots[0]}
               onAssign={(photo) => handleSlotAssign(activeSlots[0] as 1 | 2, photo)}
               onCropSave={(crop_x, crop_y, scale) =>
                 handleCropSave(activeSlots[0] as 1 | 2, crop_x, crop_y, scale)
@@ -786,6 +864,7 @@ function PageEditorPanel({
               onManualUpload={(imageUrl) =>
                 handleManualUpload(activeSlots[0] as 1 | 2, imageUrl)
               }
+              onToggleNobg={(enable) => handleNobg(activeSlots[0] as 1 | 2, enable)}
             />
           )}
         </div>
@@ -813,8 +892,8 @@ function SpecialPagePanel({
   const [slotState, setSlotState] = useState<SlotState>(() => {
     const img = page.images.find((i) => i.slot === 1);
     return img
-      ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale, frame_style: img.frame_style ?? null }
-      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null };
+      ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale, frame_style: img.frame_style ?? null, use_nobg: img.use_nobg ?? false }
+      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false };
   });
 
   async function saveText() {
@@ -850,7 +929,7 @@ function SpecialPagePanel({
   }
 
   async function handleRemove() {
-    setSlotState({ photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null });
+    setSlotState({ photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false });
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -860,7 +939,7 @@ function SpecialPagePanel({
   }
 
   function handleManualUpload(imageUrl: string) {
-    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null });
+    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false });
     onSaved();
   }
 
@@ -922,9 +1001,11 @@ function ImageSlotEditor({
   orderId,
   pageId,
   hidePhotoPicker = false,
+  nobgLoading = false,
   onAssign,
   onCropSave,
   onManualUpload,
+  onToggleNobg,
 }: {
   slot: 1 | 2;
   slotState: SlotState | null;
@@ -932,9 +1013,13 @@ function ImageSlotEditor({
   orderId: string;
   pageId: string;
   hidePhotoPicker?: boolean;
+  /** Whether the remove-background operation is currently running for this slot. */
+  nobgLoading?: boolean;
   onAssign: (photo: PhotoForEditor | null) => void;
   onCropSave: (crop_x: number, crop_y: number, scale: number) => void;
   onManualUpload: (imageUrl: string) => void;
+  /** Called when the admin toggles the no-bg effect on/off. Only available for photo slots. */
+  onToggleNobg?: (enable: boolean) => void;
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const [scale, setScale] = useState(slotState?.scale ?? 1);
@@ -1054,6 +1139,32 @@ function ImageSlotEditor({
               {uploading ? "מעלה..." : "החלף בתמונה ידנית"}
             </button>
           </div>
+
+          {/* White background removal — only available for photo-based slots */}
+          {slotState?.photo_id && onToggleNobg && (
+            <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+              {slotState.use_nobg ? (
+                <button
+                  onClick={() => onToggleNobg(false)}
+                  disabled={nobgLoading}
+                  className="text-xs text-amber-600 hover:text-amber-700 underline underline-offset-2 disabled:opacity-50"
+                >
+                  שחזר רקע מקורי
+                </button>
+              ) : (
+                <button
+                  onClick={() => onToggleNobg(true)}
+                  disabled={nobgLoading}
+                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-50"
+                >
+                  {nobgLoading ? "מסיר רקע..." : "הסר רקע לבן"}
+                </button>
+              )}
+              {slotState.use_nobg && (
+                <span className="text-[10px] text-primary/60 font-normal">(ללא רקע)</span>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         /* No image: picker first (priority), then upload */

@@ -122,6 +122,11 @@ export interface PageImageSlot {
   frame_style: string | null;
   /** Pre-resolved signed URL. null when photo has no illustration or URL expired. */
   image_url: string | null;
+  /**
+   * Whether this slot renders the white-background-removed version of the illustration.
+   * Requires photos.illustration_nobg_path to be set on the referenced photo.
+   */
+  use_nobg: boolean;
 }
 
 export const TEXT_POSITIONS = ["top", "bottom", "overlay"] as const;

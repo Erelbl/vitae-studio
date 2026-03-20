@@ -36,7 +36,7 @@ export async function loadPreviewData(
   // Load page_images for all pages in one query
   const { data: pageImagesRaw } = await supabase
     .from("page_images")
-    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale, manual_image_path, frame_style")
+    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale, manual_image_path, frame_style, use_nobg")
     .in("page_id", pageIds);
 
   // Collect all photo_ids referenced by page_images to resolve their paths
@@ -45,12 +45,13 @@ export async function loadPreviewData(
     if (pi.photo_id) photoIdsNeeded.add(pi.photo_id as string);
   }
 
-  // Fetch illustration_storage_path for those photos in one query
+  // Fetch illustration_storage_path and illustration_nobg_path for those photos in one query
   const photoStoragePaths = new Map<string, string>();
+  const photoNobgPaths = new Map<string, string>();
   if (photoIdsNeeded.size > 0) {
     const { data: photos } = await supabase
       .from("photos")
-      .select("id, illustration_storage_path")
+      .select("id, illustration_storage_path, illustration_nobg_path")
       .in("id", Array.from(photoIdsNeeded));
     for (const ph of photos ?? []) {
       if (ph.illustration_storage_path) {
@@ -58,6 +59,10 @@ export async function loadPreviewData(
           ph.id as string,
           ph.illustration_storage_path as string
         );
+      }
+      const nobgPath = (ph as Record<string, unknown>).illustration_nobg_path as string | null;
+      if (nobgPath) {
+        photoNobgPaths.set(ph.id as string, nobgPath);
       }
     }
   }
@@ -74,6 +79,14 @@ export async function loadPreviewData(
   // Also include manual_image_path values from page_images
   for (const pi of pageImagesRaw ?? []) {
     if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
+  }
+  // Include nobg paths for slots that use them
+  for (const pi of pageImagesRaw ?? []) {
+    const useNobg = Boolean((pi as Record<string, unknown>).use_nobg);
+    if (useNobg && pi.photo_id) {
+      const nobgPath = photoNobgPaths.get(pi.photo_id as string);
+      if (nobgPath) allPaths.add(nobgPath);
+    }
   }
 
   // Sign all paths in a single batch call (no transform = original full quality).
@@ -93,8 +106,17 @@ export async function loadPreviewData(
     const pid = pi.page_id as string;
     const manualPath = (pi.manual_image_path as string | null) ?? null;
     const photoId = (pi.photo_id as string | null) ?? null;
-    // manual_image_path takes priority over photo-based illustration path
-    const storagePath = manualPath ?? (photoId ? photoStoragePaths.get(photoId) : undefined);
+    const useNobg = Boolean((pi as Record<string, unknown>).use_nobg);
+    // manual_image_path takes priority over photo-based illustration path.
+    // When use_nobg is true and a nobg version exists, use it instead of the original.
+    let storagePath: string | undefined;
+    if (manualPath) {
+      storagePath = manualPath;
+    } else if (photoId) {
+      storagePath =
+        (useNobg && photoNobgPaths.get(photoId)) ||
+        photoStoragePaths.get(photoId);
+    }
     const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
 
     const slot: PageImageSlot = {
@@ -106,6 +128,7 @@ export async function loadPreviewData(
       scale: (pi.scale as number) ?? 1,
       frame_style: (pi.frame_style as string | null) ?? null,
       image_url,
+      use_nobg: useNobg,
     };
 
     const existing = pageImagesMap.get(pid) ?? [];

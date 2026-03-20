@@ -105,12 +105,12 @@ export default async function AdminOrderPreviewPage({
     editorPageIds.length > 0
       ? await adminClient
           .from("page_images")
-          .select("page_id, slot, photo_id, crop_x, crop_y, scale, manual_image_path, frame_style")
+          .select("page_id, slot, photo_id, crop_x, crop_y, scale, manual_image_path, frame_style, use_nobg")
           .in("page_id", editorPageIds)
       : { data: [] as {
           page_id: unknown; slot: unknown; photo_id: unknown;
           crop_x: unknown; crop_y: unknown; scale: unknown; manual_image_path: unknown;
-          frame_style: unknown;
+          frame_style: unknown; use_nobg: unknown;
         }[] };
 
   // ── Completed illustrations for the picker ────────────────────────────────
@@ -129,14 +129,19 @@ export default async function AdminOrderPreviewPage({
 
   // Fetch paths for photos referenced in page_images (may or may not be in completedPhotos)
   const pageImagesPhotoPaths = new Map<string, string>();
+  const pageImagesNobgPaths = new Map<string, string>();
   if (pageImagesPhotoIds.size > 0) {
     const { data: piPhotos } = await adminClient
       .from("photos")
-      .select("id, illustration_storage_path")
+      .select("id, illustration_storage_path, illustration_nobg_path")
       .in("id", Array.from(pageImagesPhotoIds));
     for (const ph of piPhotos ?? []) {
       if (ph.illustration_storage_path) {
         pageImagesPhotoPaths.set(ph.id as string, ph.illustration_storage_path as string);
+      }
+      const nobgPath = (ph as Record<string, unknown>).illustration_nobg_path as string | null;
+      if (nobgPath) {
+        pageImagesNobgPaths.set(ph.id as string, nobgPath);
       }
     }
   }
@@ -152,6 +157,14 @@ export default async function AdminOrderPreviewPage({
   // Also include manual_image_path values
   for (const pi of pageImagesRaw ?? []) {
     if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
+  }
+  // Include nobg paths for slots that use them
+  for (const pi of pageImagesRaw ?? []) {
+    const useNobg = Boolean((pi as Record<string, unknown>).use_nobg);
+    if (useNobg && pi.photo_id) {
+      const nobgPath = pageImagesNobgPaths.get(pi.photo_id as string);
+      if (nobgPath) allPaths.add(nobgPath);
+    }
   }
 
   // Sign all paths with thumb transform (300px, q70) for editor/picker display
@@ -180,8 +193,17 @@ export default async function AdminOrderPreviewPage({
     const pid = pi.page_id as string;
     const manualPath = (pi.manual_image_path as string | null) ?? null;
     const photoId = (pi.photo_id as string | null) ?? null;
-    // manual_image_path takes priority over photo-based illustration path
-    const storagePath = manualPath ?? (photoId ? pageImagesPhotoPaths.get(photoId) : undefined);
+    const useNobg = Boolean((pi as Record<string, unknown>).use_nobg);
+    // manual_image_path takes priority over photo-based illustration path.
+    // When use_nobg is true and a nobg version exists, prefer that path.
+    let storagePath: string | undefined;
+    if (manualPath) {
+      storagePath = manualPath;
+    } else if (photoId) {
+      storagePath =
+        (useNobg && pageImagesNobgPaths.get(photoId)) ||
+        pageImagesPhotoPaths.get(photoId);
+    }
     const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
 
     const existing = pageImagesMap.get(pid) ?? [];
@@ -193,6 +215,7 @@ export default async function AdminOrderPreviewPage({
       scale: (pi.scale as number) ?? 1,
       frame_style: (pi.frame_style as string | null) ?? null,
       image_url,
+      use_nobg: useNobg,
     });
     pageImagesMap.set(pid, existing);
   }
