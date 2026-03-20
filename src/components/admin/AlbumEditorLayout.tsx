@@ -47,18 +47,21 @@ function pageToSpreadIndex(pageNumber: number, pages: PreviewData["pages"]): num
  */
 export function AlbumEditorLayout({
   previewData,
+  pdfPreviewData,
   editorPages,
   completedPhotos,
   orderId,
   personName,
 }: {
   previewData: PreviewData;
+  pdfPreviewData?: PreviewData;
   editorPages: EditorPage[];
   completedPhotos: PhotoForEditor[];
   orderId: string;
   personName: string;
 }) {
   const [pdfProgress, setPdfProgress] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [focusedSpreadIndex, setFocusedSpreadIndex] = useState<number | undefined>();
 
   /** The page currently open in the editor — needed to target the drag overlay. */
@@ -224,16 +227,75 @@ export function AlbumEditorLayout({
     });
   }
 
+  /**
+   * Explicitly save all current image position overrides to the DB.
+   * Autosave already fires on every drag-end, but this provides a clear
+   * confirmation that all edits are persisted.
+   */
+  async function handleSaveAll() {
+    const imagedPages = Array.from(pageOverrides.entries()).filter(
+      ([, ov]) => ov.images && ov.images.length > 0
+    );
+
+    setSaveState("saving");
+    try {
+      await Promise.all(
+        imagedPages.flatMap(([pageId, ov]) =>
+          (ov.images ?? []).map((img) =>
+            fetch(`/api/admin/orders/${orderId}/pages/${pageId}/images`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                slot: img.slot,
+                crop_x: img.crop_x,
+                crop_y: img.crop_y,
+                scale: img.scale,
+              }),
+            })
+          )
+        )
+      );
+      setSaveState("saved");
+    } catch {
+      setSaveState("error");
+    }
+    setTimeout(() => setSaveState("idle"), 2000);
+  }
+
   // Current text position for the selected page — drives "איפוס מיקום" visibility.
   const selectedPageLive = livePreviewData.pages.find((p) => p.id === selectedPageId) ?? null;
   const currentTextX = selectedPageLive?.text_x ?? null;
   const currentTextY = selectedPageLive?.text_y ?? null;
 
+  /**
+   * Merge high-res PDF URLs into livePreviewData for PDF export.
+   * livePreviewData has the user's current edits (crop, layout, text).
+   * pdfPreviewData has the same pages but with 2400px signed URLs.
+   */
+  const mergedPdfData: PreviewData = useMemo(() => {
+    if (!pdfPreviewData) return livePreviewData;
+    return {
+      ...livePreviewData,
+      pages: livePreviewData.pages.map((livePage) => {
+        const pdfPage = pdfPreviewData.pages.find((p) => p.id === livePage.id);
+        if (!pdfPage) return livePage;
+        return {
+          ...livePage,
+          image_url: pdfPage.image_url,
+          images: livePage.images.map((liveSlot) => {
+            const pdfSlot = pdfPage.images.find((s) => s.slot === liveSlot.slot);
+            return pdfSlot ? { ...liveSlot, image_url: pdfSlot.image_url } : liveSlot;
+          }),
+        };
+      }),
+    };
+  }, [livePreviewData, pdfPreviewData]);
+
   const handleExportPdf = useCallback(async () => {
     if (pdfProgress) return; // already running
     setPdfProgress("מכין...");
     try {
-      await exportAlbumPdf(livePreviewData, personName, (current, total) => {
+      await exportAlbumPdf(mergedPdfData, personName, (current, total) => {
         setPdfProgress(`${current + 1} / ${total}`);
       });
     } catch (err) {
@@ -243,7 +305,7 @@ export function AlbumEditorLayout({
       return;
     }
     setPdfProgress(null);
-  }, [livePreviewData, personName, pdfProgress]);
+  }, [mergedPdfData, personName, pdfProgress]);
 
   // Diagnostic: preview has real pages but editor failed to load them.
   const previewHasRealPages = !previewData.isMock && previewData.pages.length > 0;
@@ -300,8 +362,38 @@ export function AlbumEditorLayout({
           סיפורו של {personName}
         </h1>
 
-        {/* PDF download */}
-        <div className="flex justify-center">
+        {/* Action buttons row */}
+        <div className="flex justify-center items-center gap-2 flex-wrap">
+          {/* Save image edits */}
+          <button
+            type="button"
+            onClick={handleSaveAll}
+            disabled={saveState === "saving"}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {saveState === "saving"
+              ? "שומר..."
+              : saveState === "saved"
+              ? "✓ נשמר"
+              : saveState === "error"
+              ? "⚠ שגיאה"
+              : "שמור שינויים"}
+          </button>
+
+          {/* Toggle image editing overlay */}
+          {selectedPageId && (
+            <button
+              type="button"
+              onClick={() =>
+                setImageEditPageId((prev) => (prev ? null : selectedPageId))
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+            >
+              {imageEditPageId ? "הסתר כלי עריכה" : "הצג כלי עריכה"}
+            </button>
+          )}
+
+          {/* PDF download */}
           <button
             type="button"
             onClick={handleExportPdf}

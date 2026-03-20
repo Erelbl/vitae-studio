@@ -129,7 +129,7 @@ export function AlbumPreview({
     const isDragTarget = Boolean(textDragMode && page.id === textDragPageId && onTextDrop);
     const isEditTarget = page.id === imageEditPageId;
     return (
-      <div key={page.id} className="relative" style={isEditTarget ? { zIndex: 2 } : undefined}>
+      <div key={page.id} className="relative" style={{ zIndex: isEditTarget ? 2 : 1 }}>
         <AlbumPageView page={page} personName={personName} editMode={isEditTarget} />
         {isDragTarget && (
           <LargePreviewDragOverlay

@@ -43,7 +43,11 @@ export default async function AdminOrderPreviewPage({
   const currentStatus = order.status as OrderStatus;
 
   // ── Preview data (page_images + batch signed URLs via loader) ─────────────
-  const previewData = await loadPreviewData(orderId, personName);
+  // Load both UI-quality (1800px) and PDF-quality (2400px) in parallel.
+  const [previewData, pdfPreviewData] = await Promise.all([
+    loadPreviewData(orderId, personName),
+    loadPreviewData(orderId, personName, "pdfExport"),
+  ]);
 
   // ── Editor data: all pages with text, layout, page_images ────────────────
   // Include all page types so admins can upload images to cover/dedication/etc.
@@ -241,6 +245,7 @@ export default async function AdminOrderPreviewPage({
       {/* Album preview + editor — connected via AlbumEditorLayout client wrapper */}
       <AlbumEditorLayout
         previewData={previewData}
+        pdfPreviewData={pdfPreviewData}
         editorPages={editorPages}
         completedPhotos={completedPhotos}
         orderId={orderId}

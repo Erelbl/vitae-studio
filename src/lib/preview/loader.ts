@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSignedImageUrls } from "@/lib/storage-image";
+import type { ImageProfile } from "@/lib/storage-image";
 import { getMockPreviewPages, MOCK_PERSON_NAME } from "./mock-data";
 import type { LayoutType, PageImageSlot, PageType, PreviewData, PreviewPage, TextAlign, TextColor, TextSize } from "@/types/page";
 
@@ -9,7 +10,8 @@ const ILLUSTRATIONS_BUCKET = "illustrations";
 // and loads page_images slot assignments with crop/zoom values.
 export async function loadPreviewData(
   orderId: string,
-  personName: string
+  personName: string,
+  profile: ImageProfile = "albumPreview"
 ): Promise<PreviewData> {
   const supabase = createAdminClient();
 
@@ -74,14 +76,14 @@ export async function loadPreviewData(
     if (pi.manual_image_path) allPaths.add(pi.manual_image_path as string);
   }
 
-  // Sign all paths with albumPreview transform (1400px, q75) for browser display.
+  // Sign all paths with the requested profile for browser/PDF display.
   // Uses parallel individual calls to enable Supabase image transforms.
   const signedUrlMap = await createSignedImageUrls(
     supabase,
     ILLUSTRATIONS_BUCKET,
     Array.from(allPaths),
     3600,
-    "albumPreview"
+    profile
   );
 
   // Build page_images map: page_id → sorted slot array
