@@ -7,11 +7,11 @@ import type { DeliveryMode, AlbumSize, PricingSnapshot } from "@/types/order";
  */
 
 const PRICE_TABLE: Record<string, number> = {
-  "film:": 2200,
-  "print:25x25": 2500,
-  "print:30x30": 2700,
-  "bundle:25x25": 3750,
-  "bundle:30x30": 3950,
+  "film:": 2000,
+  "print:25x25": 2200,
+  "print:30x30": 2500,
+  "bundle:25x25": 3780,
+  "bundle:30x30": 4050,
 };
 
 export interface PricingInput {
@@ -71,10 +71,10 @@ export function requiresAlbumSize(deliveryMode: DeliveryMode): boolean {
 export function getStartingPrice(deliveryMode: DeliveryMode): number {
   switch (deliveryMode) {
     case "film":
-      return 2200;
+      return 2000;
     case "print":
-      return 2500;
+      return 2200;
     case "bundle":
-      return 3750;
+      return 3780;
   }
 }

@@ -4,7 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Check, BookOpen, Film, Sparkles } from "lucide-react";
+import { PackageCard } from "@/components/shared/PackageCard";
+import {
+  PACKAGES,
+  PACKAGE_TO_DELIVERY_MODE,
+  DELIVERY_MODE_TO_PACKAGE,
+  type PackageKey,
+  type Size,
+} from "@/content/packages";
 import type { DeliveryMode } from "@/types/order";
 
 interface Props {
@@ -13,75 +20,33 @@ interface Props {
   initialDeliveryMode?: DeliveryMode | null;
 }
 
-interface ProductOption {
-  mode: DeliveryMode;
-  title: string;
-  description: string;
-  priceLabel: string;
-  icon: React.ReactNode;
-  inclusions: string[];
-  featured?: boolean;
-  badge?: string;
-}
-
-const PRODUCTS: ProductOption[] = [
-  {
-    mode: "print",
-    title: "אלבום פיזי מודפס",
-    description: "אלבום מודפס על נייר צילום קשיח בכריכה קשיחה",
-    priceLabel: "החל מ־₪2,500",
-    icon: <BookOpen size={24} />,
-    inclusions: [
-      "שאלון אישי מעמיק",
-      "כתיבת טקסט בחרוזים עבריים",
-      "עד 40 עמודי איור בצבעי מים",
-      "אישור גרסה לפני הדפסה",
-      "משלוח עד הבית",
-    ],
-  },
-  {
-    mode: "bundle",
-    title: "אלבום פיזי + סרט",
-    description: "הכל בחבילה אחת — אלבום מודפס וסרט עם קריינות",
-    priceLabel: "החל מ־₪3,750",
-    icon: <Sparkles size={24} />,
-    featured: true,
-    badge: "הכי משתלם",
-    inclusions: [
-      "כל מה שבאלבום +",
-      "עריכת וידאו עם הנפשות עדינות",
-      "קריינות מקצועית",
-      "קובץ וידאו להורדה ולשיתוף",
-    ],
-  },
-  {
-    mode: "film",
-    title: "סרט עם קריינות",
-    description: "סרטון מונפש עם קריינות מקצועית ואיורים בצבעי מים",
-    priceLabel: "₪2,200",
-    icon: <Film size={24} />,
-    inclusions: [
-      "שאלון אישי מעמיק",
-      "כתיבת תסריט בחרוזים עבריים",
-      "הנפשה עדינה של תמונות",
-      "קריינות מקצועית",
-      "קובץ לשיתוף ברשתות",
-    ],
-  },
-];
-
 export function ProductSelection({ orderId, token, initialDeliveryMode }: Props) {
   const router = useRouter();
-  const [selected, setSelected] = useState<DeliveryMode | null>(
-    initialDeliveryMode ?? null
+  const [selected, setSelected] = useState<PackageKey | null>(
+    initialDeliveryMode ? DELIVERY_MODE_TO_PACKAGE[initialDeliveryMode] : null
   );
   const [saving, setSaving] = useState(false);
+  const [albumSize, setAlbumSize] = useState<Size>("25");
+  const [comboSize, setComboSize] = useState<Size>("25");
+
+  function getSize(key: PackageKey): Size {
+    if (key === "album") return albumSize;
+    if (key === "combo") return comboSize;
+    return "25";
+  }
+
+  function setSize(key: PackageKey, size: Size) {
+    if (key === "album") setAlbumSize(size);
+    if (key === "combo") setComboSize(size);
+  }
 
   async function handleContinue() {
     if (!selected) {
       toast.error("יש לבחור מוצר");
       return;
     }
+
+    const deliveryMode = PACKAGE_TO_DELIVERY_MODE[selected];
 
     setSaving(true);
     try {
@@ -91,9 +56,8 @@ export function ProductSelection({ orderId, token, initialDeliveryMode }: Props)
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            delivery_mode: selected,
-            // Clear album_size when switching to film
-            album_size: selected === "film" ? null : undefined,
+            delivery_mode: deliveryMode,
+            album_size: deliveryMode === "film" ? null : undefined,
           }),
         }
       );
@@ -109,8 +73,8 @@ export function ProductSelection({ orderId, token, initialDeliveryMode }: Props)
   }
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-10 sm:max-w-3xl sm:px-8">
-      <div className="mb-8 text-center">
+    <div className="mx-auto max-w-xl px-4 py-10 sm:max-w-5xl sm:px-8">
+      <div className="mb-10 text-center">
         <h1 className="text-2xl font-semibold sm:text-3xl">
           איך תרצו לקבל את הסיפור שלכם?
         </h1>
@@ -119,92 +83,24 @@ export function ProductSelection({ orderId, token, initialDeliveryMode }: Props)
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-        {PRODUCTS.map((product) => {
-          const isSelected = selected === product.mode;
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+        {PACKAGES.map((pkg) => {
+          const size = getSize(pkg.key);
+          const isSelected = selected === pkg.key;
 
           return (
-            <button
-              key={product.mode}
-              type="button"
-              onClick={() => setSelected(product.mode)}
-              className={`relative flex flex-col rounded-2xl text-start transition-all ${
-                isSelected
-                  ? "ring-2 ring-primary shadow-lg scale-[1.02]"
-                  : product.featured
-                    ? "ring-2 ring-primary/25 shadow-md"
-                    : "border border-border/50 shadow-sm"
-              } ${
-                product.featured ? "bg-primary/5" : "bg-card"
-              } hover:shadow-md`}
-            >
-              {/* Badge */}
-              {product.badge && (
-                <span className="absolute -top-3 start-4 rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground">
-                  {product.badge}
-                </span>
-              )}
-
-              {/* Header */}
-              <div className="px-5 pt-6 pb-3">
-                <div
-                  className={`mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {product.icon}
-                </div>
-                <h3 className="text-lg font-semibold leading-snug">
-                  {product.title}
-                </h3>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  {product.description}
-                </p>
-              </div>
-
-              {/* Divider */}
-              <div className="mx-5 border-t border-border/40" />
-
-              {/* Inclusions */}
-              <div className="flex-1 px-5 py-4">
-                <ul className="space-y-2">
-                  {product.inclusions.map((line, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check
-                        size={14}
-                        className={`mt-0.5 shrink-0 ${
-                          isSelected ? "text-primary" : "text-primary/50"
-                        }`}
-                        strokeWidth={2.5}
-                      />
-                      <span className="text-sm leading-relaxed text-foreground/80">
-                        {line}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Price */}
-              <div className="mx-5 mb-5 border-t border-border/30 pt-4">
-                <p
-                  className={`text-2xl font-bold tracking-tight ${
-                    isSelected ? "text-primary" : "text-foreground"
-                  }`}
-                >
-                  {product.priceLabel}
-                </p>
-              </div>
-
-              {/* Selection indicator */}
-              {isSelected && (
-                <div className="absolute top-3 end-3 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <Check size={14} strokeWidth={3} />
-                </div>
-              )}
-            </button>
+            <PackageCard
+              key={pkg.key}
+              pkg={pkg}
+              size={size}
+              onSizeChange={(s) => setSize(pkg.key, s)}
+              isSelected={isSelected}
+              asButton
+              onCardClick={() => setSelected(pkg.key)}
+              ctaLabel="בחירה"
+              ctaVariant={isSelected ? "default" : "outline"}
+              onCtaClick={() => setSelected(pkg.key)}
+            />
           );
         })}
       </div>

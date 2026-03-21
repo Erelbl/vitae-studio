@@ -161,50 +161,10 @@ export const IMAGE_COMPARISON = {
   afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים" },
 };
 
-export const PACKAGES = {
+export const PACKAGES_SECTION = {
   sectionLabel: "",
   title: "חבילות",
   subtitle: "בחרו את החבילה המתאימה לכם",
-  items: [
-    {
-      title: "אלבום סיפור חיים בחרוזים",
-      description: "אפשרות 30×30 או 25×25 · עד 40 עמודים",
-      price: "₪2,200",
-      featured: false,
-      // Replace / expand these lines with final package inclusions
-      inclusions: [
-        "שאלון אישי מעמיק",
-        "כתיבת טקסט בחרוזים",
-        "עד 40 עמודי איור בצבעי מים",
-        "אישור גרסה לפני הדפסה",
-        "משלוח עד הבית",
-      ],
-    },
-    {
-      title: "חבילה משולבת",
-      description: "אלבום + סרט — הכל בחבילה אחת",
-      price: "₪3,780",
-      featured: true,
-      inclusions: [
-        "כל מה שב\"אלבום\" +",
-        "עריכת וידאו עם הנפשות עדינות",
-        "קריינות מקצועית",
-        "קובץ וידאו להורדה ולשיתוף",
-      ],
-    },
-    {
-      title: "סרטון סיפור חיים בחרוזים",
-      description: "הסיפור שלכם מתעורר לחיים עם קריינות מקצועית, מוזיקת רגע והנפשות עדינות",
-      price: "₪2,000",
-      featured: false,
-      inclusions: [
-        "שאלון אישי מעמיק",
-        "התמונות שלכם הופכות לאיור ומקבלות הנפשה עדינה",
-        "קריינות מקצועית",
-        "קובץ להקרנה ולשיתוף ברשתות",
-      ],
-    },
-  ],
 };
 
 export const TESTIMONIALS = {
