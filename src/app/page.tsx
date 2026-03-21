@@ -157,14 +157,14 @@ export default function LandingPage() {
       {/* ── Footer ───────────────────────────────────────────── */}
       <footer className="border-t border-border/50 bg-background px-4 py-8 text-center">
         {/* Logo in footer for brand presence */}
-        <div className="mx-auto mb-4 relative h-10 w-40">
+        <Link href="/" className="mx-auto mb-4 relative block h-10 w-40">
           <Image
             src="/assets/Logo.png"
             alt="Vitae Studio"
             fill
             className="object-contain"
           />
-        </div>
+        </Link>
         <p className="text-sm text-muted-foreground/60">
           Vitae Studio &copy; {new Date().getFullYear()} · {FOOTER.tagline}
         </p>
