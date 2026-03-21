@@ -155,8 +155,7 @@ export default function LandingPage() {
       </main>
 
       {/* ── Footer ───────────────────────────────────────────── */}
-      <footer className="border-t border-border/50 bg-background px-4 py-8 text-center">
-        {/* Logo in footer for brand presence */}
+      <footer className="border-t border-border/50 bg-background px-4 py-10 text-center">
         <Link href="/" className="mx-auto mb-4 relative block h-10 w-40">
           <Image
             src="/assets/Logo.png"
@@ -165,9 +164,26 @@ export default function LandingPage() {
             className="object-contain"
           />
         </Link>
-        <p className="text-sm text-muted-foreground/60">
+        <p className="mb-6 text-sm text-muted-foreground/60">
           Vitae Studio &copy; {new Date().getFullYear()} · {FOOTER.tagline}
         </p>
+        <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground/70">
+          <Link href="/terms-of-service" className="transition-colors hover:text-foreground">
+            תנאי שימוש
+          </Link>
+          <Link href="/privacy-policy" className="transition-colors hover:text-foreground">
+            מדיניות פרטיות
+          </Link>
+          <Link href="/shipping-policy" className="transition-colors hover:text-foreground">
+            מדיניות משלוחים
+          </Link>
+          <Link href="/refund-policy" className="transition-colors hover:text-foreground">
+            ביטולים והחזרים
+          </Link>
+          <Link href="/contact" className="transition-colors hover:text-foreground">
+            צור קשר
+          </Link>
+        </nav>
       </footer>
 
     </div>
