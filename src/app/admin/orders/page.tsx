@@ -8,11 +8,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getDisplayStatus } from "@/lib/display-status";
+import { getDisplayStatus, getPipelineStage, PIPELINE_STAGES } from "@/lib/display-status";
+import type { PipelineStage } from "@/lib/display-status";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 
 function StatusBadge({ order }: { order: Record<string, unknown> }) {
-  const ds = getDisplayStatus(order as { status: string; payment_status?: string | null; preview_status?: string | null; preview_round?: number | null });
+  const ds = getDisplayStatus(order as {
+    status: string;
+    payment_status?: string | null;
+    preview_status?: string | null;
+    preview_round?: number | null;
+    sent_to_print_at?: string | null;
+    shipped_to_customer_at?: string | null;
+    completed_at?: string | null;
+  });
 
   return (
     <span
@@ -24,7 +33,13 @@ function StatusBadge({ order }: { order: Record<string, unknown> }) {
   );
 }
 
-export default async function AdminOrdersPage() {
+export default async function AdminOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ stage?: string }>;
+}) {
+  const { stage: stageFilter } = await searchParams;
+
   const supabase = createAdminClient();
   const { data: orders, error } = await supabase
     .from("orders")
@@ -35,10 +50,76 @@ export default async function AdminOrdersPage() {
     return <p className="text-destructive">שגיאה בטעינת ההזמנות</p>;
   }
 
+  // Filter by pipeline stage if specified
+  const validStage = PIPELINE_STAGES.find((s) => s.key === stageFilter);
+  const filteredOrders = validStage
+    ? (orders ?? []).filter((order) => {
+        const orderStage = getPipelineStage(order as {
+          status: string;
+          payment_status?: string | null;
+          preview_status?: string | null;
+          preview_round?: number | null;
+          sent_to_print_at?: string | null;
+          shipped_to_customer_at?: string | null;
+          completed_at?: string | null;
+        });
+        return orderStage === stageFilter;
+      })
+    : (orders ?? []);
+
+  const stageLabel = validStage?.label;
+
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-6">
-      <h1 className="mb-6 text-2xl font-bold">הזמנות</h1>
-      {orders && orders.length > 0 ? (
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">הזמנות</h1>
+          {stageLabel && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium bg-muted/60">
+              {stageLabel}
+              <Link
+                href="/admin/orders"
+                className="text-muted-foreground hover:text-foreground transition-colors ms-1"
+                title="הסר סינון"
+              >
+                ✕
+              </Link>
+            </span>
+          )}
+        </div>
+        <span className="text-sm text-muted-foreground">
+          {filteredOrders.length} הזמנות
+        </span>
+      </div>
+
+      {/* Stage filter pills */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        <Link
+          href="/admin/orders"
+          className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+            !validStage
+              ? "bg-foreground text-background border-foreground"
+              : "bg-background text-muted-foreground border-border hover:bg-muted"
+          }`}
+        >
+          הכל
+        </Link>
+        {PIPELINE_STAGES.map((stage) => (
+          <Link
+            key={stage.key}
+            href={`/admin/orders?stage=${stage.key}`}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              stageFilter === stage.key
+                ? "bg-foreground text-background border-foreground"
+                : "bg-background text-muted-foreground border-border hover:bg-muted"
+            }`}
+          >
+            {stage.label}
+          </Link>
+        ))}
+      </div>
+
+      {filteredOrders.length > 0 ? (
         <div className="hidden md:block rounded-xl border bg-background shadow-sm overflow-hidden">
           <Table>
             <TableHeader>
@@ -64,7 +145,7 @@ export default async function AdminOrdersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
+              {filteredOrders.map((order) => (
                 <TableRow
                   key={order.id}
                   className="cursor-pointer transition-colors hover:bg-muted/40 border-b last:border-b-0"
@@ -112,13 +193,15 @@ export default async function AdminOrdersPage() {
           </Table>
         </div>
       ) : (
-        <p className="text-muted-foreground">אין הזמנות עדיין</p>
+        <p className="text-muted-foreground">
+          {validStage ? "אין הזמנות בשלב זה" : "אין הזמנות עדיין"}
+        </p>
       )}
 
       {/* Mobile fallback — simple card list */}
-      {orders && orders.length > 0 && (
+      {filteredOrders.length > 0 && (
         <div className="md:hidden flex flex-col gap-3">
-          {orders.map((order) => (
+          {filteredOrders.map((order) => (
             <div
               key={order.id}
               className="rounded-lg border bg-background p-4"

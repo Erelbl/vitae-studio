@@ -85,6 +85,10 @@ export interface Order {
   preview_feedback: string | null;
   preview_feedback_at: string | null;
   preview_approved_at: string | null;
+  // Fulfillment tracking
+  sent_to_print_at: string | null;
+  shipped_to_customer_at: string | null;
+  completed_at: string | null;
 }
 
 export const DELIVERY_MODES = ["film", "print", "bundle"] as const;

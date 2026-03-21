@@ -19,6 +19,8 @@ import { FilmPanel } from "@/components/admin/FilmPanel";
 import { AdminPhotoUpload } from "@/components/admin/AdminPhotoUpload";
 import { ManualStoryEditor } from "@/components/admin/ManualStoryEditor";
 import { AlbumLengthControl } from "@/components/admin/AlbumLengthControl";
+import { OrderProgressStepper } from "@/components/admin/OrderProgressStepper";
+import { FulfillmentActionButton } from "@/components/admin/FulfillmentActionButton";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 import type { FilmProject, FilmScene } from "@/types/film";
 import { createSignedImageUrl } from "@/lib/storage-image";
@@ -393,6 +395,29 @@ export default async function AdminOrderDetailPage({
           </div>
         </div>
       </div>
+
+      {/* ── Order progress stepper ── */}
+      <section className="rounded-xl border bg-card p-5 space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-base font-semibold">התקדמות הזמנה</h2>
+          <FulfillmentActionButton
+            orderId={orderId}
+            previewStatus={order.preview_status as string | null}
+            sentToPrintAt={order.sent_to_print_at as string | null}
+            shippedToCustomerAt={order.shipped_to_customer_at as string | null}
+            completedAt={order.completed_at as string | null}
+          />
+        </div>
+        <OrderProgressStepper
+          paymentStatus={order.payment_status as string | null}
+          previewStatus={order.preview_status as string | null}
+          previewApprovedAt={order.preview_approved_at as string | null}
+          paymentDate={order.payment_date as string | null}
+          sentToPrintAt={order.sent_to_print_at as string | null}
+          shippedToCustomerAt={order.shipped_to_customer_at as string | null}
+          completedAt={order.completed_at as string | null}
+        />
+      </section>
 
       {/* ── Two-column main area on desktop ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">

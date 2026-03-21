@@ -3,13 +3,13 @@ export const CONTACT_INFO = {
   subtitle: "אנחנו כאן לכל שאלה, בקשה או רעיון",
   email: {
     label: "דוא\"ל",
-    value: "studio@vitaestudio.co.il",
+    value: "doreliraz@gmail.com",
     href: "mailto:studio@vitaestudio.co.il",
   },
   whatsapp: {
     label: "וואטסאפ",
-    value: "050-000-0000", // TODO: replace with real number
-    href: "https://wa.me/972500000000", // TODO: replace with real number
+    value: "050-782-4664", // TODO: replace with real number
+    href: "https://wa.me/972507824664", // TODO: replace with real number
   },
   hours: {
     label: "שעות מענה",

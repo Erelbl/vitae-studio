@@ -1,61 +1,25 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { STATUS_LABELS } from "@/lib/state-machine";
-import type { OrderStatus } from "@/types/order";
+import { getDisplayStatus, getPipelineStage, PIPELINE_STAGES } from "@/lib/display-status";
+import type { PipelineStage } from "@/lib/display-status";
 
-// Statuses grouped by business stage
-const NEW_STATUSES: OrderStatus[] = [
-  "created",
-  "questionnaire_complete",
-  "enrichment_complete",
-  "photos_uploaded",
-];
-const REVIEW_STATUSES: OrderStatus[] = [
-  "preview_ready",
-  "admin_review",
-  "revision_requested",
-];
-const APPROVED_STATUSES: OrderStatus[] = ["approved", "generating_pdf"];
-const DELIVERED_STATUSES: OrderStatus[] = ["delivered"];
-
-const STATUS_COLORS: Partial<Record<OrderStatus, string>> = {
-  photos_uploaded: "bg-gray-100 text-gray-700 border-gray-300",
-  generating_text: "bg-blue-100 text-blue-700 border-blue-300",
-  generating_illustrations: "bg-blue-100 text-blue-700 border-blue-300",
-  text_ready: "bg-blue-50 text-blue-600 border-blue-200",
-  preview_ready: "bg-green-100 text-green-700 border-green-300",
-  admin_review: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  approved: "bg-green-200 text-green-800 border-green-400",
-  delivered: "bg-emerald-100 text-emerald-700 border-emerald-300",
-  error_generation: "bg-red-100 text-red-700 border-red-300",
-  revision_requested: "bg-orange-100 text-orange-700 border-orange-300",
-};
-
-const STATUS_DOT_COLORS: Partial<Record<OrderStatus, string>> = {
-  photos_uploaded: "bg-gray-400",
-  generating_text: "bg-blue-500",
-  generating_illustrations: "bg-blue-500",
-  text_ready: "bg-blue-400",
-  preview_ready: "bg-green-500",
-  admin_review: "bg-yellow-500",
-  approved: "bg-green-600",
-  delivered: "bg-emerald-500",
-  error_generation: "bg-red-500",
-  revision_requested: "bg-orange-500",
-};
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  const colorClass =
-    STATUS_COLORS[status] ?? "bg-gray-50 text-gray-600 border-gray-200";
-  const dotClass = STATUS_DOT_COLORS[status] ?? "bg-gray-400";
-  const label = STATUS_LABELS[status] || status;
+function StatusBadge({ order }: { order: Record<string, unknown> }) {
+  const ds = getDisplayStatus(order as {
+    status: string;
+    payment_status?: string | null;
+    preview_status?: string | null;
+    preview_round?: number | null;
+    sent_to_print_at?: string | null;
+    shipped_to_customer_at?: string | null;
+    completed_at?: string | null;
+  });
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${colorClass}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${ds.color}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
-      {label}
+      <span className={`h-1.5 w-1.5 rounded-full ${ds.dotColor}`} />
+      {ds.label}
     </span>
   );
 }
@@ -64,7 +28,7 @@ export default async function AdminDashboardPage() {
   const supabase = createAdminClient();
   const { data: orders, error } = await supabase
     .from("orders")
-    .select("id, status, person_name, buyer_name, created_at")
+    .select("id, status, person_name, buyer_name, created_at, payment_status, preview_status, preview_round, sent_to_print_at, shipped_to_customer_at, completed_at")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -72,83 +36,67 @@ export default async function AdminDashboardPage() {
   }
 
   const allOrders = orders ?? [];
-  const total = allOrders.length;
-  const newCount = allOrders.filter((o) =>
-    NEW_STATUSES.includes(o.status as OrderStatus)
-  ).length;
-  const reviewCount = allOrders.filter((o) =>
-    REVIEW_STATUSES.includes(o.status as OrderStatus)
-  ).length;
-  const approvedCount = allOrders.filter((o) =>
-    APPROVED_STATUSES.includes(o.status as OrderStatus)
-  ).length;
-  const deliveredCount = allOrders.filter((o) =>
-    DELIVERED_STATUSES.includes(o.status as OrderStatus)
-  ).length;
+
+  // Count orders per pipeline stage
+  const stageCounts: Record<PipelineStage, number> = {
+    awaiting_payment: 0,
+    in_progress: 0,
+    published: 0,
+    feedback: 0,
+    customer_approved: 0,
+    in_print: 0,
+    shipped: 0,
+    completed: 0,
+  };
+
+  for (const order of allOrders) {
+    const stage = getPipelineStage(order as {
+      status: string;
+      payment_status?: string | null;
+      preview_status?: string | null;
+      preview_round?: number | null;
+      sent_to_print_at?: string | null;
+      shipped_to_customer_at?: string | null;
+      completed_at?: string | null;
+    });
+    stageCounts[stage]++;
+  }
 
   const recentOrders = allOrders.slice(0, 8);
 
-  const kpis = [
-    {
-      label: 'סה"כ הזמנות',
-      value: total,
-      icon: "📋",
-      accent: "text-foreground",
-      bg: "bg-background",
-      border: "border",
-    },
-    {
-      label: "חדשות / בתהליך",
-      value: newCount,
-      icon: "🔄",
-      accent: "text-blue-700",
-      bg: "bg-blue-50/60",
-      border: "border-blue-200/80",
-    },
-    {
-      label: "ממתינות לאישור",
-      value: reviewCount,
-      icon: "⏳",
-      accent: "text-yellow-700",
-      bg: "bg-yellow-50/60",
-      border: "border-yellow-200/80",
-    },
-    {
-      label: "מאושרות",
-      value: approvedCount,
-      icon: "✅",
-      accent: "text-green-700",
-      bg: "bg-green-50/60",
-      border: "border-green-200/80",
-    },
-    {
-      label: "נמסרו",
-      value: deliveredCount,
-      icon: "📦",
-      accent: "text-emerald-700",
-      bg: "bg-emerald-50/60",
-      border: "border-emerald-200/80",
-    },
-  ];
-
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-8 md:px-6 space-y-8">
-      <h1 className="text-2xl font-bold">לוח בקרה</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">לוח בקרה</h1>
+        <span className="text-sm text-muted-foreground">
+          {allOrders.length} הזמנות
+        </span>
+      </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {kpis.map((kpi) => (
-          <div
-            key={kpi.label}
-            className={`rounded-xl ${kpi.border} ${kpi.bg} p-5 shadow-sm hover:shadow-md transition-shadow`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-medium text-muted-foreground tracking-wide">{kpi.label}</p>
-              <span className="text-base opacity-70">{kpi.icon}</span>
-            </div>
-            <p className={`text-3xl font-bold tracking-tight ${kpi.accent}`}>{kpi.value}</p>
-          </div>
-        ))}
+      {/* Pipeline Stage Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {PIPELINE_STAGES.map((stage) => {
+          const count = stageCounts[stage.key];
+          return (
+            <Link
+              key={stage.key}
+              href={`/admin/orders?stage=${stage.key}`}
+              className={`group rounded-xl border ${stage.color} ${stage.bg} p-4 shadow-sm hover:shadow-md transition-all duration-150 hover:-translate-y-0.5`}
+            >
+              <p className={`text-3xl font-bold tracking-tight mb-2 ${count > 0 ? "text-foreground" : "text-muted-foreground/50"}`}>
+                {count}
+              </p>
+              <p className="text-xs font-medium text-foreground/80 leading-snug">
+                {stage.label}
+              </p>
+              {stage.subLabel && (
+                <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">
+                  {stage.subLabel}
+                </p>
+              )}
+            </Link>
+          );
+        })}
       </div>
 
       {/* Recent Orders */}
@@ -181,7 +129,7 @@ export default async function AdminDashboardPage() {
                     <th className="px-4 py-3 text-start font-semibold text-foreground w-[120px]">
                       תאריך יצירה
                     </th>
-                    <th className="px-4 py-3 text-start font-semibold text-foreground w-[180px]">
+                    <th className="px-4 py-3 text-start font-semibold text-foreground w-[200px]">
                       סטטוס
                     </th>
                     <th className="px-4 py-3 text-end font-semibold text-foreground w-[100px]" />
@@ -206,7 +154,7 @@ export default async function AdminDashboardPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={order.status as OrderStatus} />
+                        <StatusBadge order={order} />
                       </td>
                       <td className="px-4 py-3 text-end">
                         <Link
@@ -233,7 +181,7 @@ export default async function AdminDashboardPage() {
                     <span className="font-medium">
                       {order.person_name || "—"}
                     </span>
-                    <StatusBadge status={order.status as OrderStatus} />
+                    <StatusBadge order={order} />
                   </div>
                   <div className="text-sm text-muted-foreground flex flex-col gap-0.5 mb-3">
                     <span>{order.buyer_name || "—"}</span>
