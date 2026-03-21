@@ -177,10 +177,11 @@ function CoverPage({
       {slot1.url && (
         <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} editMode={editMode} />
       )}
-      {/* Gradient for text legibility */}
+      {/* Gradient for text legibility — z:10 to stay above the floating image layer (z:2) */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
+          zIndex: 10,
           background: hasImage
             ? "linear-gradient(to bottom, rgba(0,0,0,0.22) 0%, transparent 45%, rgba(0,0,0,0.30) 100%)"
             : "linear-gradient(135deg, rgba(143,159,122,0.10) 0%, transparent 50%, rgba(143,159,122,0.18) 100%)",
@@ -189,7 +190,7 @@ function CoverPage({
       {/* Ornament — fixed decorative element */}
       <div
         className="absolute pointer-events-none"
-        style={{ left: "50%", top: "26%", transform: "translate(-50%, -50%)" }}
+        style={{ zIndex: 10, left: "50%", top: "26%", transform: "translate(-50%, -50%)" }}
       >
         <Ornament size="lg" />
       </div>
@@ -197,6 +198,7 @@ function CoverPage({
       <div
         className="absolute pointer-events-none"
         style={{
+          zIndex: 10,
           left: `${box1.x * 100}%`,
           top: `${box1.y * 100}%`,
           transform: "translate(-50%, -50%)",
@@ -224,6 +226,7 @@ function CoverPage({
         <div
           className="absolute pointer-events-none"
           style={{
+            zIndex: 10,
             left: `${box2.x * 100}%`,
             top: `${box2.y * 100}%`,
             transform: "translate(-50%, -50%)",

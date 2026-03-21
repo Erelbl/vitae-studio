@@ -1018,11 +1018,10 @@ function SpecialPagePanel({
     if (!photo_id) return;
     setNobgLoading(true);
     if (enable) {
-      const res = await fetch(`/api/admin/orders/${orderId}/illustrations/remove-background`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoId: photo_id }),
-      });
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/photos/${photo_id}/remove-background`,
+        { method: "POST" }
+      );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         alert(err.error ?? "שגיאה בהסרת הרקע הלבן");
