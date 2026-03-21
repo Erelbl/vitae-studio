@@ -381,6 +381,7 @@ export function AlbumEditorLayout({
             orderId={orderId}
             pages={editorPages}
             completedPhotos={completedPhotos}
+            personName={personName}
             onPageSelect={handlePageSelect}
             onPageUpdate={handlePageUpdate}
             textDragMode={textDragMode}

@@ -158,6 +158,7 @@ export function AlbumPageEditor({
   orderId,
   pages,
   completedPhotos,
+  personName,
   onPageSelect,
   onPageUpdate,
   textDragMode,
@@ -170,6 +171,8 @@ export function AlbumPageEditor({
   orderId: string;
   pages: EditorPage[];
   completedPhotos: PhotoForEditor[];
+  /** Person name from the order — forwarded to cover page editor for defaults. */
+  personName?: string;
   /**
    * Called when the user selects a page — tells the parent which spread to
    * scroll to and which page is now active for drag operations.
@@ -322,6 +325,8 @@ export function AlbumPageEditor({
             key={selectedPage.id}
             orderId={orderId}
             page={selectedPage}
+            completedPhotos={completedPhotos}
+            personName={personName}
             onSaved={() => router.refresh()}
           />
         )
@@ -874,39 +879,102 @@ function PageEditorPanel({
 }
 
 // ─── SpecialPagePanel ─────────────────────────────────────────────────────────
-// Simplified editor for cover, dedication, back_cover, text_only pages.
-// Supports text editing and manual image upload to slot 1.
+// Editor for cover, dedication, back_cover, text_only pages.
+// Cover gets a two-box editor with position + size controls and nobg support.
+// Other special pages get a single text textarea + manual image upload.
+
+interface CoverBoxEditorState {
+  text: string;
+  y: number;   // 0–1 vertical position
+  size: number; // px
+}
+
+function parseCoverEditorData(
+  textContent: string | null,
+  personName: string
+): { box1: CoverBoxEditorState; box2: CoverBoxEditorState } {
+  const b1: CoverBoxEditorState = { text: personName, y: 0.47, size: 28 };
+  const b2: CoverBoxEditorState = { text: "סיפור חיים בחרוזים", y: 0.63, size: 12 };
+  if (!textContent) return { box1: b1, box2: b2 };
+  try {
+    const parsed = JSON.parse(textContent);
+    if (parsed && typeof parsed === "object" && ("box1" in parsed || "box2" in parsed)) {
+      return {
+        box1: { text: parsed.box1?.text ?? b1.text, y: parsed.box1?.y ?? b1.y, size: parsed.box1?.size ?? b1.size },
+        box2: { text: parsed.box2?.text ?? b2.text, y: parsed.box2?.y ?? b2.y, size: parsed.box2?.size ?? b2.size },
+      };
+    }
+  } catch {}
+  // Legacy plain string → becomes box2 text
+  return { box1: b1, box2: { ...b2, text: textContent } };
+}
 
 function SpecialPagePanel({
   orderId,
   page,
+  completedPhotos,
+  personName,
   onSaved,
 }: {
   orderId: string;
   page: EditorPage;
+  completedPhotos: PhotoForEditor[];
+  personName?: string;
   onSaved: () => void;
 }) {
+  const isCover = page.page_type === "cover";
+
+  // Cover: two-box state
+  const initCover = parseCoverEditorData(page.text_content, personName ?? "");
+  const [coverBox1, setCoverBox1] = useState<CoverBoxEditorState>(initCover.box1);
+  const [coverBox2, setCoverBox2] = useState<CoverBoxEditorState>(initCover.box2);
+  const [coverDirty, setCoverDirty] = useState(false);
+  const [savingCover, setSavingCover] = useState(false);
+
+  // Non-cover: single text
   const [text, setText] = useState(page.text_content ?? "");
   const [textDirty, setTextDirty] = useState(false);
   const [savingText, setSavingText] = useState(false);
+
+  // Slot 1 image state (shared)
   const [slotState, setSlotState] = useState<SlotState>(() => {
     const img = page.images.find((i) => i.slot === 1);
     return img
       ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale, frame_style: img.frame_style ?? null, use_nobg: img.use_nobg ?? false }
       : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false };
   });
+  const [nobgLoading, setNobgLoading] = useState(false);
+
+  async function saveCoverText() {
+    if (!coverDirty) return;
+    setSavingCover(true);
+    const json = JSON.stringify({
+      box1: { text: coverBox1.text, x: 0.5, y: coverBox1.y, size: coverBox1.size },
+      box2: { text: coverBox2.text, x: 0.5, y: coverBox2.y, size: coverBox2.size },
+    });
+    const res = await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_content: json }),
+    });
+    setSavingCover(false);
+    if (res.ok) {
+      setCoverDirty(false);
+      onSaved();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error ?? "שגיאה בשמירת הטקסט");
+    }
+  }
 
   async function saveText() {
     if (!textDirty) return;
     setSavingText(true);
-    const res = await fetch(
-      `/api/admin/orders/${orderId}/pages/${page.id}/edit`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text_content: text }),
-      }
-    );
+    const res = await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_content: text }),
+    });
     setSavingText(false);
     if (res.ok) {
       setTextDirty(false);
@@ -925,15 +993,17 @@ function SpecialPagePanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot: 1, crop_x, crop_y, scale }),
     });
-    // Intentionally NOT calling onSaved() — see note in PageEditorPanel.handleCropSave
   }
 
-  async function handleRemove() {
-    setSlotState({ photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false });
+  async function handleAssign(photo: PhotoForEditor | null) {
+    const newState: SlotState = photo
+      ? { photo_id: photo.id, image_url: photo.illustrationUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false }
+      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false };
+    setSlotState(newState);
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slot: 1, photoId: null }),
+      body: JSON.stringify({ slot: 1, photoId: photo?.id ?? null }),
     });
     onSaved();
   }
@@ -943,49 +1013,150 @@ function SpecialPagePanel({
     onSaved();
   }
 
+  async function handleNobg(enable: boolean) {
+    const photo_id = slotState.photo_id;
+    if (!photo_id) return;
+    setNobgLoading(true);
+    if (enable) {
+      const res = await fetch(`/api/admin/orders/${orderId}/illustrations/remove-background`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId: photo_id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "שגיאה בהסרת הרקע הלבן");
+        setNobgLoading(false);
+        return;
+      }
+      const { nobgUrl } = await res.json();
+      await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot: 1, use_nobg: true }),
+      });
+      setSlotState((prev) => ({ ...prev, use_nobg: true, image_url: nobgUrl }));
+    } else {
+      await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot: 1, use_nobg: false }),
+      });
+      setSlotState((prev) => ({ ...prev, use_nobg: false, image_url: null }));
+      onSaved();
+    }
+    setNobgLoading(false);
+  }
+
   return (
     <div className="space-y-6 pt-1">
-      {/* Text editor — all special page types have editable text */}
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground">
-          טקסט העמוד
-        </label>
-        <textarea
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setTextDirty(true);
-          }}
-          onBlur={saveText}
-          rows={3}
-          dir="rtl"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
-          placeholder="הטקסט של העמוד..."
-        />
-        {textDirty && (
-          <button
-            onClick={saveText}
-            disabled={savingText}
-            className="text-xs text-primary hover:underline disabled:opacity-50"
-          >
-            {savingText ? "שומר..." : "שמור טקסט ←"}
-          </button>
-        )}
-      </div>
+      {isCover ? (
+        /* ── Cover: two independent text boxes ── */
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">טקסטים על הכריכה</p>
+          {/* Box 1 — title */}
+          <div className="space-y-2 rounded-lg border border-border/60 p-3">
+            <p className="text-xs font-medium">כותרת</p>
+            <input
+              type="text"
+              value={coverBox1.text}
+              onChange={(e) => { setCoverBox1((p) => ({ ...p, text: e.target.value })); setCoverDirty(true); }}
+              onBlur={saveCoverText}
+              dir="rtl"
+              placeholder={personName ?? "שם האדם"}
+              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
+            <div className="flex items-center gap-3">
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">מיקום %</label>
+              <input
+                type="number" min={0} max={100} step={1}
+                value={Math.round(coverBox1.y * 100)}
+                onChange={(e) => { setCoverBox1((p) => ({ ...p, y: Number(e.target.value) / 100 })); setCoverDirty(true); }}
+                onBlur={saveCoverText}
+                className="w-14 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">גודל px</label>
+              <input
+                type="number" min={10} max={80} step={1}
+                value={coverBox1.size}
+                onChange={(e) => { setCoverBox1((p) => ({ ...p, size: Number(e.target.value) })); setCoverDirty(true); }}
+                onBlur={saveCoverText}
+                className="w-14 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
+          </div>
+          {/* Box 2 — subtitle */}
+          <div className="space-y-2 rounded-lg border border-border/60 p-3">
+            <p className="text-xs font-medium">תת-כותרת</p>
+            <input
+              type="text"
+              value={coverBox2.text}
+              onChange={(e) => { setCoverBox2((p) => ({ ...p, text: e.target.value })); setCoverDirty(true); }}
+              onBlur={saveCoverText}
+              dir="rtl"
+              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
+            <div className="flex items-center gap-3">
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">מיקום %</label>
+              <input
+                type="number" min={0} max={100} step={1}
+                value={Math.round(coverBox2.y * 100)}
+                onChange={(e) => { setCoverBox2((p) => ({ ...p, y: Number(e.target.value) / 100 })); setCoverDirty(true); }}
+                onBlur={saveCoverText}
+                className="w-14 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">גודל px</label>
+              <input
+                type="number" min={10} max={80} step={1}
+                value={coverBox2.size}
+                onChange={(e) => { setCoverBox2((p) => ({ ...p, size: Number(e.target.value) })); setCoverDirty(true); }}
+                onBlur={saveCoverText}
+                className="w-14 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
+          </div>
+          {coverDirty && (
+            <button onClick={saveCoverText} disabled={savingCover} className="text-xs text-primary hover:underline disabled:opacity-50">
+              {savingCover ? "שומר..." : "שמור ←"}
+            </button>
+          )}
+        </div>
+      ) : (
+        /* ── Non-cover: single text editor ── */
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground">טקסט העמוד</label>
+          <textarea
+            value={text}
+            onChange={(e) => { setText(e.target.value); setTextDirty(true); }}
+            onBlur={saveText}
+            rows={3}
+            dir="rtl"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 leading-relaxed"
+            placeholder="הטקסט של העמוד..."
+          />
+          {textDirty && (
+            <button onClick={saveText} disabled={savingText} className="text-xs text-primary hover:underline disabled:opacity-50">
+              {savingText ? "שומר..." : "שמור טקסט ←"}
+            </button>
+          )}
+        </div>
+      )}
 
-      {/* Background image upload — slot 1, no photo picker */}
+      {/* Background image — slot 1 */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">תמונת רקע</p>
         <ImageSlotEditor
           slot={1}
           slotState={slotState}
-          completedPhotos={[]}
+          completedPhotos={isCover ? completedPhotos : []}
           orderId={orderId}
           pageId={page.id}
-          hidePhotoPicker
-          onAssign={handleRemove}
+          hidePhotoPicker={!isCover}
+          nobgLoading={nobgLoading}
+          onAssign={handleAssign}
           onCropSave={(crop_x, crop_y, scale) => handleCropSave(crop_x, crop_y, scale)}
           onManualUpload={handleManualUpload}
+          onToggleNobg={isCover ? handleNobg : undefined}
         />
       </div>
     </div>

@@ -118,6 +118,45 @@ function resolveSlot(
   return { url: null, crop: { crop_x: 0.5, crop_y: 0.5, scale: 1 }, frameStyle: null };
 }
 
+// ─── Cover text helpers ───────────────────────────────────────────────────────
+
+interface CoverBox {
+  text: string;
+  x: number;
+  y: number;
+  size: number;
+}
+
+/**
+ * Parse cover text_content into two independent text boxes.
+ *
+ * text_content can be:
+ *  - null              → defaults (personName + "סיפור חיים בחרוזים")
+ *  - JSON with box1/2  → use stored values (new format)
+ *  - plain string      → legacy tagline, becomes box2.text
+ */
+export function parseCoverText(
+  textContent: string | null,
+  personName: string
+): { box1: CoverBox; box2: CoverBox | null } {
+  const b1: CoverBox = { text: personName, x: 0.5, y: 0.47, size: 28 };
+  const b2: CoverBox = { text: "סיפור חיים בחרוזים", x: 0.5, y: 0.63, size: 12 };
+  if (!textContent) return { box1: b1, box2: b2 };
+  try {
+    const parsed = JSON.parse(textContent);
+    if (parsed && typeof parsed === "object" && ("box1" in parsed || "box2" in parsed)) {
+      return {
+        box1: { ...b1, ...(parsed.box1 ?? {}) },
+        box2: "box2" in parsed
+          ? (parsed.box2 ? { ...b2, ...parsed.box2 } : null)
+          : b2,
+      };
+    }
+  } catch {}
+  // Legacy plain string: becomes box2 text
+  return { box1: b1, box2: { ...b2, text: textContent } };
+}
+
 // ─── Cover ────────────────────────────────────────────────────────────────────
 
 function CoverPage({
@@ -130,31 +169,82 @@ function CoverPage({
   editMode?: boolean;
 }) {
   const slot1 = resolveSlot(page, 1);
+  const { box1, box2 } = parseCoverText(page.text_content, personName);
+  const hasImage = Boolean(slot1.url);
+
   return (
     <PageShell className="bg-secondary" editMode={editMode}>
-      {/* Optional manually-uploaded background image */}
-      {slot1.url && <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} editMode={editMode} />}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/18" />
-      <div className="relative z-10 flex h-full flex-col items-center justify-center text-center p-8">
-        <div className={`border-2 border-primary/20 rounded-xl p-6 w-full max-w-[80%] ${slot1.url ? "bg-black/40 backdrop-blur-sm" : ""}`}>
-          <Ornament className="mb-5" size="lg" />
-          <p className={`text-[0.6rem] uppercase tracking-[0.22em] mb-4 font-semibold ${slot1.url ? "text-white/70" : "text-primary/60"}`}>
-            סיפור חיים בחרוזים
-          </p>
-          <h1 className={`text-3xl font-semibold leading-tight ${slot1.url ? "text-white" : "text-foreground"}`}>
-            {personName}
-          </h1>
-          {page.text_content && (
-            <p
-              className={`mt-4 text-xs italic leading-relaxed ${slot1.url ? "text-white/80" : "text-muted-foreground"}`}
-              style={{ fontFamily: "YardenAlbum, serif" }}
-            >
-              {page.text_content}
-            </p>
-          )}
-          <Ornament className="mt-5" />
-        </div>
+      {slot1.url && (
+        <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} editMode={editMode} />
+      )}
+      {/* Gradient for text legibility */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: hasImage
+            ? "linear-gradient(to bottom, rgba(0,0,0,0.22) 0%, transparent 45%, rgba(0,0,0,0.30) 100%)"
+            : "linear-gradient(135deg, rgba(143,159,122,0.10) 0%, transparent 50%, rgba(143,159,122,0.18) 100%)",
+        }}
+      />
+      {/* Ornament — fixed decorative element */}
+      <div
+        className="absolute pointer-events-none"
+        style={{ left: "50%", top: "26%", transform: "translate(-50%, -50%)" }}
+      >
+        <Ornament size="lg" />
       </div>
+      {/* Box 1 — title */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          left: `${box1.x * 100}%`,
+          top: `${box1.y * 100}%`,
+          transform: "translate(-50%, -50%)",
+          width: "82%",
+          textAlign: "center",
+        }}
+      >
+        <p
+          style={{
+            fontFamily: "YardenAlbum, serif",
+            fontSize: `${box1.size}px`,
+            color: hasImage ? "white" : "var(--foreground)",
+            textShadow: hasImage
+              ? "0 2px 10px rgba(0,0,0,0.75), 0 1px 3px rgba(0,0,0,0.5)"
+              : undefined,
+            lineHeight: 1.3,
+            fontWeight: 600,
+          }}
+        >
+          {box1.text}
+        </p>
+      </div>
+      {/* Box 2 — subtitle */}
+      {box2 && box2.text && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left: `${box2.x * 100}%`,
+            top: `${box2.y * 100}%`,
+            transform: "translate(-50%, -50%)",
+            width: "82%",
+            textAlign: "center",
+          }}
+        >
+          <p
+            style={{
+              fontFamily: "YardenAlbum, serif",
+              fontSize: `${box2.size}px`,
+              color: hasImage ? "rgba(255,255,255,0.82)" : "var(--muted-foreground)",
+              textShadow: hasImage ? "0 1px 6px rgba(0,0,0,0.65)" : undefined,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+            }}
+          >
+            {box2.text}
+          </p>
+        </div>
+      )}
       <PageNumber number={page.page_number} light />
     </PageShell>
   );

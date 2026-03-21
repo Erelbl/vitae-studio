@@ -15,6 +15,7 @@
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import type { PreviewData, PreviewPage, LayoutType, PageImageSlot } from "@/types/page";
+import { parseCoverText } from "@/components/album/AlbumPageView";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -263,65 +264,62 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
     if (slot1.url) {
       buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el);
     }
+    const hasImage = Boolean(slot1.url);
     // Gradient overlay
     const grad = document.createElement("div");
     Object.assign(grad.style, {
       position: "absolute",
       inset: "0",
-      background: "linear-gradient(to bottom right, rgba(143,159,122,0.1), transparent, rgba(143,159,122,0.18))",
+      background: hasImage
+        ? "linear-gradient(to bottom, rgba(0,0,0,0.22) 0%, transparent 45%, rgba(0,0,0,0.30) 100%)"
+        : "linear-gradient(135deg, rgba(143,159,122,0.10) 0%, transparent 50%, rgba(143,159,122,0.18) 100%)",
     });
     el.appendChild(grad);
 
-    // Title
-    const titleBox = document.createElement("div");
-    Object.assign(titleBox.style, {
+    const { box1, box2 } = parseCoverText(page.text_content, personName);
+
+    // Box 1 — title
+    const b1El = document.createElement("p");
+    Object.assign(b1El.style, {
       position: "absolute",
-      inset: "0",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
+      left: `${box1.x * 100}%`,
+      top: `${box1.y * 100}%`,
+      transform: "translate(-50%, -50%)",
+      width: "82%",
       textAlign: "center",
-      padding: "32px",
+      fontFamily: "YardenAlbum, serif",
+      fontSize: `${box1.size}px`,
+      fontWeight: "600",
+      lineHeight: "1.3",
+      color: hasImage ? "white" : "#1a1a1a",
+      textShadow: hasImage ? "0 2px 10px rgba(0,0,0,0.75)" : "none",
       zIndex: "10",
     });
-    const hasImage = Boolean(slot1.url);
-    const subtitle = document.createElement("p");
-    Object.assign(subtitle.style, {
-      fontSize: "10px",
-      textTransform: "uppercase",
-      letterSpacing: "0.22em",
-      marginBottom: "16px",
-      fontWeight: "600",
-      color: hasImage ? "rgba(255,255,255,0.7)" : "rgba(143,159,122,0.6)",
-    });
-    subtitle.textContent = "סיפור חיים בחרוזים";
-    titleBox.appendChild(subtitle);
+    b1El.textContent = box1.text;
+    el.appendChild(b1El);
 
-    const h1 = document.createElement("h1");
-    Object.assign(h1.style, {
-      fontSize: "48px",
-      fontWeight: "600",
-      lineHeight: "1.2",
-      color: hasImage ? "white" : "#1a1a1a",
-    });
-    h1.textContent = personName;
-    titleBox.appendChild(h1);
-
-    if (page.text_content) {
-      const quote = document.createElement("p");
-      Object.assign(quote.style, {
-        marginTop: "16px",
-        fontSize: "14px",
-        fontStyle: "italic",
-        lineHeight: "1.6",
+    // Box 2 — subtitle
+    if (box2 && box2.text) {
+      const b2El = document.createElement("p");
+      Object.assign(b2El.style, {
+        position: "absolute",
+        left: `${box2.x * 100}%`,
+        top: `${box2.y * 100}%`,
+        transform: "translate(-50%, -50%)",
+        width: "82%",
+        textAlign: "center",
         fontFamily: "YardenAlbum, serif",
-        color: hasImage ? "rgba(255,255,255,0.8)" : "#666",
+        fontSize: `${box2.size}px`,
+        letterSpacing: "0.18em",
+        textTransform: "uppercase",
+        color: hasImage ? "rgba(255,255,255,0.82)" : "rgba(143,159,122,0.7)",
+        textShadow: hasImage ? "0 1px 6px rgba(0,0,0,0.65)" : "none",
+        zIndex: "10",
       });
-      quote.textContent = page.text_content;
-      titleBox.appendChild(quote);
+      b2El.textContent = box2.text;
+      el.appendChild(b2El);
     }
-    el.appendChild(titleBox);
+
     return el;
   }
 
