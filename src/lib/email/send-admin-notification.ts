@@ -32,37 +32,37 @@ export async function sendAdminNotificationEmail({
 
   const isApproval = type === "approved";
   const subject = isApproval
-    ? `✅ לקוח אישר תצוגה מקדימה — ${personName}`
-    : `💬 לקוח שלח הערות — ${personName}`;
+    ? `לקוח אישר תצוגה מקדימה - ${personName}`
+    : `לקוח שלח הערות - ${personName}`;
 
   const bodyContent = isApproval
-    ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;">
+    ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;text-align:right;">
         הלקוח <strong>${buyerName}</strong> אישר את התצוגה המקדימה של האלבום עבור <strong>${personName}</strong>.
       </p>
-      <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;">
+      <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;text-align:right;">
         סבב: ${previewRound}
       </p>`
-    : `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;">
+    : `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;text-align:right;">
         הלקוח <strong>${buyerName}</strong> שלח הערות על התצוגה המקדימה של האלבום עבור <strong>${personName}</strong>.
       </p>
-      <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;">
+      <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4a4a4a;text-align:right;">
         סבב: ${previewRound}
       </p>
       <div style="margin:16px 0;padding:12px 16px;background:#f5f5f5;border-radius:8px;border-right:3px solid #8F9F7A;">
-        <p style="margin:0;font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;">${escapeHtml(feedback || "")}</p>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;text-align:right;">${escapeHtml(feedback || "")}</p>
       </div>`;
 
   const html = `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head><meta charset="utf-8" /></head>
-<body style="margin:0;padding:0;background-color:#f9f9f9;font-family:Arial,Helvetica,sans-serif;">
+<body style="margin:0;padding:0;background-color:#f9f9f9;font-family:Arial,Helvetica,sans-serif;direction:rtl;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9f9f9;">
     <tr><td align="center" style="padding:32px 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:10px;overflow:hidden;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:10px;overflow:hidden;direction:rtl;">
         <tr><td style="background-color:${isApproval ? "#4a7c59" : "#b8860b"};padding:20px 24px;text-align:center;">
-          <h1 style="margin:0;font-size:18px;color:#ffffff;">${isApproval ? "✅ תצוגה מקדימה אושרה" : "💬 הערות מלקוח"}</h1>
+          <h1 style="margin:0;font-size:18px;color:#ffffff;">${isApproval ? "תצוגה מקדימה אושרה" : "הערות מלקוח"}</h1>
         </td></tr>
-        <tr><td style="padding:24px;">
+        <tr><td style="padding:24px;direction:rtl;text-align:right;">
           ${bodyContent}
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
             <tr><td align="center">

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { STATUS_LABELS } from "@/lib/state-machine";
+import { getDisplayStatus } from "@/lib/display-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { OrderStatus, StorySource, ManualSpread, PreviewStatus } from "@/types/order";
@@ -68,28 +69,13 @@ const GENERATING_IN_PROGRESS_STATUSES: OrderStatus[] = [
 // A processing_job that has been "processing" longer than this is stale
 const STALE_JOB_MS = 10 * 60 * 1000; // 10 minutes
 
-const STATUS_COLORS: Partial<Record<OrderStatus, string>> = {
-  photos_uploaded: "bg-gray-100 text-gray-700 border-gray-300",
-  generating_text: "bg-blue-100 text-blue-700 border-blue-300",
-  generating_illustrations: "bg-blue-100 text-blue-700 border-blue-300",
-  text_ready: "bg-blue-50 text-blue-600 border-blue-200",
-  preview_ready: "bg-green-100 text-green-700 border-green-300",
-  admin_review: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  approved: "bg-green-200 text-green-800 border-green-400",
-  delivered: "bg-emerald-100 text-emerald-700 border-emerald-300",
-  error_generation: "bg-red-100 text-red-700 border-red-300",
-  revision_requested: "bg-orange-100 text-orange-700 border-orange-300",
-};
-
-function StatusPill({ status }: { status: OrderStatus }) {
-  const colorClass =
-    STATUS_COLORS[status] ?? "bg-gray-50 text-gray-600 border-gray-200";
-  const label = STATUS_LABELS[status] || status;
+function StatusPill({ order }: { order: Record<string, unknown> }) {
+  const ds = getDisplayStatus(order as { status: string; payment_status?: string | null; preview_status?: string | null; preview_round?: number | null });
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${colorClass}`}
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${ds.color}`}
     >
-      {label}
+      {ds.label}
     </span>
   );
 }
@@ -402,7 +388,7 @@ export default async function AdminOrderDetailPage({
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <StatusPill status={currentStatus} />
+            <StatusPill order={order} />
             <DeleteOrderButton orderId={orderId} personName={order.person_name} />
           </div>
         </div>
@@ -429,11 +415,14 @@ export default async function AdminOrderDetailPage({
                 <ImproveRhymeButton orderId={orderId} disabled={generateDisabled} />
               )}
               <PublishButton orderId={orderId} disabled={!canPublish} />
-              {currentStatus === "approved" && previewStatus !== "changes_requested" && (
-                <span className="text-sm text-green-700 font-medium">✓ פורסם</span>
+              {currentStatus === "approved" && previewStatus === "approved" && (
+                <span className="text-sm text-green-700 font-medium">✓ אושר ע״י הלקוח</span>
+              )}
+              {currentStatus === "approved" && previewStatus === "sent_to_customer" && (
+                <span className="text-sm text-blue-600 font-medium">↗ פורסם ללקוח</span>
               )}
               {currentStatus === "approved" && previewStatus === "changes_requested" && (
-                <span className="text-sm text-orange-600 font-medium">⟳ ממתין לשינויים</span>
+                <span className="text-sm text-orange-600 font-medium">⟳ התקבלו הערות</span>
               )}
             </div>
           </div>

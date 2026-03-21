@@ -1,6 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -9,47 +8,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { STATUS_LABELS } from "@/lib/state-machine";
-import type { OrderStatus } from "@/types/order";
+import { getDisplayStatus } from "@/lib/display-status";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 
-const STATUS_COLORS: Partial<Record<OrderStatus, string>> = {
-  photos_uploaded: "bg-gray-100 text-gray-700 border-gray-300",
-  generating_text: "bg-blue-100 text-blue-700 border-blue-300",
-  generating_illustrations: "bg-blue-100 text-blue-700 border-blue-300",
-  text_ready: "bg-blue-50 text-blue-600 border-blue-200",
-  preview_ready: "bg-green-100 text-green-700 border-green-300",
-  admin_review: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  approved: "bg-green-200 text-green-800 border-green-400",
-  delivered: "bg-emerald-100 text-emerald-700 border-emerald-300",
-  error_generation: "bg-red-100 text-red-700 border-red-300",
-  revision_requested: "bg-orange-100 text-orange-700 border-orange-300",
-};
-
-const STATUS_DOT_COLORS: Partial<Record<OrderStatus, string>> = {
-  photos_uploaded: "bg-gray-400",
-  generating_text: "bg-blue-500",
-  generating_illustrations: "bg-blue-500",
-  text_ready: "bg-blue-400",
-  preview_ready: "bg-green-500",
-  admin_review: "bg-yellow-500",
-  approved: "bg-green-600",
-  delivered: "bg-emerald-500",
-  error_generation: "bg-red-500",
-  revision_requested: "bg-orange-500",
-};
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  const colorClass = STATUS_COLORS[status] ?? "bg-gray-50 text-gray-600 border-gray-200";
-  const dotClass = STATUS_DOT_COLORS[status] ?? "bg-gray-400";
-  const label = STATUS_LABELS[status] || status;
+function StatusBadge({ order }: { order: Record<string, unknown> }) {
+  const ds = getDisplayStatus(order as { status: string; payment_status?: string | null; preview_status?: string | null; preview_round?: number | null });
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${colorClass}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${ds.color}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
-      {label}
+      <span className={`h-1.5 w-1.5 rounded-full ${ds.dotColor}`} />
+      {ds.label}
     </span>
   );
 }
@@ -82,7 +52,7 @@ export default async function AdminOrdersPage() {
                 <TableHead className="px-4 py-3 font-semibold text-foreground w-[130px]">
                   טלפון
                 </TableHead>
-                <TableHead className="px-4 py-3 font-semibold text-foreground w-[180px]">
+                <TableHead className="px-4 py-3 font-semibold text-foreground w-[220px]">
                   סטטוס
                 </TableHead>
                 <TableHead className="px-4 py-3 font-semibold text-foreground w-[120px]">
@@ -104,17 +74,17 @@ export default async function AdminOrdersPage() {
                       href={`/admin/orders/${order.id}`}
                       className="hover:text-primary transition-colors"
                     >
-                      {order.person_name || "—"}
+                      {order.person_name || "-"}
                     </Link>
                   </TableCell>
                   <TableCell className="px-4 py-3 text-muted-foreground">
-                    {order.buyer_name || "—"}
+                    {order.buyer_name || "-"}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-muted-foreground font-mono text-sm">
-                    {order.buyer_phone || "—"}
+                    {order.buyer_phone || "-"}
                   </TableCell>
                   <TableCell className="px-4 py-3">
-                    <StatusBadge status={order.status as OrderStatus} />
+                    <StatusBadge order={order} />
                   </TableCell>
                   <TableCell className="px-4 py-3 text-muted-foreground text-sm">
                     {new Date(order.created_at).toLocaleDateString("he-IL", {
@@ -158,12 +128,12 @@ export default async function AdminOrdersPage() {
                   href={`/admin/orders/${order.id}`}
                   className="font-medium hover:text-primary transition-colors"
                 >
-                  {order.person_name || "—"}
+                  {order.person_name || "-"}
                 </Link>
-                <StatusBadge status={order.status as OrderStatus} />
+                <StatusBadge order={order} />
               </div>
               <div className="text-sm text-muted-foreground flex flex-col gap-0.5 mb-3">
-                <span>{order.buyer_name || "—"}</span>
+                <span>{order.buyer_name || "-"}</span>
                 <span>
                   {new Date(order.created_at).toLocaleDateString("he-IL", {
                     timeZone: "Asia/Jerusalem",
