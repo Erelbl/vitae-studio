@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { STATUS_LABELS } from "@/lib/state-machine";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OrderStatus, StorySource, ManualSpread } from "@/types/order";
+import type { OrderStatus, StorySource, ManualSpread, PreviewStatus } from "@/types/order";
 import type { QuestionnaireResponses } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
@@ -351,7 +351,10 @@ export default async function AdminOrderDetailPage({
   const currentStatus = order.status as OrderStatus;
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
 
-  const canPublish = PUBLISHABLE_STATUSES.includes(currentStatus);
+  const previewStatus = (order.preview_status as PreviewStatus | null) || "draft";
+  const canPublish =
+    PUBLISHABLE_STATUSES.includes(currentStatus) ||
+    (currentStatus === "approved" && previewStatus === "changes_requested");
   const isGenerating = GENERATING_IN_PROGRESS_STATUSES.includes(currentStatus);
   const generateDisabled = isGenerating || currentStatus === "delivered";
   const pollerActive = isGenerating;
@@ -426,8 +429,11 @@ export default async function AdminOrderDetailPage({
                 <ImproveRhymeButton orderId={orderId} disabled={generateDisabled} />
               )}
               <PublishButton orderId={orderId} disabled={!canPublish} />
-              {currentStatus === "approved" && (
+              {currentStatus === "approved" && previewStatus !== "changes_requested" && (
                 <span className="text-sm text-green-700 font-medium">✓ פורסם</span>
+              )}
+              {currentStatus === "approved" && previewStatus === "changes_requested" && (
+                <span className="text-sm text-orange-600 font-medium">⟳ ממתין לשינויים</span>
               )}
             </div>
           </div>
@@ -589,6 +595,18 @@ export default async function AdminOrderDetailPage({
         </section>
       </div>
 
+      {/* ── Preview review status ── */}
+      {(order.preview_status && order.preview_status !== "draft") && (
+        <PreviewStatusSection
+          previewStatus={order.preview_status as PreviewStatus}
+          previewRound={(order.preview_round as number) || 0}
+          previewSentAt={order.preview_sent_at as string | null}
+          previewFeedback={order.preview_feedback as string | null}
+          previewFeedbackAt={order.preview_feedback_at as string | null}
+          previewApprovedAt={order.preview_approved_at as string | null}
+        />
+      )}
+
       {/* ── Manual Story Editor ── */}
       <Section title="מקור הסיפור">
         <ManualStoryEditor
@@ -689,6 +707,70 @@ export default async function AdminOrderDetailPage({
         </Section>
       )}
     </div>
+  );
+}
+
+// ── Preview status section ──────────────────────────────────────────────────
+
+const PREVIEW_STATUS_LABELS: Record<PreviewStatus, string> = {
+  draft: "טיוטה",
+  sent_to_customer: "נשלח ללקוח",
+  changes_requested: "הלקוח ביקש שינויים",
+  approved: "אושר ע״י הלקוח",
+};
+
+const PREVIEW_STATUS_COLORS: Record<PreviewStatus, string> = {
+  draft: "bg-gray-100 text-gray-700 border-gray-300",
+  sent_to_customer: "bg-blue-100 text-blue-700 border-blue-300",
+  changes_requested: "bg-orange-100 text-orange-700 border-orange-300",
+  approved: "bg-green-100 text-green-700 border-green-300",
+};
+
+function PreviewStatusSection({
+  previewStatus,
+  previewRound,
+  previewSentAt,
+  previewFeedback,
+  previewFeedbackAt,
+  previewApprovedAt,
+}: {
+  previewStatus: PreviewStatus;
+  previewRound: number;
+  previewSentAt: string | null;
+  previewFeedback: string | null;
+  previewFeedbackAt: string | null;
+  previewApprovedAt: string | null;
+}) {
+  const colorClass = PREVIEW_STATUS_COLORS[previewStatus] ?? "bg-gray-50 text-gray-600 border-gray-200";
+  const statusLabel = PREVIEW_STATUS_LABELS[previewStatus] ?? previewStatus;
+
+  return (
+    <section className="rounded-xl border bg-card p-5 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">סטטוס תצוגה מקדימה</h2>
+        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${colorClass}`}>
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="flex gap-6 text-sm text-muted-foreground">
+        {previewRound > 0 && <span>סבב: {previewRound}</span>}
+        {previewSentAt && <span>נשלח: {fmtDate(previewSentAt)}</span>}
+        {previewApprovedAt && <span>אושר: {fmtDate(previewApprovedAt)}</span>}
+      </div>
+
+      {previewStatus === "changes_requested" && previewFeedback && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-1">
+          <div className="flex items-center justify-between text-xs text-orange-700">
+            <span className="font-medium">הערות מהלקוח</span>
+            {previewFeedbackAt && <span>{fmtDate(previewFeedbackAt)}</span>}
+          </div>
+          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+            {previewFeedback}
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
 

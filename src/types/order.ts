@@ -25,6 +25,9 @@ export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 export const PERSON_GENDERS = ["male", "female"] as const;
 export type PersonGender = (typeof PERSON_GENDERS)[number];
 
+export const PREVIEW_STATUSES = ["draft", "sent_to_customer", "changes_requested", "approved"] as const;
+export type PreviewStatus = (typeof PREVIEW_STATUSES)[number];
+
 export const STORY_SOURCES = ["questionnaire", "manual"] as const;
 export type StorySource = (typeof STORY_SOURCES)[number];
 
@@ -76,6 +79,12 @@ export interface Order {
   story_source: StorySource;
   manual_spreads_json: ManualSpread[] | null;
   target_page_count: number;
+  preview_status: PreviewStatus;
+  preview_sent_at: string | null;
+  preview_round: number;
+  preview_feedback: string | null;
+  preview_feedback_at: string | null;
+  preview_approved_at: string | null;
 }
 
 export const DELIVERY_MODES = ["film", "print", "bundle"] as const;

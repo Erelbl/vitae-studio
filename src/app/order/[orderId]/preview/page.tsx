@@ -2,7 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { validateAccessToken } from "@/lib/access-token";
 import { loadPreviewData } from "@/lib/preview/loader";
 import { AlbumPreview } from "@/components/album/AlbumPreview";
-import type { OrderStatus } from "@/types/order";
+import { PreviewActions } from "@/components/preview/PreviewActions";
+import type { OrderStatus, PreviewStatus } from "@/types/order";
 
 // Statuses where the customer is allowed to see the album preview.
 // Orders not yet approved by admin show a "coming soon" message.
@@ -26,7 +27,9 @@ export default async function PreviewPage({
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, person_name, status, access_token, access_token_expires_at")
+    .select(
+      "id, person_name, status, access_token, access_token_expires_at, preview_status"
+    )
     .eq("id", orderId)
     .single();
 
@@ -56,20 +59,32 @@ export default async function PreviewPage({
 
   const personName = (order.person_name as string | null) || "האדם היקר";
   const previewData = await loadPreviewData(orderId, personName);
+  const previewStatus = (order.preview_status as PreviewStatus) || "draft";
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:py-14">
-      {/* Page header */}
-      <div className="mb-8 text-center">
-        <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold mb-3">
-          תצוגה מקדימה
-        </p>
-        <h1 className="text-2xl font-semibold sm:text-3xl">
-          סיפורו של {personName}
-        </h1>
+    <div>
+      <div className="mx-auto max-w-3xl px-4 py-10 sm:py-14">
+        {/* Page header */}
+        <div className="mb-8 text-center">
+          <p className="text-xs uppercase tracking-[0.18em] text-primary/60 font-semibold mb-3">
+            תצוגה מקדימה
+          </p>
+          <h1 className="text-2xl font-semibold sm:text-3xl">
+            סיפורו של {personName}
+          </h1>
+        </div>
+
+        <AlbumPreview data={previewData} />
       </div>
 
-      <AlbumPreview data={previewData} />
+      {/* Action bar: approve or send feedback */}
+      {currentStatus === "approved" && (
+        <PreviewActions
+          orderId={orderId}
+          token={token}
+          previewStatus={previewStatus}
+        />
+      )}
     </div>
   );
 }
