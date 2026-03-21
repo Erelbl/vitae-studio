@@ -27,6 +27,25 @@ const PAGE_SIZE_PX = 1200;
 /** Physical album page size in mm (25 cm = 250 mm). */
 const PAGE_MM = 250;
 
+/**
+ * Approximate pixel width of one album page as seen in the admin editor preview.
+ * Admin layout: max-w-6xl (1152px) – px-4 (32px) – controls col (380px) – gap-6 (24px) = 716px
+ * AlbumPreview uses grid-cols-2 for spreads → each page ≈ 358px.
+ * Font sizes and paddings in AlbumPageView are sized for this reference width.
+ */
+const PREVIEW_REFERENCE_PX = 358;
+
+/**
+ * Multiply all preview px values by this factor to match the PDF render container.
+ * ≈ 3.35 — prevents text appearing ~3× smaller in the PDF than in the preview.
+ */
+const PDF_SCALE = PAGE_SIZE_PX / PREVIEW_REFERENCE_PX;
+
+/** Scale a preview-sized px value to the PDF render size, returning a CSS string. */
+function sp(px: number): string {
+  return `${Math.round(px * PDF_SCALE)}px`;
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type Spread = [PreviewPage, PreviewPage | null];
@@ -72,15 +91,20 @@ function resolveSlot(
   return { url: null, cropX: 0.5, cropY: 0.5, scale: 1 };
 }
 
-/** Resolve font size from legacy enum or numeric px. */
+/** Resolve font size from legacy enum or numeric px, scaled to the PDF render size. */
 function resolveTextSize(textSize?: string | null, fontSizePx?: number | null): string {
-  if (fontSizePx != null && fontSizePx > 0) return `${fontSizePx}px`;
-  switch (textSize) {
-    case "sm": return "12px";
-    case "lg": return "18px";
-    case "xl": return "22px";
-    default:   return "15px";
+  let base: number;
+  if (fontSizePx != null && fontSizePx > 0) {
+    base = fontSizePx;
+  } else {
+    switch (textSize) {
+      case "sm": base = 12; break;
+      case "lg": base = 18; break;
+      case "xl": base = 22; break;
+      default:   base = 15;
+    }
   }
+  return sp(base);
 }
 
 /** Build a full-bleed image element for a page. */
@@ -178,7 +202,7 @@ function buildTextOverlay(
       right: "0",
       bottom: "0",
       background: "linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0.4), transparent)",
-      padding: "64px 20px 24px 20px",
+      padding: `${sp(64)} ${sp(20)} ${sp(24)} ${sp(20)}`,
       zIndex: "10",
     });
   } else if (position === "top") {
@@ -188,7 +212,7 @@ function buildTextOverlay(
       right: "0",
       top: "0",
       background: "linear-gradient(to bottom, rgba(0,0,0,0.72), rgba(0,0,0,0.4), transparent)",
-      padding: "24px 20px 64px 20px",
+      padding: `${sp(24)} ${sp(20)} ${sp(64)} ${sp(20)}`,
       zIndex: "10",
     });
   } else {
@@ -198,7 +222,7 @@ function buildTextOverlay(
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      padding: "24px",
+      padding: sp(24),
       zIndex: "10",
     });
   }
@@ -220,8 +244,8 @@ function buildTextOverlay(
     Object.assign(pill.style, {
       background: "rgba(0,0,0,0.45)",
       backdropFilter: "blur(6px)",
-      borderRadius: "16px",
-      padding: "16px 20px",
+      borderRadius: sp(16),
+      padding: `${sp(16)} ${sp(20)}`,
       maxWidth: "86%",
       textAlign: align,
     });
@@ -288,7 +312,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       width: "82%",
       textAlign: "center",
       fontFamily: "YardenAlbum, serif",
-      fontSize: `${box1.size}px`,
+      fontSize: sp(box1.size),
       fontWeight: "600",
       lineHeight: "1.3",
       color: hasImage ? "white" : "#1a1a1a",
@@ -309,7 +333,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
         width: "82%",
         textAlign: "center",
         fontFamily: "YardenAlbum, serif",
-        fontSize: `${box2.size}px`,
+        fontSize: sp(box2.size),
         letterSpacing: "0.18em",
         textTransform: "uppercase",
         color: hasImage ? "rgba(255,255,255,0.82)" : "rgba(143,159,122,0.7)",
@@ -337,19 +361,19 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       alignItems: "center",
       justifyContent: "center",
       textAlign: "center",
-      padding: "32px",
-      gap: "20px",
+      padding: sp(32),
+      gap: sp(20),
       zIndex: "10",
     });
     if (page.text_content) {
       const p = document.createElement("p");
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
-        fontSize: "18px",
+        fontSize: sp(18),
         fontStyle: "italic",
         lineHeight: "1.8",
         whiteSpace: "pre-line",
-        maxWidth: "240px",
+        maxWidth: sp(240),
         color: slot1.url ? "white" : "#666",
         textShadow: slot1.url ? "0 1px 3px rgba(0,0,0,0.7)" : "none",
       });
@@ -358,7 +382,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
     }
     const brand = document.createElement("span");
     Object.assign(brand.style, {
-      fontSize: "14px",
+      fontSize: sp(14),
       fontWeight: "600",
       letterSpacing: "0.05em",
       color: slot1.url ? "white" : "#8F9F7A",
@@ -383,18 +407,18 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       alignItems: "center",
       justifyContent: "center",
       textAlign: "center",
-      padding: "40px",
+      padding: sp(40),
       zIndex: "10",
     });
     if (page.text_content) {
       const p = document.createElement("p");
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
-        fontSize: "18px",
+        fontSize: sp(18),
         fontStyle: "italic",
         lineHeight: "1.8",
         whiteSpace: "pre-line",
-        maxWidth: "260px",
+        maxWidth: sp(260),
         color: slot1.url ? "white" : "#666",
         textShadow: slot1.url ? "0 1px 3px rgba(0,0,0,0.7)" : "none",
       });
@@ -424,7 +448,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      padding: "40px",
+      padding: sp(40),
     });
     if (page.text_content) {
       const p = document.createElement("p");
@@ -459,7 +483,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      padding: "16px 20px",
+      padding: `${sp(16)} ${sp(20)}`,
     });
     if (page.text_content) {
       const p = document.createElement("p");
@@ -504,7 +528,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      padding: "16px",
+      padding: sp(16),
     });
     if (page.text_content) {
       const p = document.createElement("p");
@@ -552,7 +576,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
         right: "0",
         bottom: "0",
         background: "rgba(0,0,0,0.55)",
-        padding: "4px 12px",
+        padding: `${sp(4)} ${sp(12)}`,
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
         color: "white",
