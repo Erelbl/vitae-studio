@@ -43,6 +43,16 @@ interface AlbumPreviewProps {
   ) => void;
   /** Called when the user clicks outside the selection box to dismiss the overlay. */
   onImageEditDeactivate?: () => void;
+  /** Page ID currently in on-canvas crop mode (null = inactive). */
+  cropModePageId?: string | null;
+  /** Which slot is being cropped (1 or 2). */
+  cropModeSlot?: 1 | 2;
+  /** Called on every handle drag move (live preview). */
+  onCropUpdate?: (top: number, right: number, bottom: number, left: number) => void;
+  /** Called when admin clicks "אישור חיתוך" — persist and exit crop mode. */
+  onCropConfirm?: (top: number, right: number, bottom: number, left: number) => void;
+  /** Called when admin clicks "ביטול" — revert and exit crop mode. */
+  onCropCancel?: () => void;
 }
 
 /**
@@ -99,6 +109,11 @@ export function AlbumPreview({
   imageEditSlot = 1,
   onImageUpdate,
   onImageEditDeactivate,
+  cropModePageId,
+  cropModeSlot = 1,
+  onCropUpdate,
+  onCropConfirm,
+  onCropCancel,
 }: AlbumPreviewProps) {
   const { pages, personName } = data;
   const spreads = buildSpreads(pages);
@@ -144,6 +159,19 @@ export function AlbumPreview({
     : imageEditPageId && leftPage?.id === imageEditPageId ? leftPage
     : null;
   const imageEditIsRight = imageEditPage?.id === rightPage?.id;
+
+  // Which page in the current spread is in crop mode?
+  const cropModePage =
+    cropModePageId && rightPage?.id === cropModePageId ? rightPage
+    : cropModePageId && leftPage?.id === cropModePageId ? leftPage
+    : null;
+  const cropModeIsRight = cropModePage?.id === rightPage?.id;
+  // Current crop insets for the targeted slot (from live preview data)
+  const cropSlotData = cropModePage?.images?.find((img) => img.slot === cropModeSlot);
+  const cropTop    = cropSlotData?.crop_inset_top    ?? 0;
+  const cropRight  = cropSlotData?.crop_inset_right  ?? 0;
+  const cropBottom = cropSlotData?.crop_inset_bottom ?? 0;
+  const cropLeft   = cropSlotData?.crop_inset_left   ?? 0;
 
   // Current crop/scale/URL values for the image being edited (from live preview data)
   const editSlotData = imageEditPage?.images?.find((img) => img.slot === imageEditSlot) ?? null;
@@ -353,18 +381,32 @@ export function AlbumPreview({
             )];
           })}
 
-          {/* Image edit overlay — spans entire spread for cross-page drag */}
-          {imageEditPage && onImageUpdate && (
-            <SpreadImageEditOverlay
-              isRightPage={imageEditIsRight}
-              cropX={editCropX}
-              cropY={editCropY}
-              scale={editScale}
-              onUpdate={(cx, cy, s, final) =>
-                onImageUpdate(imageEditPage.id, imageEditSlot, cx, cy, s, final)
-              }
-              onDeactivate={() => onImageEditDeactivate?.()}
+          {/* On-canvas crop overlay — mutually exclusive with image-drag overlay */}
+          {cropModePage && onCropUpdate && onCropConfirm && onCropCancel ? (
+            <SpreadCropOverlay
+              isRightPage={cropModeIsRight}
+              cropTop={cropTop}
+              cropRight={cropRight}
+              cropBottom={cropBottom}
+              cropLeft={cropLeft}
+              onUpdate={onCropUpdate}
+              onConfirm={onCropConfirm}
+              onCancel={onCropCancel}
             />
+          ) : (
+            /* Image drag overlay — only shown when crop mode is inactive */
+            imageEditPage && onImageUpdate && (
+              <SpreadImageEditOverlay
+                isRightPage={imageEditIsRight}
+                cropX={editCropX}
+                cropY={editCropY}
+                scale={editScale}
+                onUpdate={(cx, cy, s, final) =>
+                  onImageUpdate(imageEditPage.id, imageEditSlot, cx, cy, s, final)
+                }
+                onDeactivate={() => onImageEditDeactivate?.()}
+              />
+            )
           )}
         </div>
       </div>
@@ -589,6 +631,222 @@ function SpreadImageEditOverlay({
       <div className="absolute bottom-2 inset-x-0 flex justify-center pointer-events-none">
         <span className="text-[10px] text-white/90 bg-black/50 rounded px-2 py-0.5">
           גרור להזזה · פינות לשינוי גודל · לחץ מחוץ לסגירה
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── SpreadCropOverlay ────────────────────────────────────────────────────────
+// Full-spread overlay for on-canvas non-destructive cropping.
+// Coordinate system (same as SpreadImageEditOverlay):
+//   Right page occupies spread-x [0.5, 1.0]; left page [0.0, 0.5].
+//   crop_inset_* are fractions of the PAGE container (0–0.9 per side).
+//
+// Conversion to spread fractions:
+//   Δ_inset_top/bottom = Δspread_y   (page height = spread height)
+//   Δ_inset_left/right = Δspread_x × 2  (page width = 0.5 × spread width)
+
+type CropHandleTarget = "top" | "right" | "bottom" | "left" | "tl" | "tr" | "bl" | "br";
+
+function SpreadCropOverlay({
+  isRightPage,
+  cropTop,
+  cropRight,
+  cropBottom,
+  cropLeft,
+  onUpdate,
+  onConfirm,
+  onCancel,
+}: {
+  isRightPage: boolean;
+  cropTop: number;
+  cropRight: number;
+  cropBottom: number;
+  cropLeft: number;
+  onUpdate: (top: number, right: number, bottom: number, left: number) => void;
+  onConfirm: (top: number, right: number, bottom: number, left: number) => void;
+  onCancel: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    target: CropHandleTarget;
+    startX: number;
+    startY: number;
+    startTop: number;
+    startRight: number;
+    startBottom: number;
+    startLeft: number;
+  } | null>(null);
+
+  // Page left edge in spread fraction:
+  //   right page → col-1 (physical right, x starts at 0.5 in LTR measurement)
+  //   left page  → col-2 (physical left,  x starts at 0)
+  const pStart = isRightPage ? 0.5 : 0.0;
+
+  // Crop box in spread fraction coordinates
+  const boxLeft   = pStart + cropLeft   * 0.5;
+  const boxRight  = pStart + 0.5 - cropRight  * 0.5;
+  const boxTopF   = cropTop;
+  const boxBotF   = 1.0 - cropBottom;
+  const boxW      = boxRight - boxLeft;
+  const boxH      = boxBotF - boxTopF;
+  const midX      = boxLeft + boxW / 2;
+  const midY      = boxTopF + boxH / 2;
+
+  function getPos(e: React.PointerEvent) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height,
+    };
+  }
+
+  /** Clamp inset so it stays within [0, 0.9 - opposing]. */
+  function ci(val: number, opposing: number) {
+    return Math.max(0, Math.min(0.9 - opposing, val));
+  }
+
+  function computeCrop(dx: number, dy: number, d: NonNullable<typeof dragRef.current>) {
+    const { target: t, startTop, startRight, startBottom, startLeft } = d;
+    // dx in spread fraction → page fraction × 2 (page = half spread width)
+    const dL = dx * 2;
+    const dR = dx * 2;
+    return {
+      top:    (t === "top"    || t === "tl" || t === "tr") ? ci(startTop    + dy,  startBottom) : startTop,
+      bottom: (t === "bottom" || t === "bl" || t === "br") ? ci(startBottom - dy,  startTop)    : startBottom,
+      left:   (t === "left"   || t === "tl" || t === "bl") ? ci(startLeft   + dL,  startRight)  : startLeft,
+      right:  (t === "right"  || t === "tr" || t === "br") ? ci(startRight  - dR,  startLeft)   : startRight,
+    };
+  }
+
+  function startDrag(target: CropHandleTarget, e: React.PointerEvent) {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const pos = getPos(e);
+    if (!pos) return;
+    dragRef.current = {
+      target, startX: pos.x, startY: pos.y,
+      startTop: cropTop, startRight: cropRight, startBottom: cropBottom, startLeft: cropLeft,
+    };
+  }
+
+  function handleMove(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    const pos = getPos(e);
+    if (!pos) return;
+    const c = computeCrop(pos.x - d.startX, pos.y - d.startY, d);
+    onUpdate(c.top, c.right, c.bottom, c.left);
+  }
+
+  function handleUp(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    dragRef.current = null;
+    const pos = getPos(e);
+    if (pos) {
+      const c = computeCrop(pos.x - d.startX, pos.y - d.startY, d);
+      onUpdate(c.top, c.right, c.bottom, c.left);
+    }
+  }
+
+  const HSZ = 10; // handle size px
+
+  // Helper: render one draggable handle at a spread-fraction position
+  function handle(x: number, y: number, cursor: string, target: CropHandleTarget) {
+    return (
+      <div
+        key={target}
+        style={{
+          position: "absolute",
+          left: `${x * 100}%`,
+          top: `${y * 100}%`,
+          width: HSZ,
+          height: HSZ,
+          transform: "translate(-50%,-50%)",
+          background: "white",
+          border: "1.5px solid rgba(99,179,237,0.95)",
+          borderRadius: 2,
+          cursor,
+          zIndex: 1,
+        }}
+        onPointerDown={(e) => startDrag(target, e)}
+        onPointerMove={handleMove}
+        onPointerUp={handleUp}
+      />
+    );
+  }
+
+  // Width of the right-side dark strip in spread fraction
+  const rightStripRight = isRightPage ? 0 : 0.5;
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute inset-0 select-none hidden sm:block"
+      style={{ zIndex: 20 }}
+    >
+      {/* Dark overlay strips — confined to the page side */}
+      {/* Top strip */}
+      <div style={{ position: "absolute", left: `${pStart * 100}%`, width: "50%", top: 0, height: `${cropTop * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      {/* Bottom strip */}
+      <div style={{ position: "absolute", left: `${pStart * 100}%`, width: "50%", bottom: 0, height: `${cropBottom * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      {/* Left strip (between top/bottom) */}
+      <div style={{ position: "absolute", left: `${pStart * 100}%`, width: `${cropLeft * 50}%`, top: `${cropTop * 100}%`, height: `${boxH * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      {/* Right strip (between top/bottom) */}
+      <div style={{ position: "absolute", right: `${rightStripRight * 100}%`, width: `${cropRight * 50}%`, top: `${cropTop * 100}%`, height: `${boxH * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+
+      {/* Crop box border */}
+      <div style={{
+        position: "absolute",
+        left: `${boxLeft * 100}%`, top: `${boxTopF * 100}%`,
+        width: `${boxW * 100}%`, height: `${boxH * 100}%`,
+        border: "2px solid rgba(255,255,255,0.9)",
+        boxSizing: "border-box",
+        pointerEvents: "none",
+      }}>
+        {/* Rule-of-thirds guides */}
+        <div style={{ position: "absolute", top: "33.33%", left: 0, right: 0, borderTop: "1px solid rgba(255,255,255,0.25)" }} />
+        <div style={{ position: "absolute", top: "66.67%", left: 0, right: 0, borderTop: "1px solid rgba(255,255,255,0.25)" }} />
+        <div style={{ position: "absolute", left: "33.33%", top: 0, bottom: 0, borderLeft: "1px solid rgba(255,255,255,0.25)" }} />
+        <div style={{ position: "absolute", left: "66.67%", top: 0, bottom: 0, borderLeft: "1px solid rgba(255,255,255,0.25)" }} />
+      </div>
+
+      {/* Side handles */}
+      {handle(midX,    boxTopF, "ns-resize",   "top")}
+      {handle(midX,    boxBotF, "ns-resize",   "bottom")}
+      {handle(boxLeft, midY,    "ew-resize",   "left")}
+      {handle(boxRight,midY,    "ew-resize",   "right")}
+      {/* Corner handles */}
+      {handle(boxLeft,  boxTopF, "nwse-resize", "tl")}
+      {handle(boxRight, boxTopF, "nesw-resize", "tr")}
+      {handle(boxLeft,  boxBotF, "nesw-resize", "bl")}
+      {handle(boxRight, boxBotF, "nwse-resize", "br")}
+
+      {/* Action buttons */}
+      <div className="absolute bottom-3 inset-x-0 flex justify-center gap-2" style={{ pointerEvents: "none" }}>
+        <button
+          onClick={onCancel}
+          style={{ pointerEvents: "auto" }}
+          className="rounded-md px-3 py-1 text-xs bg-black/65 text-white hover:bg-black/80 border border-white/25 transition-colors"
+        >
+          ביטול
+        </button>
+        <button
+          onClick={() => onConfirm(cropTop, cropRight, cropBottom, cropLeft)}
+          style={{ pointerEvents: "auto" }}
+          className="rounded-md px-3 py-1 text-xs bg-white text-foreground font-medium hover:bg-white/90 border border-white/50 transition-colors"
+        >
+          אישור חיתוך
+        </button>
+      </div>
+
+      {/* Hint label */}
+      <div className="absolute top-2 inset-x-0 flex justify-center pointer-events-none">
+        <span className="text-[10px] text-white/90 bg-black/50 rounded px-2 py-0.5">
+          גרור ידיות לחיתוך · התמונה המקורית לא משתנה
         </span>
       </div>
     </div>

@@ -112,6 +112,14 @@ export function AlbumEditorLayout({
   /** Slot being image-edited (1 or 2). */
   const [imageEditSlot] = useState<1 | 2>(1);
 
+  /** Page/slot currently in on-canvas crop mode (null = inactive). */
+  const [cropModePageId, setCropModePageId] = useState<string | null>(null);
+  const [cropModeSlot, setCropModeSlot] = useState<1 | 2>(1);
+  /** Snapshot of crop insets when crop mode was entered — used to revert on cancel. */
+  const [originalCropInsets, setOriginalCropInsets] = useState<{
+    top: number; right: number; bottom: number; left: number;
+  } | null>(null);
+
   /**
    * Per-page style overrides accumulated from the editor without requiring a
    * full server refresh. Only fields that the editor can change without
@@ -214,6 +222,72 @@ export function AlbumEditorLayout({
         body: JSON.stringify({ slot, crop_x: cropX, crop_y: cropY, scale }),
       }).catch(console.error);
     }
+  }
+
+  /**
+   * Enter on-canvas crop mode for a specific page slot.
+   * Navigates to the spread, records original insets for cancel, deactivates drag overlay.
+   */
+  function handleEnterCropMode(pageId: string, slot: 1 | 2) {
+    setCropModePageId(pageId);
+    setCropModeSlot(slot);
+    setImageEditPageId(null); // deactivate drag overlay while crop mode is active
+
+    const page = livePreviewData.pages.find((p) => p.id === pageId);
+    const slotData = page?.images?.find((img) => img.slot === slot);
+    setOriginalCropInsets({
+      top:    slotData?.crop_inset_top    ?? 0,
+      right:  slotData?.crop_inset_right  ?? 0,
+      bottom: slotData?.crop_inset_bottom ?? 0,
+      left:   slotData?.crop_inset_left   ?? 0,
+    });
+
+    if (page) {
+      setFocusedSpreadIndex(pageToSpreadIndex(page.page_number, livePreviewData.pages));
+    }
+  }
+
+  /** Update crop insets live (called on every handle drag move). */
+  function handleCropUpdate(top: number, right: number, bottom: number, left: number) {
+    if (!cropModePageId) return;
+    setPageOverrides((prev) => {
+      const existing = prev.get(cropModePageId);
+      const serverPage = previewData.pages.find((p) => p.id === cropModePageId);
+      if (!serverPage) return prev;
+      const baseImages = (existing?.images ?? serverPage.images ?? []) as NonNullable<PreviewPage["images"]>;
+      const slotIdx = baseImages.findIndex((img) => img.slot === cropModeSlot);
+      const updatedSlot = slotIdx >= 0
+        ? { ...baseImages[slotIdx], crop_inset_top: top, crop_inset_right: right, crop_inset_bottom: bottom, crop_inset_left: left }
+        : { id: `local-crop-${cropModeSlot}`, slot: cropModeSlot, crop_x: 0.5, crop_y: 0.5, scale: 1, photo_id: null, image_url: cropModeSlot === 1 ? (serverPage.image_url ?? null) : null, frame_style: null, use_nobg: false, crop_inset_top: top, crop_inset_right: right, crop_inset_bottom: bottom, crop_inset_left: left };
+      const newImages = slotIdx >= 0
+        ? baseImages.map((img, i) => (i === slotIdx ? updatedSlot : img))
+        : [...baseImages, updatedSlot];
+      const next = new Map(prev);
+      next.set(cropModePageId, { ...(existing ?? {}), images: newImages });
+      return next;
+    });
+  }
+
+  /** Confirm crop — persist to DB and exit crop mode. */
+  async function handleCropConfirm(top: number, right: number, bottom: number, left: number) {
+    if (!cropModePageId) return;
+    handleCropUpdate(top, right, bottom, left);
+    await fetch(`/api/admin/orders/${orderId}/pages/${cropModePageId}/images`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot: cropModeSlot, crop_inset_top: top, crop_inset_right: right, crop_inset_bottom: bottom, crop_inset_left: left }),
+    }).catch(console.error);
+    setCropModePageId(null);
+    setOriginalCropInsets(null);
+  }
+
+  /** Cancel crop — revert to original insets and exit crop mode. */
+  function handleCropCancel() {
+    if (originalCropInsets) {
+      handleCropUpdate(originalCropInsets.top, originalCropInsets.right, originalCropInsets.bottom, originalCropInsets.left);
+    }
+    setCropModePageId(null);
+    setOriginalCropInsets(null);
   }
 
   /** Called when the user selects a page in the editor. */
@@ -455,6 +529,7 @@ export function AlbumEditorLayout({
             externalPageId={selectedPageId}
             coverDragBox={coverDragBox}
             onCoverBoxDragToggle={handleCoverBoxDragToggle}
+            onEnterCropMode={handleEnterCropMode}
           />
         )}
       </section>
@@ -523,6 +598,11 @@ export function AlbumEditorLayout({
           imageEditSlot={imageEditSlot}
           onImageUpdate={handleImageUpdate}
           onImageEditDeactivate={() => setImageEditPageId(null)}
+          cropModePageId={cropModePageId}
+          cropModeSlot={cropModeSlot}
+          onCropUpdate={handleCropUpdate}
+          onCropConfirm={handleCropConfirm}
+          onCropCancel={handleCropCancel}
         />
       </div>
 
