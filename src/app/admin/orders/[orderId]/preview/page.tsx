@@ -135,7 +135,7 @@ export default async function AdminOrderPreviewPage({
   // ── Completed illustrations for the picker ────────────────────────────────
   const { data: completedPhotosRaw } = await adminClient
     .from("photos")
-    .select("id, illustration_storage_path, original_filename, life_stage")
+    .select("id, illustration_storage_path, original_filename, life_stage, caption")
     .eq("order_id", orderId)
     .eq("illustration_status", "completed")
     .order("display_order");
@@ -203,6 +203,7 @@ export default async function AdminOrderPreviewPage({
       illustrationUrl: path ? (signedUrlMap.get(path) ?? null) : null,
       original_filename: ph.original_filename as string,
       life_stage: (ph.life_stage as string | null) ?? null,
+      caption: (ph.caption as string | null) ?? null,
     };
   });
 

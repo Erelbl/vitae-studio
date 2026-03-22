@@ -55,6 +55,7 @@ export type PhotoForEditor = {
   illustrationUrl: string | null;
   original_filename: string;
   life_stage: string | null;
+  caption: string | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1543,7 +1544,7 @@ function ImageSlotEditor({
       {/* Photo picker dialog */}
       {!hidePhotoPicker && (
         <Dialog open={showPicker} onOpenChange={setShowPicker}>
-          <DialogContent className="max-w-2xl w-full" dir="rtl">
+          <DialogContent className="max-w-5xl w-full" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-base">בחר איור</DialogTitle>
             </DialogHeader>
@@ -1552,48 +1553,54 @@ function ImageSlotEditor({
                 אין איורים מוכנים עדיין
               </p>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-[60vh] overflow-y-auto py-1 pe-1">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 max-h-[75vh] overflow-y-auto py-1 pe-1">
                 {completedPhotos.map((photo) => {
                   const isSelected = slotState?.photo_id === photo.id;
                   return (
-                    <button
-                      key={photo.id}
-                      onClick={() => {
-                        onAssign(photo);
-                        setScale(1);
-                        setShowPicker(false);
-                      }}
-                      className={`relative rounded-lg overflow-hidden aspect-square border-2 transition-all hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-primary/50 ${
-                        isSelected
-                          ? "border-primary ring-2 ring-primary/30"
-                          : "border-transparent hover:border-primary/40"
-                      }`}
-                    >
-                      {photo.illustrationUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={photo.illustrationUrl}
-                          alt={photo.original_filename}
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
-                          אין תמונה
-                        </div>
+                    <div key={photo.id} className="flex flex-col gap-1">
+                      {(photo.caption || photo.life_stage) && (
+                        <p className="text-[11px] leading-tight text-foreground/80 line-clamp-2 px-0.5 text-right">
+                          {photo.caption ?? (photo.life_stage ? (LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage) : "")}
+                        </p>
                       )}
-                      {isSelected && (
-                        <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                          <span className="text-white text-lg font-bold drop-shadow">✓</span>
-                        </div>
-                      )}
-                      {photo.life_stage && (
-                        <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] text-center py-0.5 truncate px-0.5">
-                          {LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage}
-                        </div>
-                      )}
-                    </button>
+                      <button
+                        onClick={() => {
+                          onAssign(photo);
+                          setScale(1);
+                          setShowPicker(false);
+                        }}
+                        className={`relative rounded-lg overflow-hidden aspect-square border-2 transition-all hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                          isSelected
+                            ? "border-primary ring-2 ring-primary/30"
+                            : "border-transparent hover:border-primary/40"
+                        }`}
+                      >
+                        {photo.illustrationUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={photo.illustrationUrl}
+                            alt={photo.caption ?? photo.original_filename}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
+                            אין תמונה
+                          </div>
+                        )}
+                        {isSelected && (
+                          <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                            <span className="text-white text-lg font-bold drop-shadow">✓</span>
+                          </div>
+                        )}
+                        {photo.life_stage && photo.caption && (
+                          <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] text-center py-0.5 truncate px-0.5">
+                            {LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage}
+                          </div>
+                        )}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
