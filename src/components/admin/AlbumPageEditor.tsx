@@ -173,6 +173,8 @@ export function AlbumPageEditor({
   currentTextX,
   currentTextY,
   externalPageId,
+  coverDragBox,
+  onCoverBoxDragToggle,
 }: {
   orderId: string;
   pages: EditorPage[];
@@ -204,6 +206,10 @@ export function AlbumPageEditor({
    * The editor syncs its local selection to stay in step with the preview.
    */
   externalPageId?: string | null;
+  /** Which cover text box is being dragged (1 = title, 2 = subtitle, null = none). */
+  coverDragBox?: 1 | 2 | null;
+  /** Called to toggle drag mode for a cover box. */
+  onCoverBoxDragToggle?: (box: 1 | 2 | null) => void;
 }) {
   const router = useRouter();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
@@ -334,6 +340,8 @@ export function AlbumPageEditor({
             completedPhotos={completedPhotos}
             personName={personName}
             onSaved={() => router.refresh()}
+            coverDragBox={coverDragBox}
+            onCoverBoxDragToggle={onCoverBoxDragToggle}
           />
         )
       )}
@@ -1035,12 +1043,17 @@ function SpecialPagePanel({
   completedPhotos,
   personName,
   onSaved,
+  coverDragBox,
+  onCoverBoxDragToggle,
 }: {
   orderId: string;
   page: EditorPage;
   completedPhotos: PhotoForEditor[];
   personName?: string;
   onSaved: () => void;
+  /** Which cover box drag is active (passed from AlbumEditorLayout via AlbumPageEditor). */
+  coverDragBox?: 1 | 2 | null;
+  onCoverBoxDragToggle?: (box: 1 | 2 | null) => void;
 }) {
   const isCover = page.page_type === "cover";
 
@@ -1175,7 +1188,22 @@ function SpecialPagePanel({
           <p className="text-xs font-medium text-muted-foreground">טקסטים על הכריכה</p>
           {/* Box 1 — title */}
           <div className="space-y-2 rounded-lg border border-border/60 p-3">
-            <p className="text-xs font-medium">כותרת</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium">כותרת</p>
+              {onCoverBoxDragToggle && (
+                <button
+                  type="button"
+                  onClick={() => onCoverBoxDragToggle(coverDragBox === 1 ? null : 1)}
+                  className={`text-[10px] rounded px-2 py-0.5 border transition-colors ${
+                    coverDragBox === 1
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {coverDragBox === 1 ? "✓ גוררים" : "גרור על הכריכה"}
+                </button>
+              )}
+            </div>
             <input
               type="text"
               value={coverBox1.text}
@@ -1216,7 +1244,22 @@ function SpecialPagePanel({
           </div>
           {/* Box 2 — subtitle */}
           <div className="space-y-2 rounded-lg border border-border/60 p-3">
-            <p className="text-xs font-medium">תת-כותרת</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium">תת-כותרת</p>
+              {onCoverBoxDragToggle && (
+                <button
+                  type="button"
+                  onClick={() => onCoverBoxDragToggle(coverDragBox === 2 ? null : 2)}
+                  className={`text-[10px] rounded px-2 py-0.5 border transition-colors ${
+                    coverDragBox === 2
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {coverDragBox === 2 ? "✓ גוררים" : "גרור על הכריכה"}
+                </button>
+              )}
+            </div>
             <input
               type="text"
               value={coverBox2.text}

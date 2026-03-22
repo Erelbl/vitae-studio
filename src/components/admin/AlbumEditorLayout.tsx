@@ -8,6 +8,36 @@ import type { PreviewData, PreviewPage } from "@/types/page";
 import { exportAlbumPdf } from "@/lib/export-album-pdf";
 
 /**
+ * Update a cover box's x/y position inside the text_content JSON.
+ * Preserves all other fields (text, size) from the existing JSON.
+ */
+function setCoverBoxPosition(
+  textContent: string | null,
+  box: 1 | 2,
+  x: number,
+  y: number,
+  fallbackPersonName: string
+): string {
+  const defaults = {
+    box1: { text: fallbackPersonName, x: 0.5, y: 0.47, size: 28 },
+    box2: { text: "סיפור חיים בחרוזים", x: 0.5, y: 0.63, size: 12 },
+  };
+  let data = { box1: { ...defaults.box1 }, box2: { ...defaults.box2 } };
+  if (textContent) {
+    try {
+      const p = JSON.parse(textContent);
+      if (p && typeof p === "object") {
+        if (p.box1) data.box1 = { ...defaults.box1, ...p.box1 };
+        if (p.box2) data.box2 = { ...defaults.box2, ...p.box2 };
+      }
+    } catch {}
+  }
+  if (box === 1) data.box1 = { ...data.box1, x, y };
+  else data.box2 = { ...data.box2, x, y };
+  return JSON.stringify(data);
+}
+
+/**
  * Resolves which spread index contains a page with the given page_number.
  * Mirrors buildSpreads() in AlbumPreview: cover + back_cover are singletons.
  */
@@ -69,6 +99,13 @@ export function AlbumEditorLayout({
 
   /** Whether text drag mode is active for the currently selected page. */
   const [textDragMode, setTextDragMode] = useState(false);
+
+  /**
+   * Which cover text box (1 = title, 2 = subtitle) is being dragged.
+   * When non-null, textDragMode is also true and the drop handler updates
+   * the cover JSON instead of text_x/text_y columns.
+   */
+  const [coverDragBox, setCoverDragBox] = useState<1 | 2 | null>(null);
 
   /** Page being image-edited on the large preview canvas. */
   const [imageEditPageId, setImageEditPageId] = useState<string | null>(null);
@@ -184,6 +221,7 @@ export function AlbumEditorLayout({
     setSelectedPageId(pageId);
     setImageEditPageId(pageId); // auto-activate image editing for the selected page
     setTextDragMode(false); // exit drag mode when switching pages
+    setCoverDragBox(null);
   }
 
   /**
@@ -202,20 +240,43 @@ export function AlbumEditorLayout({
   /** Toggle text drag mode for the currently selected page. */
   function handleTextDragToggle(active: boolean) {
     setTextDragMode(active);
+    if (!active) setCoverDragBox(null);
+  }
+
+  /**
+   * Toggle cover box drag mode. Activating sets textDragMode so the overlay
+   * renders on the cover page; deactivating (box=null) clears everything.
+   */
+  function handleCoverBoxDragToggle(box: 1 | 2 | null) {
+    setCoverDragBox(box);
+    setTextDragMode(box !== null);
   }
 
   /**
    * Called when the user drops text on the large preview.
+   * For regular pages: updates text_x/text_y columns.
+   * For cover pages (when coverDragBox is set): updates box position in text_content JSON.
    * Updates pageOverrides immediately (preview re-renders) and persists to DB.
-   * Does NOT call router.refresh() — that would regenerate all signed image URLs.
    */
   async function handleTextDrop(pageId: string, x: number, y: number) {
-    handlePageUpdate(pageId, { text_x: x, text_y: y });
-    await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/edit`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text_x: x, text_y: y }),
-    });
+    if (coverDragBox !== null) {
+      // Cover box positioning — update the JSON stored in text_content
+      const currentPage = livePreviewData.pages.find((p) => p.id === pageId);
+      const json = setCoverBoxPosition(currentPage?.text_content ?? null, coverDragBox, x, y, personName);
+      handlePageUpdate(pageId, { text_content: json });
+      await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/edit`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text_content: json }),
+      });
+    } else {
+      handlePageUpdate(pageId, { text_x: x, text_y: y });
+      await fetch(`/api/admin/orders/${orderId}/pages/${pageId}/edit`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text_x: x, text_y: y }),
+      });
+    }
   }
 
   /**
@@ -390,6 +451,8 @@ export function AlbumEditorLayout({
             currentTextX={currentTextX}
             currentTextY={currentTextY}
             externalPageId={selectedPageId}
+            coverDragBox={coverDragBox}
+            onCoverBoxDragToggle={handleCoverBoxDragToggle}
           />
         )}
       </section>
@@ -451,6 +514,7 @@ export function AlbumEditorLayout({
           focusedSpreadIndex={focusedSpreadIndex}
           textDragPageId={textDragMode && selectedPageId ? selectedPageId : undefined}
           textDragMode={textDragMode}
+          coverDragBox={coverDragBox}
           onTextDrop={handleTextDrop}
           onSpreadChange={handlePreviewSpreadChange}
           imageEditPageId={imageEditPageId}

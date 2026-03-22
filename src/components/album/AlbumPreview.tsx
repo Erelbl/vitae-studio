@@ -12,6 +12,11 @@ interface AlbumPreviewProps {
   textDragPageId?: string;
   /** Whether text drag mode is active (shows overlay + tint on target page). */
   textDragMode?: boolean;
+  /**
+   * When set, the active drag is for a cover text box (1 = title, 2 = subtitle).
+   * Used to compute the correct initial dot position from the cover JSON.
+   */
+  coverDragBox?: 1 | 2 | null;
   /** Called when user drops text position on a page — (x, y) are 0–1 normalized coords. */
   onTextDrop?: (pageId: string, x: number, y: number) => void;
   /**
@@ -87,6 +92,7 @@ export function AlbumPreview({
   focusedSpreadIndex,
   textDragPageId,
   textDragMode,
+  coverDragBox,
   onTextDrop,
   onSpreadChange,
   imageEditPageId,
@@ -158,14 +164,41 @@ export function AlbumPreview({
     // Applied to all full-image-layout pages so layering is consistent
     // regardless of whether the image-edit overlay is currently active.
     const editModeForPage = isEditTarget || isFullImagePage(page);
+
+    // Compute initial dot position for the drag overlay.
+    // For cover pages with an active box drag, read position from the JSON.
+    // For regular pages, use text_x/text_y columns.
+    let dragInitialX = page.text_x ?? null;
+    let dragInitialY = page.text_y ?? null;
+    if (isDragTarget && coverDragBox && page.page_type === "cover") {
+      const boxDefaults = { 1: { x: 0.5, y: 0.47 }, 2: { x: 0.5, y: 0.63 } };
+      const def = boxDefaults[coverDragBox];
+      if (page.text_content) {
+        try {
+          const p = JSON.parse(page.text_content);
+          if (p && typeof p === "object") {
+            const b = coverDragBox === 1 ? p.box1 : p.box2;
+            dragInitialX = b?.x ?? def.x;
+            dragInitialY = b?.y ?? def.y;
+          }
+        } catch {
+          dragInitialX = def.x;
+          dragInitialY = def.y;
+        }
+      } else {
+        dragInitialX = def.x;
+        dragInitialY = def.y;
+      }
+    }
+
     return (
       <div key={page.id} className="relative">
         <AlbumPageView page={page} personName={personName} editMode={editModeForPage} />
         {isDragTarget && (
           <LargePreviewDragOverlay
             pageId={page.id}
-            initialX={page.text_x ?? null}
-            initialY={page.text_y ?? null}
+            initialX={dragInitialX}
+            initialY={dragInitialY}
             onDrop={onTextDrop!}
           />
         )}
@@ -185,7 +218,9 @@ export function AlbumPreview({
       {/* Drag mode banner */}
       {textDragMode && (
         <div className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-center text-xs text-primary/80 leading-relaxed">
-          מצב הזזת טקסט פעיל — לחץ וגרור על הדף לשינוי מיקום הטקסט
+          {coverDragBox
+            ? `מצב הזזת ${coverDragBox === 1 ? "כותרת" : "תת-כותרת"} פעיל — לחץ וגרור על הכריכה`
+            : "מצב הזזת טקסט פעיל — לחץ וגרור על הדף לשינוי מיקום הטקסט"}
         </div>
       )}
 

@@ -18,7 +18,7 @@ export async function loadPreviewData(
   const { data: pages, error } = await supabase
     .from("pages")
     .select(
-      "id, page_number, page_type, layout_type, text_content, illustration_storage_path, text_size, font_size_px, text_align, text_x, text_y, text_color, line_height, text_width_pct, bg_color"
+      "id, page_number, page_type, layout_type, text_content, illustration_storage_path, text_size, font_size_px, text_align, text_x, text_y, text_color"
     )
     .eq("order_id", orderId)
     .order("page_number");
@@ -32,6 +32,25 @@ export async function loadPreviewData(
   }
 
   const pageIds = pages.map((p) => p.id as string);
+
+  // Load new text-layout columns (migration 00042: line_height, text_width_pct, bg_color).
+  // Kept in a separate query so that if the migration hasn't been applied yet,
+  // the failure here is silently ignored — it must never affect the main page load.
+  const newStyleMap = new Map<string, { line_height: number | null; text_width_pct: number | null; bg_color: string | null }>();
+  {
+    const { data: newStyleRows } = await supabase
+      .from("pages")
+      .select("id, line_height, text_width_pct, bg_color")
+      .in("id", pageIds);
+    for (const r of newStyleRows ?? []) {
+      const row = r as Record<string, unknown>;
+      newStyleMap.set(r.id as string, {
+        line_height: (row.line_height as number | null) ?? null,
+        text_width_pct: (row.text_width_pct as number | null) ?? null,
+        bg_color: (row.bg_color as string | null) ?? null,
+      });
+    }
+  }
 
   // Load page_images for all pages in one query
   const { data: pageImagesRaw } = await supabase
@@ -143,6 +162,7 @@ export async function loadPreviewData(
   const previewPages: PreviewPage[] = pages.map((page) => {
     const storagePath = page.illustration_storage_path as string | null;
     const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
+    const newStyle = newStyleMap.get(page.id as string);
 
     return {
       id: page.id as string,
@@ -157,9 +177,9 @@ export async function loadPreviewData(
       text_x: ((page as Record<string, unknown>).text_x as number | null) ?? null,
       text_y: ((page as Record<string, unknown>).text_y as number | null) ?? null,
       text_color: ((page as Record<string, unknown>).text_color as TextColor | null) ?? null,
-      line_height: ((page as Record<string, unknown>).line_height as number | null) ?? null,
-      text_width_pct: ((page as Record<string, unknown>).text_width_pct as number | null) ?? null,
-      bg_color: ((page as Record<string, unknown>).bg_color as string | null) ?? null,
+      line_height: newStyle?.line_height ?? null,
+      text_width_pct: newStyle?.text_width_pct ?? null,
+      bg_color: newStyle?.bg_color ?? null,
       images: pageImagesMap.get(page.id as string) ?? [],
     };
   });

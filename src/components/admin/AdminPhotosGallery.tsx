@@ -37,7 +37,11 @@ function IllustrationStatusBadge({ status }: { status: string | null }) {
   }
   if (status === "generating") {
     return (
-      <Badge variant="secondary" className="text-xs gap-1">
+      <Badge
+        variant="secondary"
+        className="text-xs gap-1"
+        title="אם האיור תקוע — בחר את התמונה ולחץ שוב על 'צור איורי מים'"
+      >
         <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
         מייצר...
       </Badge>
@@ -54,6 +58,52 @@ function IllustrationStatusBadge({ status }: { status: string | null }) {
     <Badge variant="destructive" className="text-xs">
       נכשל
     </Badge>
+  );
+}
+
+/** Compact progress bar + status counts shown during/after a generation batch. */
+function BatchProgressBar({ photos }: { photos: PhotoForGallery[] }) {
+  const total = photos.length;
+  const completed = photos.filter((p) => p.illustration_status === "completed").length;
+  const generating = photos.filter((p) => p.illustration_status === "generating").length;
+  const failed = photos.filter((p) => p.illustration_status === "failed").length;
+  const processed = completed + failed; // photos that have a terminal status
+
+  // Only render when at least one photo has been touched by a generation run
+  if (completed === 0 && generating === 0 && failed === 0) return null;
+
+  const pct = Math.round((processed / total) * 100);
+
+  const parts: string[] = [];
+  if (completed > 0) parts.push(`${completed} הושלמו`);
+  if (generating > 0) parts.push(`${generating} בתהליך`);
+  if (failed > 0) parts.push(`${failed} נכשלו`);
+
+  return (
+    <div className="space-y-1.5">
+      {/* Headline */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium text-foreground">
+          {generating > 0
+            ? `מייצר איורים: ${completed + failed} / ${total}`
+            : `נוצרו ${completed} מתוך ${total} איורים`}
+        </span>
+        <span className="text-muted-foreground">{pct}%</span>
+      </div>
+
+      {/* Track */}
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {/* Breakdown */}
+      {parts.length > 0 && (
+        <p className="text-xs text-muted-foreground">{parts.join(" · ")}</p>
+      )}
+    </div>
   );
 }
 
@@ -96,6 +146,17 @@ export function AdminPhotosGallery({
     } else {
       setSelected(new Set(photos.map((p) => p.id)));
     }
+  }
+
+  /** Select all photos that need re-running: failed or stuck in generating. */
+  function selectRetryable() {
+    const retryable = photos
+      .filter(
+        (p) =>
+          p.illustration_status === "failed" || p.illustration_status === "generating"
+      )
+      .map((p) => p.id);
+    setSelected(new Set(retryable));
   }
 
   async function handleGenerate() {
@@ -171,6 +232,9 @@ export function AdminPhotosGallery({
   const selectedCompleted = photos.filter(
     (p) => selected.has(p.id) && p.illustration_status === "completed"
   );
+  const retryablePhotos = photos.filter(
+    (p) => p.illustration_status === "failed" || p.illustration_status === "generating"
+  );
 
   return (
     <div className="space-y-4">
@@ -186,6 +250,19 @@ export function AdminPhotosGallery({
         )}
 
         <div className="flex items-center gap-2 ms-auto flex-wrap">
+          {/* Quick-select retryable photos (failed or stuck generating) */}
+          {retryablePhotos.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={selectRetryable}
+              className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50"
+              title="בחר תמונות שנכשלו או תקועות כדי להריץ מחדש"
+            >
+              בחר לניסיון חוזר ({retryablePhotos.length})
+            </Button>
+          )}
+
           {/* Download selected completed illustrations as ZIP */}
           <Button
             variant="outline"
@@ -221,6 +298,9 @@ export function AdminPhotosGallery({
         )}
       </div>
 
+      {/* Batch progress — only visible once generation has started */}
+      <BatchProgressBar photos={photos} />
+
       {/* Photo grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         {photos.map((photo) => {
@@ -235,6 +315,8 @@ export function AdminPhotosGallery({
               className={`rounded-xl border-2 transition-all cursor-pointer space-y-2 p-2 ${
                 isSelected
                   ? "border-primary bg-primary/5"
+                  : isFailed
+                  ? "border-destructive/40 hover:border-destructive/60"
                   : "border-border hover:border-primary/40"
               }`}
               onClick={() => togglePhoto(photo.id)}
@@ -289,6 +371,13 @@ export function AdminPhotosGallery({
                 <div className="w-full aspect-square rounded-lg bg-amber-50 border border-amber-200 flex flex-col items-center justify-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-amber-400 animate-pulse" />
                   <span className="text-xs text-amber-700">מייצר איור...</span>
+                </div>
+              )}
+
+              {/* Failed placeholder with retry hint */}
+              {isFailed && !photo.illustration_error && (
+                <div className="w-full aspect-square rounded-lg bg-red-50 border border-red-200 flex flex-col items-center justify-center gap-1 p-2">
+                  <span className="text-xs text-destructive text-center">נכשל — בחר ונסה שוב</span>
                 </div>
               )}
 

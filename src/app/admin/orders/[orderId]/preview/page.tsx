@@ -72,8 +72,9 @@ export default async function AdminOrderPreviewPage({
 
   const editorPageIds = (editorPagesRaw ?? []).map((p) => p.id as string);
 
-  // Load style columns separately — graceful fallback to null if migrations
-  // 00027/00028/00042 haven't been applied yet (columns may not exist).
+  // Load pre-existing style columns (migrations 00027/00028/00030).
+  // Kept separate from newer columns so a missing migration only nulls new fields,
+  // never loses font size, alignment, color, or text position.
   type PageStyleRow = {
     text_size: TextSize | null;
     font_size_px: number | null;
@@ -81,15 +82,12 @@ export default async function AdminOrderPreviewPage({
     text_x: number | null;
     text_y: number | null;
     text_color: TextColor | null;
-    line_height: number | null;
-    text_width_pct: number | null;
-    bg_color: string | null;
   };
   const pageStyleMap = new Map<string, PageStyleRow>();
   if (editorPageIds.length > 0) {
     const { data: styleRows } = await adminClient
       .from("pages")
-      .select("id, text_size, font_size_px, text_align, text_x, text_y, text_color, line_height, text_width_pct, bg_color")
+      .select("id, text_size, font_size_px, text_align, text_x, text_y, text_color")
       .in("id", editorPageIds);
     for (const r of styleRows ?? []) {
       const row = r as Record<string, unknown>;
@@ -100,6 +98,21 @@ export default async function AdminOrderPreviewPage({
         text_x: (row.text_x as number | null) ?? null,
         text_y: (row.text_y as number | null) ?? null,
         text_color: (row.text_color as TextColor | null) ?? null,
+      });
+    }
+  }
+
+  // Load new text-layout columns (migration 00042: line_height, text_width_pct, bg_color).
+  // Separate query so a missing migration only nulls these new fields.
+  const newStyleMap = new Map<string, { line_height: number | null; text_width_pct: number | null; bg_color: string | null }>();
+  if (editorPageIds.length > 0) {
+    const { data: newStyleRows } = await adminClient
+      .from("pages")
+      .select("id, line_height, text_width_pct, bg_color")
+      .in("id", editorPageIds);
+    for (const r of newStyleRows ?? []) {
+      const row = r as Record<string, unknown>;
+      newStyleMap.set(r.id as string, {
         line_height: (row.line_height as number | null) ?? null,
         text_width_pct: (row.text_width_pct as number | null) ?? null,
         bg_color: (row.bg_color as string | null) ?? null,
@@ -229,6 +242,7 @@ export default async function AdminOrderPreviewPage({
   // Build editor pages array
   const editorPages: EditorPage[] = (editorPagesRaw ?? []).map((p) => {
     const style = pageStyleMap.get(p.id as string);
+    const newStyle = newStyleMap.get(p.id as string);
     return {
       id: p.id as string,
       page_number: p.page_number as number,
@@ -242,9 +256,9 @@ export default async function AdminOrderPreviewPage({
       text_x: style?.text_x ?? null,
       text_y: style?.text_y ?? null,
       text_color: style?.text_color ?? null,
-      line_height: style?.line_height ?? null,
-      text_width_pct: style?.text_width_pct ?? null,
-      bg_color: style?.bg_color ?? null,
+      line_height: newStyle?.line_height ?? null,
+      text_width_pct: newStyle?.text_width_pct ?? null,
+      bg_color: newStyle?.bg_color ?? null,
       images: pageImagesMap.get(p.id as string) ?? [],
     };
   });
