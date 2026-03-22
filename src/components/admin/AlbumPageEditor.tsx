@@ -32,6 +32,12 @@ export type EditorPage = {
   text_y: number | null;
   /** Text color. Null = layout default (white for overlays, foreground for splits). */
   text_color: TextColor | null;
+  /** Line-height multiplier. Null = default (1.4). */
+  line_height: number | null;
+  /** Text box width percentage (20–100). Null = layout default. */
+  text_width_pct: number | null;
+  /** Page background hex color. Null = layout default. */
+  bg_color: string | null;
   images: Array<{
     slot: number;
     photo_id: string | null;
@@ -373,6 +379,9 @@ function PageEditorPanel({
   );
   const [textAlign, setTextAlign] = useState<TextAlign>(page.text_align ?? "center");
   const [textColor, setTextColor] = useState<TextColor>(page.text_color ?? "white");
+  const [lineHeight, setLineHeight] = useState<number>(page.line_height ?? 1.4);
+  const [textWidthPct, setTextWidthPct] = useState<number>(page.text_width_pct ?? 84);
+  const [bgColor, setBgColor] = useState<string | null>(page.bg_color ?? null);
 
   const [slots, setSlots] = useState<Record<number, SlotState>>(() => {
     const m: Record<number, SlotState> = {};
@@ -461,6 +470,34 @@ function PageEditorPanel({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text_color: newColor }),
+    });
+  }
+
+  async function handleLineHeightCommit(newLh: number) {
+    onPageUpdate?.(page.id, { line_height: newLh });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ line_height: newLh }),
+    });
+  }
+
+  async function handleTextWidthCommit(newPct: number) {
+    onPageUpdate?.(page.id, { text_width_pct: newPct });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_width_pct: newPct }),
+    });
+  }
+
+  async function handleBgColorChange(newColor: string | null) {
+    setBgColor(newColor);
+    onPageUpdate?.(page.id, { bg_color: newColor });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bg_color: newColor }),
     });
   }
 
@@ -702,6 +739,85 @@ function PageEditorPanel({
         </div>
       </div>
 
+      {/* Line spacing slider + numeric input */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground">רווח בין שורות</p>
+          <input
+            type="number"
+            min={0.8}
+            max={2.5}
+            step={0.1}
+            value={lineHeight}
+            onChange={(e) => {
+              const v = Math.max(0.8, Math.min(2.5, parseFloat(e.target.value) || 1.4));
+              setLineHeight(v);
+              onPageUpdate?.(page.id, { line_height: v });
+            }}
+            onBlur={(e) => {
+              const v = Math.max(0.8, Math.min(2.5, parseFloat(e.target.value) || 1.4));
+              handleLineHeightCommit(v);
+            }}
+            className="w-14 rounded border border-border bg-background px-2 py-0.5 text-xs tabular-nums text-center focus:outline-none focus:ring-1 focus:ring-primary/50"
+          />
+        </div>
+        <input
+          type="range"
+          min={0.8}
+          max={2.5}
+          step={0.1}
+          value={lineHeight}
+          onChange={(e) => setLineHeight(parseFloat(e.target.value))}
+          onPointerUp={(e) => handleLineHeightCommit(parseFloat((e.target as HTMLInputElement).value))}
+          className="w-full h-1.5 appearance-none bg-border rounded accent-primary"
+        />
+        <div className="flex justify-between text-[10px] text-muted-foreground/50 select-none">
+          <span>צפוף (0.8)</span>
+          <span>מרווח (2.5)</span>
+        </div>
+      </div>
+
+      {/* Text box width slider + numeric input */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground">רוחב תיבת טקסט</p>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={20}
+              max={100}
+              step={5}
+              value={textWidthPct}
+              onChange={(e) => {
+                const v = Math.max(20, Math.min(100, Number(e.target.value) || 84));
+                setTextWidthPct(v);
+                onPageUpdate?.(page.id, { text_width_pct: v });
+              }}
+              onBlur={(e) => {
+                const v = Math.max(20, Math.min(100, Number(e.target.value) || 84));
+                handleTextWidthCommit(v);
+              }}
+              className="w-14 rounded border border-border bg-background px-2 py-0.5 text-xs tabular-nums text-center focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
+            <span className="text-xs text-muted-foreground">%</span>
+          </div>
+        </div>
+        <input
+          type="range"
+          min={20}
+          max={100}
+          step={5}
+          value={textWidthPct}
+          onChange={(e) => setTextWidthPct(Number(e.target.value))}
+          onPointerUp={(e) => handleTextWidthCommit(Number((e.target as HTMLInputElement).value))}
+          className="w-full h-1.5 appearance-none bg-border rounded accent-primary"
+        />
+        <div className="flex justify-between text-[10px] text-muted-foreground/50 select-none">
+          <span>צר (20%)</span>
+          <span>רחב (100%)</span>
+        </div>
+      </div>
+
       {/* Text alignment */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">יישור טקסט</p>
@@ -756,6 +872,9 @@ function PageEditorPanel({
           })}
         </div>
       </div>
+
+      {/* Background color palette */}
+      <BgColorPicker value={bgColor} onChange={handleBgColorChange} />
 
       {/* Text position (drag on large preview) — only for full-image overlay layouts */}
       {canDragText && (
@@ -885,6 +1004,7 @@ function PageEditorPanel({
 
 interface CoverBoxEditorState {
   text: string;
+  x: number;   // 0–1 horizontal position
   y: number;   // 0–1 vertical position
   size: number; // px
 }
@@ -893,15 +1013,15 @@ function parseCoverEditorData(
   textContent: string | null,
   personName: string
 ): { box1: CoverBoxEditorState; box2: CoverBoxEditorState } {
-  const b1: CoverBoxEditorState = { text: personName, y: 0.47, size: 28 };
-  const b2: CoverBoxEditorState = { text: "סיפור חיים בחרוזים", y: 0.63, size: 12 };
+  const b1: CoverBoxEditorState = { text: personName, x: 0.5, y: 0.47, size: 28 };
+  const b2: CoverBoxEditorState = { text: "סיפור חיים בחרוזים", x: 0.5, y: 0.63, size: 12 };
   if (!textContent) return { box1: b1, box2: b2 };
   try {
     const parsed = JSON.parse(textContent);
     if (parsed && typeof parsed === "object" && ("box1" in parsed || "box2" in parsed)) {
       return {
-        box1: { text: parsed.box1?.text ?? b1.text, y: parsed.box1?.y ?? b1.y, size: parsed.box1?.size ?? b1.size },
-        box2: { text: parsed.box2?.text ?? b2.text, y: parsed.box2?.y ?? b2.y, size: parsed.box2?.size ?? b2.size },
+        box1: { text: parsed.box1?.text ?? b1.text, x: parsed.box1?.x ?? b1.x, y: parsed.box1?.y ?? b1.y, size: parsed.box1?.size ?? b1.size },
+        box2: { text: parsed.box2?.text ?? b2.text, x: parsed.box2?.x ?? b2.x, y: parsed.box2?.y ?? b2.y, size: parsed.box2?.size ?? b2.size },
       };
     }
   } catch {}
@@ -949,8 +1069,8 @@ function SpecialPagePanel({
     if (!coverDirty) return;
     setSavingCover(true);
     const json = JSON.stringify({
-      box1: { text: coverBox1.text, x: 0.5, y: coverBox1.y, size: coverBox1.size },
-      box2: { text: coverBox2.text, x: 0.5, y: coverBox2.y, size: coverBox2.size },
+      box1: { text: coverBox1.text, x: coverBox1.x, y: coverBox1.y, size: coverBox1.size },
+      box2: { text: coverBox2.text, x: coverBox2.x, y: coverBox2.y, size: coverBox2.size },
     });
     const res = await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
       method: "PUT",
@@ -1065,15 +1185,25 @@ function SpecialPagePanel({
               placeholder={personName ?? "שם האדם"}
               className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
-            <div className="flex items-center gap-3">
-              <label className="text-[10px] text-muted-foreground whitespace-nowrap">מיקום %</label>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">אופקי %</label>
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">אנכי %</label>
+              <input
+                type="number" min={0} max={100} step={1}
+                value={Math.round(coverBox1.x * 100)}
+                onChange={(e) => { setCoverBox1((p) => ({ ...p, x: Number(e.target.value) / 100 })); setCoverDirty(true); }}
+                onBlur={saveCoverText}
+                className="rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
               <input
                 type="number" min={0} max={100} step={1}
                 value={Math.round(coverBox1.y * 100)}
                 onChange={(e) => { setCoverBox1((p) => ({ ...p, y: Number(e.target.value) / 100 })); setCoverDirty(true); }}
                 onBlur={saveCoverText}
-                className="w-14 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                className="rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
               />
+            </div>
+            <div className="flex items-center gap-3">
               <label className="text-[10px] text-muted-foreground whitespace-nowrap">גודל px</label>
               <input
                 type="number" min={10} max={80} step={1}
@@ -1095,15 +1225,25 @@ function SpecialPagePanel({
               dir="rtl"
               className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
-            <div className="flex items-center gap-3">
-              <label className="text-[10px] text-muted-foreground whitespace-nowrap">מיקום %</label>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">אופקי %</label>
+              <label className="text-[10px] text-muted-foreground whitespace-nowrap">אנכי %</label>
+              <input
+                type="number" min={0} max={100} step={1}
+                value={Math.round(coverBox2.x * 100)}
+                onChange={(e) => { setCoverBox2((p) => ({ ...p, x: Number(e.target.value) / 100 })); setCoverDirty(true); }}
+                onBlur={saveCoverText}
+                className="rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
               <input
                 type="number" min={0} max={100} step={1}
                 value={Math.round(coverBox2.y * 100)}
                 onChange={(e) => { setCoverBox2((p) => ({ ...p, y: Number(e.target.value) / 100 })); setCoverDirty(true); }}
                 onBlur={saveCoverText}
-                className="w-14 rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                className="rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
               />
+            </div>
+            <div className="flex items-center gap-3">
               <label className="text-[10px] text-muted-foreground whitespace-nowrap">גודל px</label>
               <input
                 type="number" min={10} max={80} step={1}
@@ -1418,6 +1558,88 @@ function ImageSlotEditor({
           </DialogContent>
         </Dialog>
       )}
+    </div>
+  );
+}
+
+// ─── BgColorPicker ────────────────────────────────────────────────────────────
+// Predefined palette for page background color + optional hex input.
+
+const BG_COLOR_PALETTE = [
+  { color: null,      label: "ברירת מחדל" },
+  { color: "#FAF8F2", label: "קרם" },
+  { color: "#FFFFFF", label: "לבן" },
+  { color: "#F5F0E8", label: "חמאה" },
+  { color: "#EBF0E8", label: "ירוק בהיר" },
+  { color: "#E8EAF0", label: "כחול בהיר" },
+  { color: "#F0E8EB", label: "ורוד בהיר" },
+  { color: "#2D2D2D", label: "כהה" },
+  { color: "#1C1C1C", label: "שחור" },
+] as const;
+
+function BgColorPicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (color: string | null) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">צבע רקע עמוד</p>
+      <div className="flex flex-wrap gap-1.5">
+        {BG_COLOR_PALETTE.map((entry) => {
+          const isActive = value === entry.color;
+          return (
+            <button
+              key={String(entry.color)}
+              onClick={() => onChange(entry.color as string | null)}
+              title={entry.label}
+              className={`h-7 w-7 rounded-md border-2 transition-all ${
+                isActive
+                  ? "border-primary ring-1 ring-primary ring-offset-1"
+                  : "border-border hover:border-primary/50"
+              }`}
+              style={{
+                background: entry.color ?? "linear-gradient(135deg, #f0f0f0 50%, #d0d0d0 50%)",
+              }}
+            />
+          );
+        })}
+      </div>
+      {/* Manual hex input for custom colors */}
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="#RRGGBB"
+          value={value ?? ""}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            if (v === "") {
+              onChange(null);
+            } else if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+              onChange(v);
+            }
+          }}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v === "" || /^#[0-9A-Fa-f]{6}$/.test(v)) {
+              onChange(v === "" ? null : v);
+            }
+          }}
+          maxLength={7}
+          dir="ltr"
+          className="w-24 rounded border border-border bg-background px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary/50"
+        />
+        {value && (
+          <button
+            onClick={() => onChange(null)}
+            className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+          >
+            איפוס
+          </button>
+        )}
+      </div>
     </div>
   );
 }

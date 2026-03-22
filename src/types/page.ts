@@ -88,6 +88,12 @@ export interface AlbumPage {
   text_y: number | null;
   /** Text color for page text. Null = layout default (white for overlays, foreground for splits). */
   text_color: TextColor | null;
+  /** Line-height multiplier for text blocks (e.g. 1.0–2.5). Null = default (1.4). */
+  line_height: number | null;
+  /** Text box width as a percentage of the page (30–100). Null = layout default. */
+  text_width_pct: number | null;
+  /** Page background hex color (e.g. '#FAF8F2'). Null = layout default. */
+  bg_color: string | null;
   narration_audio_path: string | null;
   narration_duration_ms: number | null;
   transition_type: string;
@@ -162,6 +168,12 @@ export interface PreviewPage {
   text_y?: number | null;
   /** Text color. Null = layout default (white for overlays, foreground for splits). */
   text_color?: TextColor | null;
+  /** Line-height multiplier. Null = default (1.4). */
+  line_height?: number | null;
+  /** Text box width percentage (30–100). Null = layout default. */
+  text_width_pct?: number | null;
+  /** Page background hex color. Null = layout default. */
+  bg_color?: string | null;
   /**
    * New slot-based image assignments from page_images table.
    * Slot 1 = primary image, Slot 2 = secondary (TWO_IMAGES layout only).

@@ -18,7 +18,7 @@ export async function loadPreviewData(
   const { data: pages, error } = await supabase
     .from("pages")
     .select(
-      "id, page_number, page_type, layout_type, text_content, illustration_storage_path, text_size, font_size_px, text_align, text_x, text_y, text_color"
+      "id, page_number, page_type, layout_type, text_content, illustration_storage_path, text_size, font_size_px, text_align, text_x, text_y, text_color, line_height, text_width_pct, bg_color"
     )
     .eq("order_id", orderId)
     .order("page_number");
@@ -157,6 +157,9 @@ export async function loadPreviewData(
       text_x: ((page as Record<string, unknown>).text_x as number | null) ?? null,
       text_y: ((page as Record<string, unknown>).text_y as number | null) ?? null,
       text_color: ((page as Record<string, unknown>).text_color as TextColor | null) ?? null,
+      line_height: ((page as Record<string, unknown>).line_height as number | null) ?? null,
+      text_width_pct: ((page as Record<string, unknown>).text_width_pct as number | null) ?? null,
+      bg_color: ((page as Record<string, unknown>).bg_color as string | null) ?? null,
       images: pageImagesMap.get(page.id as string) ?? [],
     };
   });

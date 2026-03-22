@@ -30,14 +30,17 @@ function PageShell({
   children,
   className = "",
   editMode = false,
+  bgColor,
 }: {
   children: React.ReactNode;
   className?: string;
   editMode?: boolean;
+  bgColor?: string | null;
 }) {
   return (
     <div
       className={`relative aspect-square w-full shadow-md ${editMode ? "" : "overflow-hidden"} ${className}`}
+      style={bgColor ? { backgroundColor: bgColor } : undefined}
     >
       {children}
     </div>
@@ -295,25 +298,28 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
   const tx = page.text_x ?? null;
   const ty = page.text_y ?? null;
   const tc = (page.text_color ?? null) as TextColor | null;
+  const lh = page.line_height ?? null;
+  const twp = page.text_width_pct ?? null;
+  const bgColor = page.bg_color ?? null;
 
   switch (layout) {
     case "TEXT_ONLY":
       return (
-        <PageShell className="bg-card border border-border/60" editMode={editMode}>
-          <TextCenter content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
+        <PageShell className="bg-card border border-border/60" editMode={editMode} bgColor={bgColor}>
+          <TextCenter content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} lineHeight={lh} textWidthPct={twp} />
           <PageNumber number={page.page_number} />
         </PageShell>
       );
 
     case "IMAGE_TOP_TEXT_BOTTOM":
       return (
-        <PageShell className="bg-card border border-border/60" editMode={editMode}>
+        <PageShell className="bg-card border border-border/60" editMode={editMode} bgColor={bgColor}>
           <div className="flex flex-col h-full">
             <div className="relative h-[60%]">
               <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
             </div>
             <div className="flex items-center justify-center flex-1 px-5 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} lineHeight={lh} textWidthPct={twp} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -322,10 +328,10 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
 
     case "TEXT_TOP_IMAGE_BOTTOM":
       return (
-        <PageShell className="bg-card border border-border/60" editMode={editMode}>
+        <PageShell className="bg-card border border-border/60" editMode={editMode} bgColor={bgColor}>
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-[40%] px-5 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} lineHeight={lh} textWidthPct={twp} />
             </div>
             <div className="relative flex-1">
               <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
@@ -337,14 +343,14 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
 
     case "IMAGE_LEFT_TEXT_RIGHT":
       return (
-        <PageShell className="bg-card border border-border/60" editMode={editMode}>
+        <PageShell className="bg-card border border-border/60" editMode={editMode} bgColor={bgColor}>
           {/* Force LTR so "left" is always physical-left regardless of page dir */}
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="relative w-[55%]">
               <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
             </div>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} lineHeight={lh} textWidthPct={twp} />
             </div>
           </div>
           <PageNumber number={page.page_number} />
@@ -353,10 +359,10 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
 
     case "IMAGE_RIGHT_TEXT_LEFT":
       return (
-        <PageShell className="bg-card border border-border/60" editMode={editMode}>
+        <PageShell className="bg-card border border-border/60" editMode={editMode} bgColor={bgColor}>
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="flex items-center justify-center flex-1 px-4 py-4">
-              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} />
+              <AlbumTextBlock content={page.text_content} textSize={ts} fontSizePx={fspx} textAlign={align} textColor={tc} lineHeight={lh} textWidthPct={twp} />
             </div>
             <div className="relative w-[55%]">
               <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
@@ -368,7 +374,7 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
 
     case "TWO_IMAGES":
       return (
-        <PageShell className="bg-card border border-border/60" editMode={editMode}>
+        <PageShell className="bg-card border border-border/60" editMode={editMode} bgColor={bgColor}>
           <div className="flex h-full" style={{ direction: "ltr" }}>
             <div className="relative w-1/2">
               <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} />
@@ -398,7 +404,7 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
 
     case "FULL_IMAGE_TEXT_TOP":
       return (
-        <PageShell className="bg-secondary" editMode={editMode}>
+        <PageShell className="bg-secondary" editMode={editMode} bgColor={bgColor}>
           <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} editMode={editMode} />
           {page.text_content && (
             <TextOverlayTop
@@ -409,6 +415,8 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
               textX={tx}
               textY={ty}
               textColor={tc}
+              lineHeight={lh}
+              textWidthPct={twp}
             />
           )}
           <PageNumber number={page.page_number} light />
@@ -417,7 +425,7 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
 
     case "FULL_IMAGE_TEXT_CENTER":
       return (
-        <PageShell className="bg-secondary" editMode={editMode}>
+        <PageShell className="bg-secondary" editMode={editMode} bgColor={bgColor}>
           <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} editMode={editMode} />
           {page.text_content && (
             <TextOverlayCenter
@@ -428,6 +436,8 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
               textX={tx}
               textY={ty}
               textColor={tc}
+              lineHeight={lh}
+              textWidthPct={twp}
             />
           )}
           <PageNumber number={page.page_number} light />
@@ -437,7 +447,7 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
     case "FULL_IMAGE":
     default:
       return (
-        <PageShell className="bg-secondary" editMode={editMode}>
+        <PageShell className="bg-secondary" editMode={editMode} bgColor={bgColor}>
           <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={fs1} editMode={editMode} />
           {page.text_content && (
             <TextOverlay
@@ -448,6 +458,8 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
               textX={tx}
               textY={ty}
               textColor={tc}
+              lineHeight={lh}
+              textWidthPct={twp}
             />
           )}
           <PageNumber number={page.page_number} light />
@@ -635,16 +647,21 @@ function PositionedText({
   fontSize,
   textAlign,
   textColor,
+  lineHeight,
+  textWidthPct,
 }: {
   text: string;
   fontSize: string;
   textAlign: TextAlign;
   textColor?: TextColor | null;
+  lineHeight?: number | null;
+  textWidthPct?: number | null;
 }) {
   const color = textColor === "black" ? "#1a1a1a" : "white";
   const shadow = textColor === "black"
     ? "0 1px 3px rgba(255,255,255,0.9), 0 2px 8px rgba(255,255,255,0.6)"
     : "0 1px 6px rgba(0,0,0,0.95), 0 2px 12px rgba(0,0,0,0.8)";
+  const widthStr = textWidthPct != null ? `${textWidthPct}%` : "84%";
   return (
     <p
       style={{
@@ -654,8 +671,8 @@ function PositionedText({
         color,
         textShadow: shadow,
         whiteSpace: "pre-line",
-        lineHeight: 1.6,
-        maxWidth: "84%",
+        lineHeight: lineHeight ?? 1.4,
+        maxWidth: widthStr,
       }}
     >
       {text}
@@ -673,16 +690,20 @@ interface OverlayTextProps {
   textX?: number | null;
   textY?: number | null;
   textColor?: TextColor | null;
+  lineHeight?: number | null;
+  textWidthPct?: number | null;
 }
 
 /** Gradient text overlay at bottom — no opaque background box. */
-function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, textColor }: OverlayTextProps) {
+function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, textColor, lineHeight, textWidthPct }: OverlayTextProps) {
   const fontSize = resolveTextSize(textSize, fontSizePx);
   const align = textAlign ?? "center";
   const color = textColor === "black" ? "#1a1a1a" : "white";
   const shadow = textColor === "black"
     ? "0 1px 2px rgba(255,255,255,0.7)"
     : "0 1px 4px rgba(0,0,0,0.6)";
+  const lh = lineHeight ?? 1.4;
+  const widthStr = textWidthPct != null ? `${textWidthPct}%` : "84%";
 
   if (textX != null && textY != null) {
     return (
@@ -696,11 +717,11 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, text
             left: `${textX * 100}%`,
             top: `${textY * 100}%`,
             transform: "translate(-50%, -50%)",
-            width: "84%",
+            width: widthStr,
             textAlign: align,
           }}
         >
-          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} />
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} lineHeight={lineHeight} textWidthPct={textWidthPct} />
         </div>
       </div>
     );
@@ -709,13 +730,14 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, text
   return (
     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/72 via-black/40 to-transparent px-5 pb-6 pt-16" style={{ zIndex: 10 }}>
       <p
-        className="leading-relaxed whitespace-pre-line"
+        className="whitespace-pre-line"
         style={{
           fontFamily: "YardenAlbum, serif",
           fontSize,
           textAlign: align,
           color,
           textShadow: shadow,
+          lineHeight: lh,
         }}
       >
         {text}
@@ -725,13 +747,15 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, text
 }
 
 /** Gradient text overlay at top. */
-function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, textColor }: OverlayTextProps) {
+function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, textColor, lineHeight, textWidthPct }: OverlayTextProps) {
   const fontSize = resolveTextSize(textSize, fontSizePx);
   const align = textAlign ?? "center";
   const color = textColor === "black" ? "#1a1a1a" : "white";
   const shadow = textColor === "black"
     ? "0 1px 2px rgba(255,255,255,0.7)"
     : "0 1px 4px rgba(0,0,0,0.6)";
+  const lh = lineHeight ?? 1.4;
+  const widthStr = textWidthPct != null ? `${textWidthPct}%` : "84%";
 
   if (textX != null && textY != null) {
     return (
@@ -745,11 +769,11 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, t
             left: `${textX * 100}%`,
             top: `${textY * 100}%`,
             transform: "translate(-50%, -50%)",
-            width: "84%",
+            width: widthStr,
             textAlign: align,
           }}
         >
-          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} />
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} lineHeight={lineHeight} textWidthPct={textWidthPct} />
         </div>
       </div>
     );
@@ -758,13 +782,14 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, t
   return (
     <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/72 via-black/40 to-transparent px-5 pt-6 pb-16" style={{ zIndex: 10 }}>
       <p
-        className="leading-relaxed whitespace-pre-line"
+        className="whitespace-pre-line"
         style={{
           fontFamily: "YardenAlbum, serif",
           fontSize,
           textAlign: align,
           color,
           textShadow: shadow,
+          lineHeight: lh,
         }}
       >
         {text}
@@ -774,13 +799,15 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, t
 }
 
 /** Centered text overlay with a frosted-glass pill — elegant for long verses. */
-function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, textColor }: OverlayTextProps) {
+function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, textColor, lineHeight, textWidthPct }: OverlayTextProps) {
   const fontSize = resolveTextSize(textSize, fontSizePx);
   const align = textAlign ?? "center";
   const color = textColor === "black" ? "#1a1a1a" : "white";
   const shadow = textColor === "black"
     ? "0 1px 2px rgba(255,255,255,0.7)"
     : "0 1px 4px rgba(0,0,0,0.8)";
+  const lh = lineHeight ?? 1.4;
+  const widthStr = textWidthPct != null ? `${textWidthPct}%` : "86%";
 
   if (textX != null && textY != null) {
     return (
@@ -794,11 +821,11 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
             left: `${textX * 100}%`,
             top: `${textY * 100}%`,
             transform: "translate(-50%, -50%)",
-            width: "84%",
+            width: widthStr,
             textAlign: align,
           }}
         >
-          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} />
+          <PositionedText text={text} fontSize={fontSize} textAlign={align} textColor={textColor} lineHeight={lineHeight} textWidthPct={textWidthPct} />
         </div>
       </div>
     );
@@ -807,16 +834,17 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
   return (
     <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none" style={{ zIndex: 10 }}>
       <div
-        className="rounded-2xl px-5 py-4 max-w-[86%]"
-        style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", textAlign: align }}
+        className="rounded-2xl px-5 py-4"
+        style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", textAlign: align, maxWidth: widthStr }}
       >
         <p
-          className="leading-relaxed whitespace-pre-line"
+          className="whitespace-pre-line"
           style={{
             fontFamily: "YardenAlbum, serif",
             fontSize,
             color,
             textShadow: shadow,
+            lineHeight: lh,
           }}
         >
           {text}
@@ -833,16 +861,21 @@ function AlbumTextBlock({
   fontSizePx,
   textAlign,
   textColor,
+  lineHeight,
+  textWidthPct,
 }: {
   content: string | null;
   textSize?: TextSize | null;
   fontSizePx?: number | null;
   textAlign?: TextAlign;
   textColor?: TextColor | null;
+  lineHeight?: number | null;
+  textWidthPct?: number | null;
 }) {
   if (!content)
     return <PlaceholderText label="הטקסט יווצר בקרוב" />;
   const color = textColor === "white" ? "white" : textColor === "black" ? "#1a1a1a" : undefined;
+  const widthStr = textWidthPct != null ? `${textWidthPct}%` : undefined;
   return (
     <p
       className={color ? "" : "text-foreground"}
@@ -850,9 +883,10 @@ function AlbumTextBlock({
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(textSize, fontSizePx),
         textAlign: textAlign ?? "center",
-        lineHeight: 1.6,
+        lineHeight: lineHeight ?? 1.4,
         whiteSpace: "pre-line",
         ...(color ? { color } : {}),
+        ...(widthStr ? { maxWidth: widthStr } : {}),
       }}
     >
       {content}
@@ -867,14 +901,19 @@ function TextCenter({
   fontSizePx,
   textAlign,
   textColor,
+  lineHeight,
+  textWidthPct,
 }: {
   content: string | null;
   textSize?: TextSize | null;
   fontSizePx?: number | null;
   textAlign?: TextAlign;
   textColor?: TextColor | null;
+  lineHeight?: number | null;
+  textWidthPct?: number | null;
 }) {
   const color = textColor === "white" ? "white" : textColor === "black" ? "#1a1a1a" : undefined;
+  const widthStr = textWidthPct != null ? `${textWidthPct}%` : undefined;
   return (
     <div className="flex h-full flex-col items-center justify-center p-10">
       <Ornament className="mb-7" />
@@ -885,9 +924,10 @@ function TextCenter({
             fontFamily: "YardenAlbum, serif",
             fontSize: resolveTextSize(textSize ?? "lg", fontSizePx),
             textAlign: textAlign ?? "center",
-            lineHeight: 1.6,
+            lineHeight: lineHeight ?? 1.4,
             whiteSpace: "pre-line",
             ...(color ? { color } : {}),
+            ...(widthStr ? { maxWidth: widthStr } : {}),
           }}
         >
           {content}

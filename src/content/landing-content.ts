@@ -20,7 +20,7 @@ export const HERO = {
 
 export const HOW_IT_WORKS = {
   title: "איך זה עובד?",
-  subtitle: "אתם תפנו רק 15 דקות למילוי השאלון ואנחנו כבר ניקח את זה מכאן",
+  subtitle: "אתם תפנו רק 15 דקות למילוי השאלון ואנחנו כבר ניקח את זה משם",
   steps: [
     {
       num: "1",

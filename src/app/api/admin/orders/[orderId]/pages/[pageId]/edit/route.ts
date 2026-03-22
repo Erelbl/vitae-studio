@@ -28,6 +28,9 @@ export async function PUT(
     text_x?: number | null;
     text_y?: number | null;
     text_color?: string | null;
+    line_height?: number | null;
+    text_width_pct?: number | null;
+    bg_color?: string | null;
   };
   try {
     body = await req.json();
@@ -190,6 +193,33 @@ export async function PUT(
       );
     }
     updates.text_color = body.text_color;
+  }
+
+  // Handle line_height — must be null or a number in [0.5, 4.0]
+  if (body.line_height !== undefined) {
+    const lh = body.line_height;
+    if (lh !== null && (typeof lh !== "number" || lh < 0.5 || lh > 4.0)) {
+      return NextResponse.json({ error: `Invalid line_height: ${lh}` }, { status: 400 });
+    }
+    updates.line_height = lh;
+  }
+
+  // Handle text_width_pct — must be null or an integer in [20, 100]
+  if (body.text_width_pct !== undefined) {
+    const twp = body.text_width_pct;
+    if (twp !== null && (!Number.isInteger(twp) || twp < 20 || twp > 100)) {
+      return NextResponse.json({ error: `Invalid text_width_pct: ${twp}` }, { status: 400 });
+    }
+    updates.text_width_pct = twp;
+  }
+
+  // Handle bg_color — must be null or a valid hex color string
+  if (body.bg_color !== undefined) {
+    const bgc = body.bg_color;
+    if (bgc !== null && (typeof bgc !== "string" || !/^#[0-9A-Fa-f]{3,8}$/.test(bgc))) {
+      return NextResponse.json({ error: `Invalid bg_color: ${bgc}` }, { status: 400 });
+    }
+    updates.bg_color = bgc;
   }
 
   if (Object.keys(updates).length === 0) {

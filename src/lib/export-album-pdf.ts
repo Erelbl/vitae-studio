@@ -158,6 +158,8 @@ function buildTextOverlay(
   const shadow = isBlack
     ? "0 1px 2px rgba(255,255,255,0.7)"
     : "0 1px 4px rgba(0,0,0,0.6)";
+  const lh = String(page.line_height ?? 1.4);
+  const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : "84%";
 
   // Custom position (admin-dragged)
   if (page.text_x != null && page.text_y != null) {
@@ -173,7 +175,7 @@ function buildTextOverlay(
       left: `${page.text_x * 100}%`,
       top: `${page.text_y * 100}%`,
       transform: "translate(-50%, -50%)",
-      width: "84%",
+      width: widthPct,
       textAlign: align,
     });
     const p = document.createElement("p");
@@ -184,8 +186,8 @@ function buildTextOverlay(
       color,
       textShadow: shadow,
       whiteSpace: "pre-line",
-      lineHeight: "1.6",
-      maxWidth: "84%",
+      lineHeight: lh,
+      maxWidth: widthPct,
     });
     p.textContent = text;
     inner.appendChild(p);
@@ -235,18 +237,19 @@ function buildTextOverlay(
     color,
     textShadow: shadow,
     whiteSpace: "pre-line",
-    lineHeight: "1.6",
+    lineHeight: lh,
   });
   p.textContent = text;
 
   if (position === "center") {
     const pill = document.createElement("div");
+    const pillWidth = page.text_width_pct != null ? `${page.text_width_pct}%` : "86%";
     Object.assign(pill.style, {
       background: "rgba(0,0,0,0.45)",
       backdropFilter: "blur(6px)",
       borderRadius: sp(16),
       padding: `${sp(16)} ${sp(20)}`,
-      maxWidth: "86%",
+      maxWidth: pillWidth,
       textAlign: align,
     });
     pill.appendChild(p);
@@ -275,7 +278,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
     width: `${PAGE_SIZE_PX}px`,
     height: `${PAGE_SIZE_PX}px`,
     overflow: "hidden",
-    backgroundColor: "#FAF8F2", // bg-secondary
+    backgroundColor: page.bg_color ?? "#FAF8F2", // bg-secondary default
     direction: "rtl",
     flexShrink: "0",
   });
@@ -439,7 +442,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       buildTextOverlay(page.text_content, page, overlayPos, el);
     }
   } else if (layout === "TEXT_ONLY") {
-    el.style.backgroundColor = "#fff";
+    el.style.backgroundColor = page.bg_color ?? "#fff";
     el.style.border = "1px solid rgba(0,0,0,0.08)";
     const content = document.createElement("div");
     Object.assign(content.style, {
@@ -452,20 +455,23 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
     });
     if (page.text_content) {
       const p = document.createElement("p");
+      const lh = String(page.line_height ?? 1.4);
+      const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : undefined;
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
         textAlign: page.text_align ?? "center",
-        lineHeight: "1.6",
+        lineHeight: lh,
         whiteSpace: "pre-line",
         color: "#1a1a1a",
+        ...(widthPct ? { maxWidth: widthPct } : {}),
       });
       p.textContent = page.text_content;
       content.appendChild(p);
     }
     el.appendChild(content);
   } else if (layout === "IMAGE_TOP_TEXT_BOTTOM" || layout === "TEXT_TOP_IMAGE_BOTTOM") {
-    el.style.backgroundColor = "#fff";
+    el.style.backgroundColor = page.bg_color ?? "#fff";
     el.style.display = "flex";
     el.style.flexDirection = "column";
     const imgSection = document.createElement("div");
@@ -487,13 +493,16 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
     });
     if (page.text_content) {
       const p = document.createElement("p");
+      const lh = String(page.line_height ?? 1.4);
+      const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : undefined;
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
         textAlign: page.text_align ?? "center",
-        lineHeight: "1.6",
+        lineHeight: lh,
         whiteSpace: "pre-line",
         color: "#1a1a1a",
+        ...(widthPct ? { maxWidth: widthPct } : {}),
       });
       p.textContent = page.text_content;
       textSection.appendChild(p);
@@ -510,7 +519,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       el.appendChild(imgSection);
     }
   } else if (layout === "IMAGE_LEFT_TEXT_RIGHT" || layout === "IMAGE_RIGHT_TEXT_LEFT") {
-    el.style.backgroundColor = "#fff";
+    el.style.backgroundColor = page.bg_color ?? "#fff";
     el.style.display = "flex";
     el.style.direction = "ltr";
     const imgSection = document.createElement("div");
@@ -532,14 +541,17 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
     });
     if (page.text_content) {
       const p = document.createElement("p");
+      const lh = String(page.line_height ?? 1.4);
+      const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : undefined;
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
         textAlign: page.text_align ?? "center",
-        lineHeight: "1.6",
+        lineHeight: lh,
         whiteSpace: "pre-line",
         color: "#1a1a1a",
         direction: "rtl",
+        ...(widthPct ? { maxWidth: widthPct } : {}),
       });
       p.textContent = page.text_content;
       textSection.appendChild(p);
