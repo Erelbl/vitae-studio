@@ -133,6 +133,15 @@ export interface PageImageSlot {
    * Requires photos.illustration_nobg_path to be set on the referenced photo.
    */
   use_nobg: boolean;
+  /**
+   * Non-destructive crop insets — fraction of the slot container clipped from each side.
+   * Range 0.0–0.9. Applied as CSS clip-path: inset(top right bottom left).
+   * Default 0 (no crop). Original image is never modified.
+   */
+  crop_inset_top: number;
+  crop_inset_right: number;
+  crop_inset_bottom: number;
+  crop_inset_left: number;
 }
 
 export const TEXT_POSITIONS = ["top", "bottom", "overlay"] as const;

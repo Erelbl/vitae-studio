@@ -312,6 +312,15 @@ export function AlbumPreview({
             const cy = useEditOverride ? editCropY : (pgSlot1?.crop_y ?? 0.5);
             const finalUrl = useEditOverride ? (editImageUrl ?? slot1Url) : slot1Url;
 
+            // Non-destructive crop inset — same values as used in ImageFill.
+            const it = pgSlot1?.crop_inset_top    ?? 0;
+            const ir = pgSlot1?.crop_inset_right  ?? 0;
+            const ib = pgSlot1?.crop_inset_bottom ?? 0;
+            const il = pgSlot1?.crop_inset_left   ?? 0;
+            const cropClipPath = (it > 0 || ir > 0 || ib > 0 || il > 0)
+              ? `inset(${it * 100}% ${ir * 100}% ${ib * 100}% ${il * 100}%)`
+              : undefined;
+
             return [(
               <div
                 key={`fi-${page.id}-1`}
@@ -320,6 +329,7 @@ export function AlbumPreview({
                   // In RTL grid: rightPage is col-1 (physical right), leftPage is col-2 (physical left)
                   ...(isRight ? { right: 0 } : { left: 0 }),
                   width: "50%", zIndex: 2, overflow: "visible", pointerEvents: "none",
+                  ...(cropClipPath ? { clipPath: cropClipPath } : {}),
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}

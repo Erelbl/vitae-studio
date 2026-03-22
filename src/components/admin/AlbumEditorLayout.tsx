@@ -199,6 +199,7 @@ export function AlbumEditorLayout({
               image_url: slot === 1 ? (serverPage.image_url ?? null) : null,
               frame_style: null,
               use_nobg: false,
+              crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0,
             },
           ];
       const next = new Map(prev);
@@ -340,6 +341,7 @@ export function AlbumEditorLayout({
               crop_y: img.crop_y,
               scale: img.scale,
               frame_style: img.frame_style ?? null,
+              use_nobg: img.use_nobg,
             }),
           });
         } else {

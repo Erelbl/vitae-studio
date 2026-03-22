@@ -47,6 +47,10 @@ export type EditorPage = {
     frame_style: string | null;
     image_url: string | null;
     use_nobg: boolean;
+    crop_inset_top: number;
+    crop_inset_right: number;
+    crop_inset_bottom: number;
+    crop_inset_left: number;
   }>;
 };
 
@@ -131,6 +135,10 @@ type SlotState = {
   scale: number;
   frame_style: string | null;
   use_nobg: boolean;
+  crop_inset_top: number;
+  crop_inset_right: number;
+  crop_inset_bottom: number;
+  crop_inset_left: number;
 };
 
 /** Convert the local slots map → PageImageSlot[] suitable for an onPageUpdate override. */
@@ -147,6 +155,10 @@ function buildImages(slotsMap: Record<number, SlotState>): PageImageSlot[] {
       frame_style: s.frame_style ?? null,
       image_url: s.image_url!,
       use_nobg: s.use_nobg,
+      crop_inset_top:    s.crop_inset_top,
+      crop_inset_right:  s.crop_inset_right,
+      crop_inset_bottom: s.crop_inset_bottom,
+      crop_inset_left:   s.crop_inset_left,
     }));
 }
 
@@ -214,6 +226,7 @@ export function AlbumPageEditor({
 }) {
   const router = useRouter();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [insertingSpread, setInsertingSpread] = useState(false);
 
   // Sync selection when the preview navigates (bidirectional sync).
   // We only adopt the external page ID if it differs — avoids re-render loops.
@@ -240,6 +253,35 @@ export function AlbumPageEditor({
   function goToNext() {
     if (selectedIndex < 0 || selectedIndex >= pages.length - 1) return;
     selectPage(pages[selectedIndex + 1]);
+  }
+
+  async function handleInsertSpread() {
+    setInsertingSpread(true);
+    try {
+      const isContentPage =
+        selectedPage?.page_type === "illustration_and_text" ||
+        selectedPage?.page_type === "text_only";
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/pages/insert-spread`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            isContentPage
+              ? { afterPageNumber: selectedPage!.page_number }
+              : {}
+          ),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "שגיאה בהוספת כפולה");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setInsertingSpread(false);
+    }
   }
 
   if (pages.length === 0) {
@@ -306,6 +348,22 @@ export function AlbumPageEditor({
               </button>
             );
           })}
+        </div>
+
+        {/* Insert spread action */}
+        <div className="flex justify-end">
+          <button
+            onClick={handleInsertSpread}
+            disabled={insertingSpread}
+            className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {insertingSpread
+              ? "מוסיף כפולה..."
+              : selectedPage?.page_type === "illustration_and_text" ||
+                selectedPage?.page_type === "text_only"
+              ? "＋ הוסף כפולה אחרי עמוד זה"
+              : "＋ הוסף כפולה"}
+          </button>
         </div>
       </div>
 
@@ -403,6 +461,10 @@ function PageEditorPanel({
         scale: img.scale,
         frame_style: img.frame_style ?? null,
         use_nobg: img.use_nobg ?? false,
+        crop_inset_top:    img.crop_inset_top    ?? 0,
+        crop_inset_right:  img.crop_inset_right  ?? 0,
+        crop_inset_bottom: img.crop_inset_bottom ?? 0,
+        crop_inset_left:   img.crop_inset_left   ?? 0,
       };
     }
     return m;
@@ -520,7 +582,7 @@ function PageEditorPanel({
     const prevSlots = slots;
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false },
+      [slot]: { photo_id: photoId, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 },
     };
     setSlots(newSlots);
     // Push to large preview immediately for instant visual feedback
@@ -570,11 +632,31 @@ function PageEditorPanel({
   function handleManualUpload(slot: 1 | 2, imageUrl: string) {
     const newSlots = {
       ...slots,
-      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false },
+      [slot]: { photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 },
     };
     setSlots(newSlots);
     onPageUpdate?.(page.id, { images: buildImages(newSlots) });
     // Optimistic update already shows the image — no router.refresh() to avoid clearing it.
+  }
+
+  /** Save non-destructive crop insets for a slot. Called from ImageCropModal. */
+  async function handleCropInsetSave(
+    slotNum: 1 | 2,
+    top: number, right: number, bottom: number, left: number
+  ) {
+    const currentSlot = slots[slotNum];
+    if (!currentSlot) return;
+    const newSlots = {
+      ...slots,
+      [slotNum]: { ...currentSlot, crop_inset_top: top, crop_inset_right: right, crop_inset_bottom: bottom, crop_inset_left: left },
+    };
+    setSlots(newSlots);
+    onPageUpdate?.(page.id, { images: buildImages(newSlots) });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot: slotNum, crop_inset_top: top, crop_inset_right: right, crop_inset_bottom: bottom, crop_inset_left: left }),
+    });
   }
 
   /** Save a frame style change for a slot. */
@@ -635,6 +717,10 @@ function PageEditorPanel({
           onPageUpdate?.(page.id, { images: buildImages(updated) });
           return updated;
         });
+        // Refresh server data so `pages` prop is up-to-date with use_nobg=true.
+        // Without this, navigating away and back would remount PageEditorPanel
+        // from stale page.images, losing the nobg choice.
+        onSaved();
       } finally {
         setNobgLoadingSlot(null);
       }
@@ -976,6 +1062,7 @@ function PageEditorPanel({
               onCropSave={(crop_x, crop_y, scale) =>
                 handleCropSave(focusedSlot, crop_x, crop_y, scale)
               }
+              onCropInsetSave={(t, r, b, l) => handleCropInsetSave(focusedSlot, t, r, b, l)}
               onManualUpload={(imageUrl) =>
                 handleManualUpload(focusedSlot, imageUrl)
               }
@@ -994,6 +1081,7 @@ function PageEditorPanel({
               onCropSave={(crop_x, crop_y, scale) =>
                 handleCropSave(activeSlots[0] as 1 | 2, crop_x, crop_y, scale)
               }
+              onCropInsetSave={(t, r, b, l) => handleCropInsetSave(activeSlots[0] as 1 | 2, t, r, b, l)}
               onManualUpload={(imageUrl) =>
                 handleManualUpload(activeSlots[0] as 1 | 2, imageUrl)
               }
@@ -1074,8 +1162,8 @@ function SpecialPagePanel({
   const [slotState, setSlotState] = useState<SlotState>(() => {
     const img = page.images.find((i) => i.slot === 1);
     return img
-      ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale, frame_style: img.frame_style ?? null, use_nobg: img.use_nobg ?? false }
-      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false };
+      ? { photo_id: img.photo_id, image_url: img.image_url, crop_x: img.crop_x, crop_y: img.crop_y, scale: img.scale, frame_style: img.frame_style ?? null, use_nobg: img.use_nobg ?? false, crop_inset_top: img.crop_inset_top ?? 0, crop_inset_right: img.crop_inset_right ?? 0, crop_inset_bottom: img.crop_inset_bottom ?? 0, crop_inset_left: img.crop_inset_left ?? 0 }
+      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 };
   });
   const [nobgLoading, setNobgLoading] = useState(false);
 
@@ -1131,8 +1219,8 @@ function SpecialPagePanel({
 
   async function handleAssign(photo: PhotoForEditor | null) {
     const newState: SlotState = photo
-      ? { photo_id: photo.id, image_url: photo.illustrationUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false }
-      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false };
+      ? { photo_id: photo.id, image_url: photo.illustrationUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 }
+      : { photo_id: null, image_url: null, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 };
     setSlotState(newState);
     await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/images`, {
       method: "PUT",
@@ -1143,7 +1231,7 @@ function SpecialPagePanel({
   }
 
   function handleManualUpload(imageUrl: string) {
-    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false });
+    setSlotState({ photo_id: null, image_url: imageUrl, crop_x: 0.5, crop_y: 0.5, scale: 1, frame_style: null, use_nobg: false, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 });
     onSaved();
   }
 
@@ -1358,6 +1446,7 @@ function ImageSlotEditor({
   nobgLoading = false,
   onAssign,
   onCropSave,
+  onCropInsetSave,
   onManualUpload,
   onToggleNobg,
 }: {
@@ -1371,11 +1460,14 @@ function ImageSlotEditor({
   nobgLoading?: boolean;
   onAssign: (photo: PhotoForEditor | null) => void;
   onCropSave: (crop_x: number, crop_y: number, scale: number) => void;
+  /** Called when the admin confirms a non-destructive crop from the crop modal. */
+  onCropInsetSave?: (top: number, right: number, bottom: number, left: number) => void;
   onManualUpload: (imageUrl: string) => void;
   /** Called when the admin toggles the no-bg effect on/off. Only available for photo slots. */
   onToggleNobg?: (enable: boolean) => void;
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [showCropModal, setShowCropModal] = useState(false);
   const [scale, setScale] = useState(slotState?.scale ?? 1);
   const [uploading, setUploading] = useState(false);
 
@@ -1384,6 +1476,14 @@ function ImageSlotEditor({
   const imageUrl = slotState?.image_url ?? null;
   const hasImage = Boolean(imageUrl);
   const isManual = hasImage && !slotState?.photo_id;
+  const hasCropInset = Boolean(
+    slotState && (
+      (slotState.crop_inset_top ?? 0) > 0 ||
+      (slotState.crop_inset_right ?? 0) > 0 ||
+      (slotState.crop_inset_bottom ?? 0) > 0 ||
+      (slotState.crop_inset_left ?? 0) > 0
+    )
+  );
 
   function handleScaleChange(newScale: number) {
     setScale(newScale);
@@ -1474,6 +1574,30 @@ function ImageSlotEditor({
               className="flex-1 h-1.5 appearance-none bg-border rounded accent-primary"
             />
           </div>
+
+          {/* Crop button */}
+          {onCropInsetSave && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setShowCropModal(true)}
+                className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                  hasCropInset
+                    ? "border-primary/60 text-primary bg-primary/5 hover:bg-primary/10"
+                    : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                }`}
+              >
+                {hasCropInset ? "✂ ערוך חיתוך" : "✂ חתוך תמונה"}
+              </button>
+              {hasCropInset && (
+                <button
+                  onClick={() => onCropInsetSave(0, 0, 0, 0)}
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  איפוס חיתוך
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Replace buttons */}
           <div className="flex items-center gap-3 flex-wrap">
@@ -1609,6 +1733,22 @@ function ImageSlotEditor({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Non-destructive crop modal */}
+      {showCropModal && imageUrl && onCropInsetSave && (
+        <ImageCropModal
+          imageUrl={imageUrl}
+          initialTop={slotState?.crop_inset_top    ?? 0}
+          initialRight={slotState?.crop_inset_right  ?? 0}
+          initialBottom={slotState?.crop_inset_bottom ?? 0}
+          initialLeft={slotState?.crop_inset_left   ?? 0}
+          onConfirm={(t, r, b, l) => {
+            onCropInsetSave(t, r, b, l);
+            setShowCropModal(false);
+          }}
+          onClose={() => setShowCropModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1724,5 +1864,204 @@ function FrameStylePicker({
         ))}
       </div>
     </div>
+  );
+}
+
+// ─── ImageCropModal ───────────────────────────────────────────────────────────
+// Non-destructive crop UI — shows the image with draggable handles on all 4 sides
+// and 4 corners. Confirms as crop_inset_* fractions (0–0.9 per side).
+
+type CropHandleTarget = "top" | "right" | "bottom" | "left" | "tl" | "tr" | "bl" | "br";
+
+function ImageCropModal({
+  imageUrl,
+  initialTop,
+  initialRight,
+  initialBottom,
+  initialLeft,
+  onConfirm,
+  onClose,
+}: {
+  imageUrl: string;
+  initialTop: number;
+  initialRight: number;
+  initialBottom: number;
+  initialLeft: number;
+  onConfirm: (top: number, right: number, bottom: number, left: number) => void;
+  onClose: () => void;
+}) {
+  const PREVIEW = 288; // px — square preview size
+
+  const [crop, setCrop] = useState({
+    top:    initialTop,
+    right:  initialRight,
+    bottom: initialBottom,
+    left:   initialLeft,
+  });
+
+  // Ref holds drag state so pointermove doesn't close over stale crop.
+  const dragging = useRef<{
+    target: CropHandleTarget;
+    startX: number;
+    startY: number;
+    startCrop: typeof crop;
+  } | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  /** Clamp an inset so it stays within [0, 0.9 - opposing]. */
+  function ci(val: number, opposing: number) {
+    return Math.max(0, Math.min(0.9 - opposing, val));
+  }
+
+  function onHandlePointerDown(target: CropHandleTarget, e: React.PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Capture on the container so pointermove/pointerup fire there.
+    containerRef.current?.setPointerCapture(e.pointerId);
+    dragging.current = { target, startX: e.clientX, startY: e.clientY, startCrop: { ...crop } };
+  }
+
+  function onContainerPointerMove(e: React.PointerEvent) {
+    const d = dragging.current;
+    if (!d) return;
+    const dx = (e.clientX - d.startX) / PREVIEW;
+    const dy = (e.clientY - d.startY) / PREVIEW;
+    const sc = d.startCrop;
+    setCrop({
+      top:    (d.target === "top"  || d.target === "tl" || d.target === "tr") ? ci(sc.top    + dy, sc.bottom) : sc.top,
+      bottom: (d.target === "bottom" || d.target === "bl" || d.target === "br") ? ci(sc.bottom - dy, sc.top)    : sc.bottom,
+      left:   (d.target === "left"  || d.target === "tl" || d.target === "bl") ? ci(sc.left   + dx, sc.right)  : sc.left,
+      right:  (d.target === "right" || d.target === "tr" || d.target === "br") ? ci(sc.right  - dx, sc.left)   : sc.right,
+    });
+  }
+
+  function onContainerPointerUp() {
+    dragging.current = null;
+  }
+
+  const { top, right, bottom, left } = crop;
+  const hasCrop = top > 0.001 || right > 0.001 || bottom > 0.001 || left > 0.001;
+
+  // Crop-box pixel positions inside the preview
+  const boxTop    = top    * PREVIEW;
+  const boxRight  = right  * PREVIEW;
+  const boxBottom = bottom * PREVIEW;
+  const boxLeft   = left   * PREVIEW;
+  const boxW = PREVIEW - boxLeft - boxRight;
+  const boxH = PREVIEW - boxTop  - boxBottom;
+
+  // Midpoints of each edge (for side handles)
+  const midX = boxLeft + boxW / 2;
+  const midY = boxTop  + boxH / 2;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>חתוך תמונה</DialogTitle>
+        </DialogHeader>
+
+        <p className="text-xs text-muted-foreground -mt-1 mb-1">
+          גרור את הידיות לחיתוך. התמונה המקורית לא משתנה.
+        </p>
+
+        {/* ── Crop preview ── */}
+        <div className="flex justify-center">
+          <div
+            ref={containerRef}
+            className="relative select-none touch-none"
+            style={{ width: PREVIEW, height: PREVIEW, cursor: dragging.current ? "crosshair" : "default" }}
+            onPointerMove={onContainerPointerMove}
+            onPointerUp={onContainerPointerUp}
+          >
+            {/* Image */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt=""
+              draggable={false}
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+            />
+
+            {/* Dark overlay — top strip */}
+            <div className="absolute inset-x-0 top-0 bg-black/55 pointer-events-none" style={{ height: boxTop }} />
+            {/* Dark overlay — bottom strip */}
+            <div className="absolute inset-x-0 bottom-0 bg-black/55 pointer-events-none" style={{ height: boxBottom }} />
+            {/* Dark overlay — left strip (between top/bottom) */}
+            <div className="absolute left-0 bg-black/55 pointer-events-none" style={{ top: boxTop, bottom: boxBottom, width: boxLeft }} />
+            {/* Dark overlay — right strip (between top/bottom) */}
+            <div className="absolute right-0 bg-black/55 pointer-events-none" style={{ top: boxTop, bottom: boxBottom, width: boxRight }} />
+
+            {/* Crop border */}
+            <div
+              className="absolute border-2 border-white/90 pointer-events-none"
+              style={{ top: boxTop, left: boxLeft, width: boxW, height: boxH }}
+            >
+              {/* Rule-of-thirds lines */}
+              <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute border-t border-white/25" style={{ top: "33.33%", left: 0, right: 0 }} />
+                <div className="absolute border-t border-white/25" style={{ top: "66.67%", left: 0, right: 0 }} />
+                <div className="absolute border-s border-white/25" style={{ left: "33.33%", top: 0, bottom: 0 }} />
+                <div className="absolute border-s border-white/25" style={{ left: "66.67%", top: 0, bottom: 0 }} />
+              </div>
+            </div>
+
+            {/* Side handles */}
+            <CropHandle x={midX}       y={boxTop}              cursor="ns-resize"   target="top"    onDown={onHandlePointerDown} />
+            <CropHandle x={midX}       y={PREVIEW - boxBottom} cursor="ns-resize"   target="bottom" onDown={onHandlePointerDown} />
+            <CropHandle x={boxLeft}    y={midY}                cursor="ew-resize"   target="left"   onDown={onHandlePointerDown} />
+            <CropHandle x={PREVIEW - boxRight} y={midY}        cursor="ew-resize"   target="right"  onDown={onHandlePointerDown} />
+
+            {/* Corner handles */}
+            <CropHandle x={boxLeft}            y={boxTop}              cursor="nwse-resize" target="tl" onDown={onHandlePointerDown} />
+            <CropHandle x={PREVIEW - boxRight} y={boxTop}              cursor="nesw-resize" target="tr" onDown={onHandlePointerDown} />
+            <CropHandle x={boxLeft}            y={PREVIEW - boxBottom} cursor="nesw-resize" target="bl" onDown={onHandlePointerDown} />
+            <CropHandle x={PREVIEW - boxRight} y={PREVIEW - boxBottom} cursor="nwse-resize" target="br" onDown={onHandlePointerDown} />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-1">
+          {hasCrop && (
+            <button
+              onClick={() => setCrop({ top: 0, right: 0, bottom: 0, left: 0 })}
+              className="flex-1 rounded-md py-2 text-xs border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive transition-colors"
+            >
+              איפוס חיתוך
+            </button>
+          )}
+          <button
+            onClick={() => onConfirm(top, right, bottom, left)}
+            className="flex-1 rounded-md py-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            אישור חיתוך
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** A single drag handle for ImageCropModal. */
+function CropHandle({
+  x,
+  y,
+  cursor,
+  target,
+  onDown,
+}: {
+  x: number;
+  y: number;
+  cursor: string;
+  target: CropHandleTarget;
+  onDown: (target: CropHandleTarget, e: React.PointerEvent) => void;
+}) {
+  return (
+    <div
+      className="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 bg-white rounded-sm shadow border border-white/60 z-10"
+      style={{ left: x, top: y, cursor }}
+      onPointerDown={(e) => onDown(target, e)}
+    />
   );
 }

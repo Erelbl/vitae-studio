@@ -53,6 +53,10 @@ interface CropParams {
   crop_x: number;
   crop_y: number;
   scale: number;
+  crop_inset_top: number;
+  crop_inset_right: number;
+  crop_inset_bottom: number;
+  crop_inset_left: number;
 }
 
 // ─── Frame style SVG mask presets ─────────────────────────────────────────────
@@ -110,15 +114,19 @@ function resolveSlot(
         crop_x: isLegacyZero ? 0.5 : slotData.crop_x,
         crop_y: isLegacyZero ? 0.5 : slotData.crop_y,
         scale: slotData.scale,
+        crop_inset_top:    slotData.crop_inset_top    ?? 0,
+        crop_inset_right:  slotData.crop_inset_right  ?? 0,
+        crop_inset_bottom: slotData.crop_inset_bottom ?? 0,
+        crop_inset_left:   slotData.crop_inset_left   ?? 0,
       },
       frameStyle: slotData.frame_style ?? null,
     };
   }
   // Legacy fallback: use pages.illustration_storage_path URL for slot 1 only
   if (slot === 1) {
-    return { url: page.image_url, crop: { crop_x: 0.5, crop_y: 0.5, scale: 1 }, frameStyle: null };
+    return { url: page.image_url, crop: { crop_x: 0.5, crop_y: 0.5, scale: 1, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 }, frameStyle: null };
   }
-  return { url: null, crop: { crop_x: 0.5, crop_y: 0.5, scale: 1 }, frameStyle: null };
+  return { url: null, crop: { crop_x: 0.5, crop_y: 0.5, scale: 1, crop_inset_top: 0, crop_inset_right: 0, crop_inset_bottom: 0, crop_inset_left: 0 }, frameStyle: null };
 }
 
 // ─── Cover text helpers ───────────────────────────────────────────────────────
@@ -567,11 +575,23 @@ function ImageFill({
     return <div className="absolute inset-0" />;
   }
 
-  const { crop_x, crop_y, scale } = crop;
+  const { crop_x, crop_y, scale, crop_inset_top, crop_inset_right, crop_inset_bottom, crop_inset_left } = crop;
   const s = Math.max(0.1, scale);
   const maskUrl = frameStyle ? (FRAME_MASKS[frameStyle] ?? undefined) : undefined;
   const maskStyle = maskUrl
     ? { maskImage: maskUrl, maskSize: "100% 100%" }
+    : undefined;
+
+  // Non-destructive crop inset — applied as clip-path on the outer wrapper.
+  // Values are fractions of the container (0 = no crop, 0.5 = crop half from that side).
+  // Separate from the frame mask (SVG mask-image) to avoid CSS property conflicts.
+  const it = crop_inset_top    ?? 0;
+  const ir = crop_inset_right  ?? 0;
+  const ib = crop_inset_bottom ?? 0;
+  const il = crop_inset_left   ?? 0;
+  const hasInset = it > 0 || ir > 0 || ib > 0 || il > 0;
+  const insetClipPath = hasInset
+    ? `inset(${it * 100}% ${ir * 100}% ${ib * 100}% ${il * 100}%)`
     : undefined;
 
   // Unified continuous transform model — same math at every scale.
@@ -589,32 +609,40 @@ function ImageFill({
   // The edit overlay uses the same formula, so box and image stay in sync.
 
   return (
+    // Outer wrapper: carries the non-destructive crop clip-path.
+    // Inner wrapper: carries the SVG frame mask + overflow-hidden for pan/zoom.
+    // Two layers avoid CSS conflicts between clip-path and mask-image.
     <div
-      className={`absolute inset-0 ${editMode ? "" : "overflow-hidden"}`}
-      style={maskStyle}
+      className="absolute inset-0"
+      style={insetClipPath ? { clipPath: insetClipPath } : undefined}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={url}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        draggable={false}
-        style={{
-          position: "absolute",
-          width: `${s * 100}%`,
-          height: `${s * 100}%`,
-          maxWidth: "none",
-          left: `${(crop_x - s / 2) * 100}%`,
-          top: `${(crop_y - s / 2) * 100}%`,
-          // Use cover when a frame style is active so the image fills its container
-          // completely — no letterbox/pillarbox empty space that would cause the
-          // SVG mask to cut through background instead of actual image content.
-          objectFit: frameStyle ? "cover" : "contain",
-          userSelect: "none",
-          pointerEvents: "none",
-        }}
-      />
+      <div
+        className={`absolute inset-0 ${editMode ? "" : "overflow-hidden"}`}
+        style={maskStyle}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          style={{
+            position: "absolute",
+            width: `${s * 100}%`,
+            height: `${s * 100}%`,
+            maxWidth: "none",
+            left: `${(crop_x - s / 2) * 100}%`,
+            top: `${(crop_y - s / 2) * 100}%`,
+            // Use cover when a frame style is active so the image fills its container
+            // completely — no letterbox/pillarbox empty space that would cause the
+            // SVG mask to cut through background instead of actual image content.
+            objectFit: frameStyle ? "cover" : "contain",
+            userSelect: "none",
+            pointerEvents: "none",
+          }}
+        />
+      </div>
     </div>
   );
 }

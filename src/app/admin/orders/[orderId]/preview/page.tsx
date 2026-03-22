@@ -124,12 +124,13 @@ export default async function AdminOrderPreviewPage({
     editorPageIds.length > 0
       ? await adminClient
           .from("page_images")
-          .select("page_id, slot, photo_id, crop_x, crop_y, scale, manual_image_path, frame_style, use_nobg")
+          .select("page_id, slot, photo_id, crop_x, crop_y, scale, manual_image_path, frame_style, use_nobg, crop_inset_top, crop_inset_right, crop_inset_bottom, crop_inset_left")
           .in("page_id", editorPageIds)
       : { data: [] as {
           page_id: unknown; slot: unknown; photo_id: unknown;
           crop_x: unknown; crop_y: unknown; scale: unknown; manual_image_path: unknown;
           frame_style: unknown; use_nobg: unknown;
+          crop_inset_top: unknown; crop_inset_right: unknown; crop_inset_bottom: unknown; crop_inset_left: unknown;
         }[] };
 
   // ── Completed illustrations for the picker ────────────────────────────────
@@ -227,6 +228,7 @@ export default async function AdminOrderPreviewPage({
     const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
 
     const existing = pageImagesMap.get(pid) ?? [];
+    const pi2 = pi as Record<string, unknown>;
     existing.push({
       slot: pi.slot as number,
       photo_id: photoId,
@@ -236,6 +238,10 @@ export default async function AdminOrderPreviewPage({
       frame_style: (pi.frame_style as string | null) ?? null,
       image_url,
       use_nobg: useNobg,
+      crop_inset_top:    (pi2.crop_inset_top    as number) ?? 0,
+      crop_inset_right:  (pi2.crop_inset_right  as number) ?? 0,
+      crop_inset_bottom: (pi2.crop_inset_bottom as number) ?? 0,
+      crop_inset_left:   (pi2.crop_inset_left   as number) ?? 0,
     });
     pageImagesMap.set(pid, existing);
   }

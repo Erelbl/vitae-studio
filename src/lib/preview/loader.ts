@@ -55,7 +55,7 @@ export async function loadPreviewData(
   // Load page_images for all pages in one query
   const { data: pageImagesRaw } = await supabase
     .from("page_images")
-    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale, manual_image_path, frame_style, use_nobg")
+    .select("id, page_id, photo_id, slot, crop_x, crop_y, scale, manual_image_path, frame_style, use_nobg, crop_inset_top, crop_inset_right, crop_inset_bottom, crop_inset_left")
     .in("page_id", pageIds);
 
   // Collect all photo_ids referenced by page_images to resolve their paths
@@ -138,6 +138,7 @@ export async function loadPreviewData(
     }
     const image_url = storagePath ? (signedUrlMap.get(storagePath) ?? null) : null;
 
+    const piR = pi as Record<string, unknown>;
     const slot: PageImageSlot = {
       id: pi.id as string,
       slot: pi.slot as 1 | 2,
@@ -148,6 +149,10 @@ export async function loadPreviewData(
       frame_style: (pi.frame_style as string | null) ?? null,
       image_url,
       use_nobg: useNobg,
+      crop_inset_top:    (piR.crop_inset_top    as number) ?? 0,
+      crop_inset_right:  (piR.crop_inset_right  as number) ?? 0,
+      crop_inset_bottom: (piR.crop_inset_bottom as number) ?? 0,
+      crop_inset_left:   (piR.crop_inset_left   as number) ?? 0,
     };
 
     const existing = pageImagesMap.get(pid) ?? [];

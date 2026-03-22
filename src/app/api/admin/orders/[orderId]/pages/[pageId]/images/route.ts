@@ -147,7 +147,7 @@ export async function PATCH(
 
   const { orderId, pageId } = await params;
 
-  let body: { slot?: unknown; crop_x?: number; crop_y?: number; scale?: number; frame_style?: string | null; use_nobg?: boolean };
+  let body: { slot?: unknown; crop_x?: number; crop_y?: number; scale?: number; frame_style?: string | null; use_nobg?: boolean; crop_inset_top?: number; crop_inset_right?: number; crop_inset_bottom?: number; crop_inset_left?: number };
   try {
     body = await req.json();
   } catch {
@@ -180,6 +180,11 @@ export async function PATCH(
   if (body.scale !== undefined) cropUpdate.scale = Math.max(0.1, body.scale);
   if (body.frame_style !== undefined) cropUpdate.frame_style = body.frame_style; // null clears the style
   if (body.use_nobg !== undefined) cropUpdate.use_nobg = Boolean(body.use_nobg);
+  // Non-destructive crop insets — clamped to 0–0.9 per side
+  if (body.crop_inset_top    !== undefined) cropUpdate.crop_inset_top    = Math.max(0, Math.min(0.9, body.crop_inset_top));
+  if (body.crop_inset_right  !== undefined) cropUpdate.crop_inset_right  = Math.max(0, Math.min(0.9, body.crop_inset_right));
+  if (body.crop_inset_bottom !== undefined) cropUpdate.crop_inset_bottom = Math.max(0, Math.min(0.9, body.crop_inset_bottom));
+  if (body.crop_inset_left   !== undefined) cropUpdate.crop_inset_left   = Math.max(0, Math.min(0.9, body.crop_inset_left));
 
   if (Object.keys(cropUpdate).length === 0) {
     return NextResponse.json({ ok: true });

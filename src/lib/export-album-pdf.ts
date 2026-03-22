@@ -74,7 +74,7 @@ function buildSpreads(pages: PreviewPage[]): Spread[] {
 function resolveSlot(
   page: PreviewPage,
   slot: 1 | 2
-): { url: string | null; cropX: number; cropY: number; scale: number } {
+): { url: string | null; cropX: number; cropY: number; scale: number; insetTop: number; insetRight: number; insetBottom: number; insetLeft: number } {
   const slotData = (page.images ?? []).find((i: PageImageSlot) => i.slot === slot);
   if (slotData) {
     const isLegacyZero = slotData.crop_x === 0 && slotData.crop_y === 0;
@@ -83,12 +83,16 @@ function resolveSlot(
       cropX: isLegacyZero ? 0.5 : slotData.crop_x,
       cropY: isLegacyZero ? 0.5 : slotData.crop_y,
       scale: slotData.scale,
+      insetTop:    slotData.crop_inset_top    ?? 0,
+      insetRight:  slotData.crop_inset_right  ?? 0,
+      insetBottom: slotData.crop_inset_bottom ?? 0,
+      insetLeft:   slotData.crop_inset_left   ?? 0,
     };
   }
   if (slot === 1) {
-    return { url: page.image_url, cropX: 0.5, cropY: 0.5, scale: 1 };
+    return { url: page.image_url, cropX: 0.5, cropY: 0.5, scale: 1, insetTop: 0, insetRight: 0, insetBottom: 0, insetLeft: 0 };
   }
-  return { url: null, cropX: 0.5, cropY: 0.5, scale: 1 };
+  return { url: null, cropX: 0.5, cropY: 0.5, scale: 1, insetTop: 0, insetRight: 0, insetBottom: 0, insetLeft: 0 };
 }
 
 /** Resolve font size from legacy enum or numeric px, scaled to the PDF render size. */
@@ -113,13 +117,19 @@ function buildImageFill(
   cropX: number,
   cropY: number,
   scale: number,
-  container: HTMLElement
+  container: HTMLElement,
+  insetTop = 0,
+  insetRight = 0,
+  insetBottom = 0,
+  insetLeft = 0
 ) {
   const wrapper = document.createElement("div");
+  const hasInset = insetTop > 0 || insetRight > 0 || insetBottom > 0 || insetLeft > 0;
   Object.assign(wrapper.style, {
     position: "absolute",
     inset: "0",
     overflow: "hidden",
+    ...(hasInset ? { clipPath: `inset(${insetTop * 100}% ${insetRight * 100}% ${insetBottom * 100}% ${insetLeft * 100}%)` } : {}),
   });
 
   const img = document.createElement("img");
@@ -292,7 +302,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
   // Cover page
   if (page.page_type === "cover") {
     if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el);
+      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
     }
     const hasImage = Boolean(slot1.url);
     // Gradient overlay
@@ -356,7 +366,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
   // Back cover
   if (page.page_type === "back_cover") {
     if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el);
+      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
     }
     const content = document.createElement("div");
     Object.assign(content.style, {
@@ -402,7 +412,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
   // Dedication
   if (page.page_type === "dedication") {
     if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el);
+      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
     }
     const content = document.createElement("div");
     Object.assign(content.style, {
@@ -440,7 +450,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
 
   if (overlayPos && slot1.url) {
     // Full-image layouts: image fills page, text overlaid
-    buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el);
+    buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
     if (page.text_content) {
       buildTextOverlay(page.text_content, page, overlayPos, el);
     }
@@ -484,7 +494,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       overflow: "hidden",
     });
     if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, imgSection);
+      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, imgSection, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
     }
     const textSection = document.createElement("div");
     Object.assign(textSection.style, {
@@ -532,7 +542,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       overflow: "hidden",
     });
     if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, imgSection);
+      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, imgSection, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
     }
     const textSection = document.createElement("div");
     Object.assign(textSection.style, {
@@ -579,7 +589,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
         overflow: "hidden",
       });
       if (slotInfo.url) {
-        buildImageFill(slotInfo.url, slotInfo.cropX, slotInfo.cropY, slotInfo.scale, half);
+        buildImageFill(slotInfo.url, slotInfo.cropX, slotInfo.cropY, slotInfo.scale, half, slotInfo.insetTop, slotInfo.insetRight, slotInfo.insetBottom, slotInfo.insetLeft);
       }
       el.appendChild(half);
     }
@@ -604,7 +614,7 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
   } else {
     // Default: FULL_IMAGE fallback
     if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el);
+      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
     }
     if (page.text_content) {
       buildTextOverlay(page.text_content, page, "bottom", el);
