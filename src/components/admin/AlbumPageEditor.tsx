@@ -1544,8 +1544,8 @@ function ImageSlotEditor({
       {/* Photo picker dialog */}
       {!hidePhotoPicker && (
         <Dialog open={showPicker} onOpenChange={setShowPicker}>
-          <DialogContent className="max-w-5xl w-full" dir="rtl">
-            <DialogHeader>
+          <DialogContent className="sm:max-w-[92vw] max-h-[92vh] flex flex-col" dir="rtl">
+            <DialogHeader className="shrink-0">
               <DialogTitle className="text-base">בחר איור</DialogTitle>
             </DialogHeader>
             {completedPhotos.length === 0 ? (
@@ -1553,23 +1553,24 @@ function ImageSlotEditor({
                 אין איורים מוכנים עדיין
               </p>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 max-h-[75vh] overflow-y-auto py-1 pe-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto py-1 pe-1 min-h-0 flex-1">
                 {completedPhotos.map((photo) => {
                   const isSelected = slotState?.photo_id === photo.id;
+                  const label = photo.caption
+                    ?? (photo.life_stage ? (LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage) : null)
+                    ?? photo.original_filename;
                   return (
-                    <div key={photo.id} className="flex flex-col gap-1">
-                      {(photo.caption || photo.life_stage) && (
-                        <p className="text-[11px] leading-tight text-foreground/80 line-clamp-2 px-0.5 text-right">
-                          {photo.caption ?? (photo.life_stage ? (LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage) : "")}
-                        </p>
-                      )}
+                    <div key={photo.id} className="flex flex-col gap-1.5">
+                      <p className="text-xs leading-snug text-foreground/80 line-clamp-2 px-0.5 text-right min-h-[2.5em]">
+                        {label}
+                      </p>
                       <button
                         onClick={() => {
                           onAssign(photo);
                           setScale(1);
                           setShowPicker(false);
                         }}
-                        className={`relative rounded-lg overflow-hidden aspect-square border-2 transition-all hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                        className={`relative rounded-lg overflow-hidden aspect-square border-2 transition-all hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                           isSelected
                             ? "border-primary ring-2 ring-primary/30"
                             : "border-transparent hover:border-primary/40"
@@ -1594,7 +1595,7 @@ function ImageSlotEditor({
                             <span className="text-white text-lg font-bold drop-shadow">✓</span>
                           </div>
                         )}
-                        {photo.life_stage && photo.caption && (
+                        {photo.life_stage && (
                           <div className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] text-center py-0.5 truncate px-0.5">
                             {LIFE_STAGE_LABELS[photo.life_stage] ?? photo.life_stage}
                           </div>
