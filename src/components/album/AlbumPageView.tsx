@@ -609,39 +609,45 @@ function ImageFill({
   // The edit overlay uses the same formula, so box and image stay in sync.
 
   return (
-    // Outer wrapper: carries the non-destructive crop clip-path.
-    // Inner wrapper: carries the SVG frame mask + overflow-hidden for pan/zoom.
-    // Two layers avoid CSS conflicts between clip-path and mask-image.
-    <div
-      className="absolute inset-0"
-      style={insetClipPath ? { clipPath: insetClipPath } : undefined}
-    >
+    // Outer wrapper: page-filling container (no clip-path here).
+    // Inner wrapper: SVG frame mask + overflow-hidden for pan/zoom.
+    // Image wrapper: same position/size as the image — clip-path is applied HERE
+    //   so inset percentages are relative to the image's own bounds, not the page.
+    <div className="absolute inset-0">
       <div
         className={`absolute inset-0 ${editMode ? "" : "overflow-hidden"}`}
         style={maskStyle}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={url}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          draggable={false}
+        <div
           style={{
             position: "absolute",
             width: `${s * 100}%`,
             height: `${s * 100}%`,
-            maxWidth: "none",
             left: `${(crop_x - s / 2) * 100}%`,
             top: `${(crop_y - s / 2) * 100}%`,
-            // Use cover when a frame style is active so the image fills its container
-            // completely — no letterbox/pillarbox empty space that would cause the
-            // SVG mask to cut through background instead of actual image content.
-            objectFit: frameStyle ? "cover" : "contain",
-            userSelect: "none",
-            pointerEvents: "none",
+            ...(insetClipPath ? { clipPath: insetClipPath } : {}),
           }}
-        />
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={url}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            style={{
+              width: "100%",
+              height: "100%",
+              maxWidth: "none",
+              // Use cover when a frame style is active so the image fills its container
+              // completely — no letterbox/pillarbox empty space that would cause the
+              // SVG mask to cut through background instead of actual image content.
+              objectFit: frameStyle ? "cover" : "contain",
+              userSelect: "none",
+              pointerEvents: "none",
+            }}
+          />
+        </div>
       </div>
     </div>
   );

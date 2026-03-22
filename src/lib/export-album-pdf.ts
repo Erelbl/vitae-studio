@@ -123,30 +123,41 @@ function buildImageFill(
   insetBottom = 0,
   insetLeft = 0
 ) {
+  // Outer wrapper: fills the container, clips overflow for pan/zoom.
   const wrapper = document.createElement("div");
-  const hasInset = insetTop > 0 || insetRight > 0 || insetBottom > 0 || insetLeft > 0;
   Object.assign(wrapper.style, {
     position: "absolute",
     inset: "0",
     overflow: "hidden",
+  });
+
+  const s = Math.max(0.1, scale);
+  const hasInset = insetTop > 0 || insetRight > 0 || insetBottom > 0 || insetLeft > 0;
+
+  // Image-exact wrapper: same position/size as the image — clip-path applied HERE
+  // so inset percentages are relative to the image's own bounds, not the container.
+  const imgWrapper = document.createElement("div");
+  Object.assign(imgWrapper.style, {
+    position: "absolute",
+    width: `${s * 100}%`,
+    height: `${s * 100}%`,
+    left: `${(cropX - s / 2) * 100}%`,
+    top: `${(cropY - s / 2) * 100}%`,
     ...(hasInset ? { clipPath: `inset(${insetTop * 100}% ${insetRight * 100}% ${insetBottom * 100}% ${insetLeft * 100}%)` } : {}),
   });
 
   const img = document.createElement("img");
   img.crossOrigin = "anonymous";
   img.src = url;
-  const s = Math.max(0.1, scale);
   Object.assign(img.style, {
-    position: "absolute",
-    width: `${s * 100}%`,
-    height: `${s * 100}%`,
+    width: "100%",
+    height: "100%",
     maxWidth: "none",
-    left: `${(cropX - s / 2) * 100}%`,
-    top: `${(cropY - s / 2) * 100}%`,
     objectFit: "contain",
   });
 
-  wrapper.appendChild(img);
+  imgWrapper.appendChild(img);
+  wrapper.appendChild(imgWrapper);
   container.appendChild(wrapper);
   return img;
 }

@@ -172,6 +172,11 @@ export function AlbumPreview({
   const cropRight  = cropSlotData?.crop_inset_right  ?? 0;
   const cropBottom = cropSlotData?.crop_inset_bottom ?? 0;
   const cropLeft   = cropSlotData?.crop_inset_left   ?? 0;
+  // Image position/scale for the targeted slot — needed by SpreadCropOverlay
+  // to place handles at image-relative positions (not page-relative).
+  const cropImageCropX  = cropSlotData?.crop_x  ?? 0.5;
+  const cropImageCropY  = cropSlotData?.crop_y  ?? 0.5;
+  const cropImageScale  = Math.max(0.1, cropSlotData?.scale ?? 1);
 
   // Current crop/scale/URL values for the image being edited (from live preview data)
   const editSlotData = imageEditPage?.images?.find((img) => img.slot === imageEditSlot) ?? null;
@@ -357,26 +362,35 @@ export function AlbumPreview({
                   // In RTL grid: rightPage is col-1 (physical right), leftPage is col-2 (physical left)
                   ...(isRight ? { right: 0 } : { left: 0 }),
                   width: "50%", zIndex: 2, overflow: "visible", pointerEvents: "none",
-                  ...(cropClipPath ? { clipPath: cropClipPath } : {}),
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={finalUrl}
-                  alt=""
-                  draggable={false}
+                {/* Image-exact wrapper: clip-path applied here so insets are relative
+                    to the image's own bounds, not the page container. */}
+                <div
                   style={{
                     position: "absolute",
                     width: `${s * 100}%`,
                     height: `${s * 100}%`,
-                    maxWidth: "none",
                     left: `${(cx - s / 2) * 100}%`,
                     top: `${(cy - s / 2) * 100}%`,
-                    objectFit: "contain",
-                    userSelect: "none",
-                    pointerEvents: "none",
+                    ...(cropClipPath ? { clipPath: cropClipPath } : {}),
                   }}
-                />
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={finalUrl}
+                    alt=""
+                    draggable={false}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      maxWidth: "none",
+                      objectFit: "contain",
+                      userSelect: "none",
+                      pointerEvents: "none",
+                    }}
+                  />
+                </div>
               </div>
             )];
           })}
@@ -389,6 +403,9 @@ export function AlbumPreview({
               cropRight={cropRight}
               cropBottom={cropBottom}
               cropLeft={cropLeft}
+              imageCropX={cropImageCropX}
+              imageCropY={cropImageCropY}
+              imageScale={cropImageScale}
               onUpdate={onCropUpdate}
               onConfirm={onCropConfirm}
               onCancel={onCropCancel}
@@ -639,13 +656,24 @@ function SpreadImageEditOverlay({
 
 // ─── SpreadCropOverlay ────────────────────────────────────────────────────────
 // Full-spread overlay for on-canvas non-destructive cropping.
-// Coordinate system (same as SpreadImageEditOverlay):
-//   Right page occupies spread-x [0.5, 1.0]; left page [0.0, 0.5].
-//   crop_inset_* are fractions of the PAGE container (0–0.9 per side).
 //
-// Conversion to spread fractions:
-//   Δ_inset_top/bottom = Δspread_y   (page height = spread height)
-//   Δ_inset_left/right = Δspread_x × 2  (page width = 0.5 × spread width)
+// Coordinate system:
+//   Right page occupies spread-x [0.5, 1.0]; left page [0.0, 0.5].
+//   crop_inset_* are fractions of the IMAGE (0 = no crop, 0.9 = crop almost all).
+//
+// Image bounds in spread fraction:
+//   imgLeft = pStart + (imageCropX - imageScale/2) × 0.5
+//   imgTop  = imageCropY - imageScale/2
+//   imgW    = imageScale × 0.5
+//   imgH    = imageScale
+//
+// Crop box (visible area) in spread fraction:
+//   boxLeft  = imgLeft + cropLeft  × imgW
+//   boxRight = imgLeft + (1 - cropRight) × imgW
+//   boxTopF  = imgTop  + cropTop   × imgH
+//   boxBotF  = imgTop  + (1 - cropBottom) × imgH
+//
+// Drag delta mapping: Δ_inset = Δspread / imgSize  (image-relative fraction)
 
 type CropHandleTarget = "top" | "right" | "bottom" | "left" | "tl" | "tr" | "bl" | "br";
 
@@ -655,6 +683,9 @@ function SpreadCropOverlay({
   cropRight,
   cropBottom,
   cropLeft,
+  imageCropX,
+  imageCropY,
+  imageScale,
   onUpdate,
   onConfirm,
   onCancel,
@@ -664,6 +695,12 @@ function SpreadCropOverlay({
   cropRight: number;
   cropBottom: number;
   cropLeft: number;
+  /** Image center as fraction of page width (0.5 = centered). */
+  imageCropX: number;
+  /** Image center as fraction of page height (0.5 = centered). */
+  imageCropY: number;
+  /** Image size as fraction of page (1 = fills page). */
+  imageScale: number;
   onUpdate: (top: number, right: number, bottom: number, left: number) => void;
   onConfirm: (top: number, right: number, bottom: number, left: number) => void;
   onCancel: () => void;
@@ -683,16 +720,23 @@ function SpreadCropOverlay({
   //   right page → col-1 (physical right, x starts at 0.5 in LTR measurement)
   //   left page  → col-2 (physical left,  x starts at 0)
   const pStart = isRightPage ? 0.5 : 0.0;
+  const s = imageScale;
 
-  // Crop box in spread fraction coordinates
-  const boxLeft   = pStart + cropLeft   * 0.5;
-  const boxRight  = pStart + 0.5 - cropRight  * 0.5;
-  const boxTopF   = cropTop;
-  const boxBotF   = 1.0 - cropBottom;
-  const boxW      = boxRight - boxLeft;
-  const boxH      = boxBotF - boxTopF;
-  const midX      = boxLeft + boxW / 2;
-  const midY      = boxTopF + boxH / 2;
+  // Image bounding box in spread fraction coordinates
+  const imgLeft = pStart + (imageCropX - s / 2) * 0.5;
+  const imgTop  = imageCropY - s / 2;
+  const imgW    = s * 0.5;   // image width in spread-x units
+  const imgH    = s;          // image height in spread-y units (page is square, so height = spread height × scale)
+
+  // Crop box (keep region) in spread fraction — handles go here
+  const boxLeft  = imgLeft + cropLeft         * imgW;
+  const boxRight = imgLeft + (1 - cropRight)  * imgW;
+  const boxTopF  = imgTop  + cropTop          * imgH;
+  const boxBotF  = imgTop  + (1 - cropBottom) * imgH;
+  const boxW     = boxRight - boxLeft;
+  const boxH     = boxBotF - boxTopF;
+  const midX     = boxLeft + boxW / 2;
+  const midY     = boxTopF + boxH / 2;
 
   function getPos(e: React.PointerEvent) {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -710,14 +754,14 @@ function SpreadCropOverlay({
 
   function computeCrop(dx: number, dy: number, d: NonNullable<typeof dragRef.current>) {
     const { target: t, startTop, startRight, startBottom, startLeft } = d;
-    // dx in spread fraction → page fraction × 2 (page = half spread width)
-    const dL = dx * 2;
-    const dR = dx * 2;
+    // Convert spread-fraction delta → image-fraction delta
+    const dX = imgW > 0 ? dx / imgW : 0;
+    const dY = imgH > 0 ? dy / imgH : 0;
     return {
-      top:    (t === "top"    || t === "tl" || t === "tr") ? ci(startTop    + dy,  startBottom) : startTop,
-      bottom: (t === "bottom" || t === "bl" || t === "br") ? ci(startBottom - dy,  startTop)    : startBottom,
-      left:   (t === "left"   || t === "tl" || t === "bl") ? ci(startLeft   + dL,  startRight)  : startLeft,
-      right:  (t === "right"  || t === "tr" || t === "br") ? ci(startRight  - dR,  startLeft)   : startRight,
+      top:    (t === "top"    || t === "tl" || t === "tr") ? ci(startTop    + dY,  startBottom) : startTop,
+      bottom: (t === "bottom" || t === "bl" || t === "br") ? ci(startBottom - dY,  startTop)    : startBottom,
+      left:   (t === "left"   || t === "tl" || t === "bl") ? ci(startLeft   + dX,  startRight)  : startLeft,
+      right:  (t === "right"  || t === "tr" || t === "br") ? ci(startRight  - dX,  startLeft)   : startRight,
     };
   }
 
@@ -779,8 +823,8 @@ function SpreadCropOverlay({
     );
   }
 
-  // Width of the right-side dark strip in spread fraction
-  const rightStripRight = isRightPage ? 0 : 0.5;
+  // Dark strips show image area being cropped away (image-relative, not page-relative)
+  const imgBot = imgTop + imgH;
 
   return (
     <div
@@ -788,15 +832,15 @@ function SpreadCropOverlay({
       className="absolute inset-0 select-none hidden sm:block"
       style={{ zIndex: 20 }}
     >
-      {/* Dark overlay strips — confined to the page side */}
-      {/* Top strip */}
-      <div style={{ position: "absolute", left: `${pStart * 100}%`, width: "50%", top: 0, height: `${cropTop * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
-      {/* Bottom strip */}
-      <div style={{ position: "absolute", left: `${pStart * 100}%`, width: "50%", bottom: 0, height: `${cropBottom * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
-      {/* Left strip (between top/bottom) */}
-      <div style={{ position: "absolute", left: `${pStart * 100}%`, width: `${cropLeft * 50}%`, top: `${cropTop * 100}%`, height: `${boxH * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
-      {/* Right strip (between top/bottom) */}
-      <div style={{ position: "absolute", right: `${rightStripRight * 100}%`, width: `${cropRight * 50}%`, top: `${cropTop * 100}%`, height: `${boxH * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      {/* Dark overlay strips — show cropped-away image area */}
+      {/* Top: image top → crop box top */}
+      <div style={{ position: "absolute", left: `${imgLeft * 100}%`, width: `${imgW * 100}%`, top: `${imgTop * 100}%`, height: `${(boxTopF - imgTop) * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      {/* Bottom: crop box bottom → image bottom */}
+      <div style={{ position: "absolute", left: `${imgLeft * 100}%`, width: `${imgW * 100}%`, top: `${boxBotF * 100}%`, height: `${(imgBot - boxBotF) * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      {/* Left: image left → crop box left (between top/bottom strips) */}
+      <div style={{ position: "absolute", left: `${imgLeft * 100}%`, width: `${(boxLeft - imgLeft) * 100}%`, top: `${boxTopF * 100}%`, height: `${boxH * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      {/* Right: crop box right → image right (between top/bottom strips) */}
+      <div style={{ position: "absolute", left: `${boxRight * 100}%`, width: `${(imgLeft + imgW - boxRight) * 100}%`, top: `${boxTopF * 100}%`, height: `${boxH * 100}%`, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
 
       {/* Crop box border */}
       <div style={{
