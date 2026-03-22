@@ -238,6 +238,9 @@ function buildTextOverlay(
     textShadow: shadow,
     whiteSpace: "pre-line",
     lineHeight: lh,
+    maxWidth: widthPct,
+    marginLeft: "auto",
+    marginRight: "auto",
   });
   p.textContent = text;
 

@@ -738,6 +738,9 @@ function TextOverlay({ text, textSize, fontSizePx, textAlign, textX, textY, text
           color,
           textShadow: shadow,
           lineHeight: lh,
+          maxWidth: widthStr,
+          marginLeft: "auto",
+          marginRight: "auto",
         }}
       >
         {text}
@@ -790,6 +793,9 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, t
           color,
           textShadow: shadow,
           lineHeight: lh,
+          maxWidth: widthStr,
+          marginLeft: "auto",
+          marginRight: "auto",
         }}
       >
         {text}
