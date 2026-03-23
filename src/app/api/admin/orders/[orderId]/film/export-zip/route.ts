@@ -152,26 +152,49 @@ export async function POST(
     if (includeAudio && scene.audio_path) {
       const path = scene.audio_path as string;
       try {
-        const { data: fileData, error: dlErr } = await adminClient.storage
+        // ── IMPORTANT: do NOT use adminClient.storage.download() for audio ──
+        //
+        // download() routes through the Supabase JS SDK, wraps the response in
+        // a Blob, then reads it back with Blob.arrayBuffer(). That Blob read path
+        // can silently truncate VBR MP3 files (the SDK buffer drains before the
+        // full byte stream has been received), which cuts off the last word.
+        //
+        // Instead, generate a short-lived signed URL and stream-fetch it directly
+        // — the exact same mechanism the browser's <audio> element uses for
+        // on-site playback. This guarantees byte-identical content.
+        const { data: signData, error: signErr } = await adminClient.storage
           .from(filmBucket)
-          .download(path);
+          .createSignedUrl(path, 120); // 2-minute expiry — enough for this single fetch
 
-        if (dlErr || !fileData) {
-          const msg = `scene-${order} audio: ${dlErr?.message ?? "download returned no data"}`;
+        if (signErr || !signData?.signedUrl) {
+          const msg = `scene-${order} audio: failed to sign URL — ${signErr?.message ?? "no URL returned"}`;
           console.error(`[export-zip] Failed: ${msg}`);
           errors.push(msg);
         } else {
-          const buffer = Buffer.from(await fileData.arrayBuffer());
-          // STORE (no compression) — MP3 is already compressed; DEFLATE is
-          // lossless but using STORE avoids any theoretical decompression edge
-          // cases and keeps the extracted file byte-for-byte identical to storage.
-          zip.file(`audio/scene-${order}-${spreadKey}.mp3`, buffer, {
-            compression: "STORE",
-          });
-          filesAdded++;
-          console.log(
-            `[export-zip] ✓ audio scene-${order} (${(buffer.byteLength / 1024).toFixed(0)} KB)`
-          );
+          const fetchResp = await fetch(signData.signedUrl);
+          if (!fetchResp.ok || !fetchResp.body) {
+            const msg = `scene-${order} audio: signed-URL fetch failed (HTTP ${fetchResp.status})`;
+            console.error(`[export-zip] Failed: ${msg}`);
+            errors.push(msg);
+          } else {
+            // Streaming read — captures every byte without an intermediate Blob layer
+            const chunks: Buffer[] = [];
+            const reader = fetchResp.body.getReader();
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value?.length) chunks.push(Buffer.from(value));
+            }
+            const buffer = Buffer.concat(chunks);
+            // STORE — MP3 is already compressed; no re-encoding, no byte manipulation
+            zip.file(`audio/scene-${order}-${spreadKey}.mp3`, buffer, {
+              compression: "STORE",
+            });
+            filesAdded++;
+            console.log(
+              `[export-zip] ✓ audio scene-${order} (${(buffer.byteLength / 1024).toFixed(0)} KB)`
+            );
+          }
         }
       } catch (e) {
         const msg = `scene-${order} audio: ${e instanceof Error ? e.message : String(e)}`;
