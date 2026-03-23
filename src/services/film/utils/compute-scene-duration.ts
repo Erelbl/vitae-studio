@@ -2,13 +2,20 @@
 const MIN_DURATION_MS = 3000;
 
 /**
- * Buffer after audio for codec frame alignment / rounding and safe tail (ms).
- * At 128 kbps the last MP3 frame is ~26 ms, but player buffering and variable
- * bitrate fluctuations can add up. 800 ms gives a safe margin without a
- * noticeable pause, ensuring the last word always fully decodes before the
- * scene sequence ends in Remotion.
+ * Safety tail appended after the true audio duration (ms).
+ *
+ * Audio duration is now derived from actual MP3 frame parsing (getMp3DurationMs),
+ * so this constant is no longer compensating for bitrate-estimation error.
+ * It instead provides:
+ *   • ~26 ms for the last MP3 frame to be fully decoded by any player
+ *   • A small audible "breath" so the last word never sounds clipped
+ *   • Headroom for any remaining decoder/buffer differences between players
+ *
+ * 1500 ms is deliberately generous: with BREATHING_PAUSE_MS = 2000 ms the
+ * visible-still window before the page-turn transition is
+ *   1500 + 2000 − 800 (transition) = 2700 ms — comfortable but not excessive.
  */
-const AUDIO_TAIL_MS = 800;
+const AUDIO_TAIL_MS = 1500;
 
 /**
  * Visible still pause after narration ends and before the page-turn transition (ms).
@@ -16,10 +23,10 @@ const AUDIO_TAIL_MS = 800;
  * In the assembled film, the xfade transition starts TRANSITION_DURATION (0.8s)
  * before the scene video ends. The visible stillness the viewer sees is:
  *
- *   BREATHING_PAUSE_MS + AUDIO_TAIL_MS - TRANSITION_DURATION_MS
- *   = 2000 + 500 - 800 = 1700ms of visible still spread
+ *   AUDIO_TAIL_MS + BREATHING_PAUSE_MS − TRANSITION_DURATION_MS
+ *   = 1500 + 2000 − 800 = 2700 ms of visible still spread
  *
- * Flow: narration ends → ~1.7s still image → page turn begins → next spread
+ * Flow: narration ends → ~2.7 s still image → page turn begins → next spread
  *
  * This pause is critical for pacing — without it, the film rushes from one
  * spread to the next without letting the viewer absorb the illustration.

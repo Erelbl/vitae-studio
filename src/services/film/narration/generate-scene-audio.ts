@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { textToSpeech } from "@/services/film/narration/elevenlabs";
 import { applyTtsOverrides, mergeOverrides } from "@/services/film/utils/apply-tts-overrides";
 import { computeSceneDuration } from "@/services/film/utils/compute-scene-duration";
+import { getMp3DurationMs } from "@/services/film/utils/mp3-duration";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
 import type { TtsOverride } from "@/types/film";
 
@@ -13,7 +14,7 @@ export interface GenerateSceneAudioInput {
 
 export interface GenerateSceneAudioResult {
   audioPath: string;
-  /** Estimated duration in ms derived from MP3 buffer size (≈128kbps). */
+  /** True audio duration in ms parsed from MP3 frame structure. */
   audioDurationMs: number;
   /** Scene display duration: audioDurationMs + visual padding, minimum 3000ms. */
   durationMs: number;
@@ -27,16 +28,18 @@ export interface GenerateSceneAudioResult {
  *   2. Fetch film project for selected_voice_id and tts_overrides_json
  *   3. Apply TTS pronunciation overrides (non-mutating — never touches stored text)
  *   4. Call ElevenLabs TTS → MP3 buffer
- *   5. Estimate audio duration from buffer size (≈16000 bytes/sec at ~128kbps)
+ *   5. Parse true audio duration from MP3 frame structure (getMp3DurationMs)
  *   6. Upload MP3 to: {orderId}/{filmProjectId}/scenes/{sceneId}/narration.mp3 (inside "films" bucket)
  *   7. Update film_scenes: audio_path, audio_duration_ms, duration_ms, status → narration_ready
  *
  * Duration notes:
- *   audio_duration_ms = Math.round(buffer.length / 16000 * 1000)
- *   This estimate (based on ~128kbps MP3 bitrate) supersedes the word-count
- *   estimate set during scene building. It is used directly by the Remotion
- *   composition for narration-synced text reveal.
- *   duration_ms = computeSceneDuration(audio_duration_ms) = max(3000, audio_duration_ms + 1500).
+ *   audio_duration_ms = getMp3DurationMs(buffer)
+ *   Reads the Xing/Info VBR header (exact frame count × 1152/sampleRate) when
+ *   present, and falls back to bitrate-from-header × audioBytes for CBR files.
+ *   ElevenLabs eleven_v3 uses VBR, so the old buffer-size heuristic was
+ *   systematically short by 30–50 %, causing the Remotion sequence to end
+ *   before the audio finished.
+ *   duration_ms = computeSceneDuration(audio_duration_ms) = max(3000, audio_duration_ms + 3500).
  *
  * Errors propagate to caller; the caller is responsible for storing error_message.
  */
@@ -110,12 +113,17 @@ export async function generateSceneAudio(
   // 4. Generate audio via ElevenLabs TTS
   const { audioBuffer } = await textToSpeech({ text: ttsText, voiceId });
 
-  // 5. Estimate audio duration from buffer size.
-  // ElevenLabs outputs ~128kbps MP3 ≈ 16000 bytes/second.
-  // This is a reasonable estimate and supersedes the word-count heuristic.
-  const audioDurationMs = Math.max(
-    500,
-    Math.round((audioBuffer.length / 16000) * 1000)
+  // 5. Measure true audio duration by parsing the MP3 frame structure.
+  // ElevenLabs eleven_v3 generates VBR audio: silence between Hebrew words
+  // is encoded at a much lower bitrate than the nominal 128 kbps, so a plain
+  // buffer-size ÷ 16 000 estimate can be less than half the real duration.
+  // getMp3DurationMs() reads the Xing/Info VBR header (exact frame count) when
+  // present, and falls back to bitrate-from-header × audioBytes for CBR files.
+  const audioDurationMs = getMp3DurationMs(audioBuffer);
+  console.log(
+    `[generate-scene-audio] scene=${sceneId}: parsed audioDurationMs=${audioDurationMs} ` +
+    `bufferBytes=${audioBuffer.length} ` +
+    `(legacy estimate would have been ${Math.round((audioBuffer.length / 16000) * 1000)} ms)`
   );
   const durationMs = computeSceneDuration(audioDurationMs);
 
