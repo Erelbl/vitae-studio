@@ -45,6 +45,9 @@ export async function textToSpeech(
         model_id: modelId,
         // NOTE: language_code is intentionally omitted — eleven_v3 rejects it
         // and detects Hebrew automatically from the input text.
+        // Explicit CBR format keeps our buffer-size duration estimate accurate
+        // (128 kbps = 16 000 bytes/sec) and produces a properly-framed MP3 file.
+        output_format: "mp3_44100_128",
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
@@ -59,8 +62,17 @@ export async function textToSpeech(
     throw new Error(`ElevenLabs TTS failed (${response.status}): ${hint}`);
   }
 
-  const arrayBuffer = await response.arrayBuffer();
-  const audioBuffer = Buffer.from(arrayBuffer);
+  // Read the response body as a stream to ensure all bytes are captured.
+  // response.arrayBuffer() can silently drop the final chunk(s) in some
+  // Node.js / edge-network environments, causing the last word to be cut off.
+  const chunks: Buffer[] = [];
+  const reader = response.body!.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value?.length) chunks.push(Buffer.from(value));
+  }
+  const audioBuffer = Buffer.concat(chunks);
 
   return {
     audioBuffer,

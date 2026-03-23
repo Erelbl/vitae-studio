@@ -2,10 +2,13 @@
 const MIN_DURATION_MS = 3000;
 
 /**
- * Small buffer after audio for codec frame alignment / rounding (ms).
- * Ensures the video doesn't cut off the last syllable due to encoding quirks.
+ * Buffer after audio for codec frame alignment / rounding and safe tail (ms).
+ * At 128 kbps the last MP3 frame is ~26 ms, but player buffering and variable
+ * bitrate fluctuations can add up. 800 ms gives a safe margin without a
+ * noticeable pause, ensuring the last word always fully decodes before the
+ * scene sequence ends in Remotion.
  */
-const AUDIO_TAIL_MS = 500;
+const AUDIO_TAIL_MS = 800;
 
 /**
  * Visible still pause after narration ends and before the page-turn transition (ms).

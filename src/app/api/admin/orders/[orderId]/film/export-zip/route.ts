@@ -162,10 +162,11 @@ export async function POST(
           errors.push(msg);
         } else {
           const buffer = Buffer.from(await fileData.arrayBuffer());
-          // DEFLATE level 1 — fast, small savings for MP3
+          // STORE (no compression) — MP3 is already compressed; DEFLATE is
+          // lossless but using STORE avoids any theoretical decompression edge
+          // cases and keeps the extracted file byte-for-byte identical to storage.
           zip.file(`audio/scene-${order}-${spreadKey}.mp3`, buffer, {
-            compression: "DEFLATE",
-            compressionOptions: { level: 1 },
+            compression: "STORE",
           });
           filesAdded++;
           console.log(
