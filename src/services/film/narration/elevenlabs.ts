@@ -1,4 +1,6 @@
 import { filmEnv } from "@/lib/film-env";
+import { patchMp3XingFrameCount } from "@/services/film/utils/mp3-duration";
+import { appendMp3Silence } from "@/services/film/utils/mp3-silence";
 
 const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1";
 // eleven_v3 is ElevenLabs' latest model and handles Hebrew natively via
@@ -72,7 +74,39 @@ export async function textToSpeech(
     if (done) break;
     if (value?.length) chunks.push(Buffer.from(value));
   }
-  const audioBuffer = Buffer.concat(chunks);
+  const rawBuffer = Buffer.concat(chunks);
+
+  // Step 1 — append real silence to the MP3 file before upload.
+  // ElevenLabs ends the stream at the last speech frame. Strict decoders
+  // (QuickTime, WMP, some mobile players) discard the unflushed decoder-delay
+  // samples that follow — cutting off the last word. Physical silence frames
+  // after the speech give every decoder room to finish flushing without losing
+  // real audio. See src/services/film/utils/mp3-silence.ts for details.
+  const withSilence = appendMp3Silence(rawBuffer, 900); // 900 ms ≈ 34 frames at 44.1 kHz
+
+  // Step 2 — patch the Xing/Info VBR header frame count.
+  // ElevenLabs' streaming encoder writes the Xing header before encoding
+  // completes, so the stored count can be lower than the actual frame count
+  // (including the silence frames we just appended). Patching here ensures
+  // every player computes the correct total duration and plays to the true end.
+  const { buffer: audioBuffer, xingCount, actualCount, patched } =
+    patchMp3XingFrameCount(withSilence);
+
+  if (patched) {
+    const deltaMs = Math.round((actualCount - xingCount!) * 1152 / 44100 * 1000);
+    console.log(
+      `[elevenlabs] Xing frame count patched: declared=${xingCount} actual=${actualCount}` +
+      ` (+${deltaMs} ms recovered, ${rawBuffer.length} bytes)`
+    );
+  } else if (xingCount !== null) {
+    console.log(
+      `[elevenlabs] Xing frame count verified: ${xingCount} frames (${actualCount} actual, no patch needed)`
+    );
+  } else {
+    console.log(
+      `[elevenlabs] No Xing header (CBR or headerless); actualCount=${actualCount}, ${rawBuffer.length} bytes`
+    );
+  }
 
   return {
     audioBuffer,
