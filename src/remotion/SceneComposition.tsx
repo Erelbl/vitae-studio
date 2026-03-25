@@ -165,21 +165,16 @@ const BREATH_AMPLITUDE = 0.015;
  */
 const TEXT_PARALLAX_PX = 6;
 
-/**
- * Spread timing coordination: left page image reveal starts this fraction
- * of scene duration later than right page. Creates a clear "right page first,
- * left page follows" sequencing — the right page (read first in Hebrew) is
- * well into its reveal before the left page begins.
- *
- * At 0.18, for a 7.5s scene the left page image starts ~1.35s after the right,
- * giving a distinctly staggered feel while both pages still finish within the
- * same scene duration.
- */
-const SPREAD_IMAGE_DELAY_FRAC = 0.18;
-
 // NOTE: There is no intra-spread breathing pause. The spread is one unified scene.
 // Breathing pauses happen BETWEEN scenes (via scene duration padding + assembly xfade),
 // not between the left and right pages of the same spread.
+
+/**
+ * Left-page image pre-roll (seconds): the left image starts its sketch reveal
+ * this many seconds BEFORE the left-page text begins, so the illustration is
+ * already "drawing in" when the narrator switches to the left page.
+ */
+const LEFT_IMAGE_PREROLL_SEC = 0.3;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -212,12 +207,18 @@ function videoFontPx(textSize?: string | null, fontSizePx?: number | null): numb
  * When null (single-page scenes), each component uses its own default timing.
  */
 interface PageTimingOverride {
-  /** Frame at which word-by-word text reveal begins. */
+  /** Frame at which text reveal begins. */
   textStartFrame: number;
-  /** Frame at which all words should be fully visible. */
+  /** Frame at which text should be fully visible. */
   textEndFrame: number;
   /** Fraction of scene duration to delay the start of image reveal. 0 = no delay. */
   imageRevealDelayFrac: number;
+  /**
+   * How text reveals within this page.
+   * "line"  = line-by-line RTL sweep (used for spread content pages).
+   * "word"  = word-by-word fade-in (legacy, single-page default).
+   */
+  revealMode: "word" | "line";
 }
 
 const PageTimingCtx = React.createContext<PageTimingOverride | null>(null);
@@ -231,26 +232,25 @@ function countWords(text: string | null): number {
 // ── AnimatedP — word-by-word text reveal ─────────────────────────────────────
 
 /**
- * A `<p>` element whose words fade in one by one, simulating a writing effect.
+ * A `<p>` element whose text reveals progressively, either word-by-word (legacy)
+ * or line-by-line with an RTL sweep (spread content pages).
  *
- * How it works:
- *   1. Split text into tokens (words + whitespace) preserving newlines.
- *   2. Whitespace tokens are always visible so the layout never shifts.
- *   3. Each word gets an opacity driven by Remotion's frame counter.
- *   4. Words overlap slightly (each fades over ~0.8 "word-units") for
- *      a smooth, flowing reveal rather than staccato pops.
+ * revealMode "word" (default):
+ *   Words fade in one by one. Whitespace tokens are always visible so the layout
+ *   never shifts. Words overlap slightly (0.8 word-units) for smooth flow.
  *
- * Narration sync:
- *   When `narrationDurationMs` is provided, text reveal is timed to match
- *   narration pacing — words are distributed across the full narration window
- *   (starting at NARRATION_START_OFFSET_SEC after scene start). This creates
- *   a "words appear as narrator speaks" effect.
+ * revealMode "line":
+ *   Each line sweeps in from right to left (Hebrew reading direction) as a block.
+ *   The mask gradient reveals from the physical right edge, expanding leftward —
+ *   so the first (rightmost) Hebrew characters appear first. Empty lines are
+ *   preserved as spacers (stanza breaks). Lines stagger evenly across the
+ *   text reveal window set by the spread timing coordinator.
  *
- *   When no narration duration is available, falls back to the visual-only
- *   timing (TEXT_REVEAL_START_FRAC to TEXT_REVEAL_END_FRAC).
+ * Narration sync: when narrationDurationMs is provided (and no spread context
+ * override), text spans the full narration window starting at a fixed 0.15s offset.
  *
- * RTL-safe: the `<p>` carries `direction: rtl` from the caller's style,
- * and inline `<span>`s flow naturally in reading order.
+ * The revealMode is read from PageTimingCtx (set per-page in spread mode).
+ * Single-page scenes have no context → revealMode defaults to "word".
  */
 function AnimatedP({
   children,
@@ -274,13 +274,11 @@ function AnimatedP({
 
   if (timingOverride) {
     // Spread mode: the coordinator has pre-computed per-page windows
-    // with breathing pauses and word-proportional splits.
+    // with hard boundaries and word-proportional splits.
     textStart = timingOverride.textStartFrame;
     textEnd = timingOverride.textEndFrame;
   } else if (narrationDurationMs != null && narrationDurationMs > 0) {
-    // Single-page narration-synced: words appear across the full narration duration.
-    // The fixed offset (NARRATION_START_OFFSET_SEC) keeps text ~0.15s behind audio,
-    // matching the perceptual "words appear as narrator speaks" feel.
+    // Single-page narration-synced: text spans the full narration duration.
     const narrationStartFrame = Math.round(NARRATION_START_OFFSET_SEC * fps);
     const narrationFrames = Math.round((narrationDurationMs / 1000) * fps);
     textStart = narrationStartFrame;
@@ -294,6 +292,73 @@ function AnimatedP({
     textEnd = Math.round(durationInFrames * TEXT_REVEAL_END_FRAC);
   }
 
+  // Read revealMode from context. Spread pages set "line"; single-page defaults to "word".
+  const revealMode = timingOverride?.revealMode ?? "word";
+
+  // ── Line-by-line RTL reveal ──────────────────────────────────────────────────
+  if (revealMode === "line") {
+    const rawLines = children.split("\n");
+    const nonEmptyLines = rawLines.filter((l) => l.trim().length > 0);
+    const lineCount = nonEmptyLines.length;
+
+    // Debug: log once at the frame when this page's reveal begins.
+    if (frame === textStart && lineCount > 0) {
+      console.log(
+        `[AnimatedP] line-reveal: ${lineCount} lines, window [${textStart}–${textEnd}]`
+      );
+    }
+
+    if (lineCount === 0) return <p style={style} />;
+
+    // Distribute reveal window evenly across non-empty lines.
+    // Each line's sweep takes sweepFrames; lines stagger by stepFrames.
+    const totalWindow = Math.max(1, textEnd - textStart);
+    const stepFrames = lineCount > 1 ? totalWindow / lineCount : totalWindow;
+    const sweepFrames = Math.max(1, stepFrames * 0.85);
+
+    // Gradient soft-edge width (% of line width).
+    const SOFT_EDGE = 10;
+
+    let nonEmptyIdx = 0;
+    return (
+      <p style={style}>
+        {rawLines.map((line, i) => {
+          if (line.trim().length === 0) {
+            // Preserve empty lines as spacers (stanza breaks, paragraph gaps).
+            return <span key={i} style={{ display: "block", height: "0.5em" }} />;
+          }
+          const idx = nonEmptyIdx++;
+          const lineRevealStart = textStart + idx * stepFrames;
+          const lineRevealEnd = lineRevealStart + sweepFrames;
+          const lineProgress = interpolate(
+            frame,
+            [lineRevealStart, lineRevealEnd],
+            [0, 1],
+            { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+          );
+          // RTL sweep: linear-gradient(to left) has position 0% on the physical right.
+          // At progress=0: mask is entirely transparent (nothing visible).
+          // As progress increases, the visible region expands from right toward left.
+          const revealPct = lineProgress * (100 + SOFT_EDGE * 2);
+          const mask = `linear-gradient(to left, black ${revealPct - SOFT_EDGE}%, transparent ${revealPct}%)`;
+          return (
+            <span
+              key={i}
+              style={{
+                display: "block",
+                maskImage: mask,
+                WebkitMaskImage: mask,
+              }}
+            >
+              {line}
+            </span>
+          );
+        })}
+      </p>
+    );
+  }
+
+  // ── Word-by-word fade-in (legacy default) ────────────────────────────────────
   // Split into alternating [word, whitespace, word, …] tokens.
   const tokens = children.split(/(\s+)/);
 
@@ -1631,16 +1696,40 @@ export function SceneComposition({
     const leftTextStart = rightTextEnd;
     const leftTextEnd = windowEnd;
 
+    // ── Debug log (frame 0 = once per scene render pass) ────────────────────
+    if (frame === 0) {
+      const rightMs = Math.round(((rightTextEnd - rightTextStart) / fps) * 1000);
+      const leftMs  = Math.round(((leftTextEnd  - leftTextStart)  / fps) * 1000);
+      const rightLineCount = (textContent ?? "").split("\n").filter((l) => l.trim().length > 0).length;
+      const leftLineCount  = (secondPage.textContent ?? "").split("\n").filter((l) => l.trim().length > 0).length;
+      console.log(
+        `[SceneComposition] spread-timing` +
+        ` | narration=${narrationDurationMs != null ? narrationDurationMs + "ms" : "none"}` +
+        ` | right: ${rightWords}w ${rightLineCount}L → [${rightTextStart}–${rightTextEnd}] (${rightMs}ms)` +
+        ` | left: ${leftWords}w ${leftLineCount}L → [${leftTextStart}–${leftTextEnd}] (${leftMs}ms)`
+      );
+    }
+
+    // Left-image delay: start the sketch reveal LEFT_IMAGE_PREROLL_SEC before
+    // the left text begins — so the illustration is already "drawing" when the
+    // narrator switches pages. This creates a hard right-then-left boundary:
+    // left page image never starts while right page narration is still running.
+    const leftImagePrerollFrames = Math.round(fps * LEFT_IMAGE_PREROLL_SEC);
+    const leftImageStartFrame    = Math.max(0, leftTextStart - leftImagePrerollFrames);
+    const leftImageDelayFrac     = leftImageStartFrame / durationInFrames;
+
     const rightTiming: PageTimingOverride = {
-      textStartFrame: rightTextStart,
-      textEndFrame: rightTextEnd,
+      textStartFrame:      rightTextStart,
+      textEndFrame:        rightTextEnd,
       imageRevealDelayFrac: 0,
+      revealMode:          "line",
     };
 
     const leftTiming: PageTimingOverride = {
-      textStartFrame: leftTextStart,
-      textEndFrame: leftTextEnd,
-      imageRevealDelayFrac: SPREAD_IMAGE_DELAY_FRAC,
+      textStartFrame:      leftTextStart,
+      textEndFrame:        leftTextEnd,
+      imageRevealDelayFrac: leftImageDelayFrac,
+      revealMode:          "line",
     };
 
     return (
