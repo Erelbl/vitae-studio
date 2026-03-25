@@ -44,6 +44,7 @@ loadEnv({ path: ".env" });
 import { createClient } from "@supabase/supabase-js";
 import { renderScene } from "@/services/film/render/render-scene";
 import { assembleFilm } from "@/services/film/render/assemble-film";
+import { buildRenderHash } from "@/services/film/utils/build-render-hash";
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,81 @@ async function resetStaleRenderingScenes(): Promise<void> {
       updated_at: new Date().toISOString(),
     })
     .in("id", stale.map((s) => s.id as string));
+}
+
+/**
+ * Finds rendered scenes whose stored render_hash was computed WITHOUT Kling page
+ * video paths, but which now have right_page_video_path or left_page_video_path set.
+ *
+ * When Kling videos are added after a scene was rendered, the expected hash (which
+ * now includes the Kling paths) differs from the stored hash → the scene needs
+ * re-rendering so the site picks up the Kling videos automatically.
+ *
+ * Called once at startup (and after each render batch in watch mode).
+ */
+async function requeueKlingStaleScenesOnce(): Promise<void> {
+  const { data: scenes, error } = await adminClient
+    .from("film_scenes")
+    .select(
+      "id, narration_text, voice_id, motion_preset, transition_in, transition_out, " +
+      "page_ids_json, render_hash, right_page_video_path, left_page_video_path"
+    )
+    .eq("status", "rendered")
+    .or("right_page_video_path.not.is.null,left_page_video_path.not.is.null");
+
+  if (error) {
+    warn(`Could not check for stale Kling scenes: ${error.message}`);
+    return;
+  }
+  if (!scenes || scenes.length === 0) return;
+
+  type KlingSceneRow = {
+    id: string;
+    narration_text: string | null;
+    voice_id: string | null;
+    motion_preset: string | null;
+    transition_in: string | null;
+    transition_out: string | null;
+    page_ids_json: string[] | null;
+    render_hash: string | null;
+    right_page_video_path: string | null;
+    left_page_video_path: string | null;
+  };
+
+  const toRequeue: string[] = [];
+
+  for (const scene of scenes as unknown as KlingSceneRow[]) {
+    const expectedHash = buildRenderHash({
+      narrationText:  scene.narration_text,
+      voiceId:        scene.voice_id,
+      motionPreset:   scene.motion_preset,
+      transitionIn:   scene.transition_in,
+      transitionOut:  scene.transition_out,
+      pageIds:        scene.page_ids_json,
+      klingRightPath: scene.right_page_video_path,
+      klingLeftPath:  scene.left_page_video_path,
+    });
+
+    if (expectedHash !== scene.render_hash) {
+      toRequeue.push(scene.id);
+    }
+  }
+
+  if (toRequeue.length === 0) return;
+
+  log(
+    `Re-queueing ${toRequeue.length} scene(s) rendered without Kling page videos ` +
+    `(hash changed) — they will be re-rendered with Kling automatically.`
+  );
+
+  await adminClient
+    .from("film_scenes")
+    .update({
+      status: "queued",
+      error_message: "Re-queued: Kling page videos were added/changed since last render",
+      updated_at: new Date().toISOString(),
+    })
+    .in("id", toRequeue);
 }
 
 async function fetchQueuedScenes(
@@ -376,7 +452,8 @@ async function runWatch(intervalSec: number): Promise<never> {
       const { assembled } = await runAssembly(/* silent = */ true);
 
       if (rendered > 0 || assembled > 0) {
-        // Something was processed — reset idle tracking
+        // Something was processed — check whether new Kling paths need re-renders
+        await requeueKlingStaleScenesOnce();
         idleSince = null;
       } else {
         // Log an "idle" heartbeat once per minute so logs confirm the worker
@@ -404,6 +481,9 @@ async function main() {
 
   // Reset any scenes stuck in "rendering" from a previous crashed run
   await resetStaleRenderingScenes();
+
+  // Re-queue any rendered scenes whose Kling page videos were added after the last render
+  await requeueKlingStaleScenesOnce();
 
   const args = process.argv.slice(2);
 

@@ -397,7 +397,10 @@ export async function renderScene(
       personName = (orderRow?.person_name as string | null) ?? null;
     }
 
-    // Build render hash
+    // Build render hash — includes Kling paths so that adding/changing page videos
+    // changes the hash and causes the render worker to re-render the scene.
+    const klingRightPath = (sceneRow.right_page_video_path as string | null) ?? null;
+    const klingLeftPath  = (sceneRow.left_page_video_path  as string | null) ?? null;
     const renderHash = buildRenderHash({
       narrationText: sceneRow.narration_text as string | null,
       voiceId: sceneRow.voice_id as string | null,
@@ -405,6 +408,8 @@ export async function renderScene(
       transitionIn: sceneRow.transition_in as string | null,
       transitionOut: sceneRow.transition_out as string | null,
       pageIds,
+      klingRightPath,
+      klingLeftPath,
     });
 
     // Compute duration
@@ -529,7 +534,13 @@ export async function renderScene(
         })
         .eq("id", sceneId);
 
-      console.log(`[film-render] Scene ${sceneId} rendered successfully`);
+      const rightSrc = rightKlingUrl ? "kling" : "css-motion";
+      const leftSrc  = isSpread ? (leftKlingUrl ? "kling" : "css-motion") : "n/a";
+      console.log(
+        `[film-render] Scene ${sceneId} rendered successfully`,
+        `→ site reads: ${videoStoragePath}`,
+        `| right=${rightSrc}, left=${leftSrc}`
+      );
 
       return {
         renderedPath: videoStoragePath,
