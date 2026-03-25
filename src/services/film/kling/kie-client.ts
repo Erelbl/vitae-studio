@@ -7,13 +7,13 @@
  *   KIE_VIDEO_MODEL   — model identifier, e.g. kling-2.6/image-to-video
  *
  * Flow:
- *   1. POST /api/v1/jobs/createTask → receive task id
- *   2. Poll GET /api/v1/jobs/fetchTask/{task_id} until succeed | failed | timeout
- *   3. Return the video URL from task_result
+ *   1. POST /api/v1/jobs/createTask        → receive data.taskId
+ *   2. Poll GET /api/v1/jobs/recordInfo?taskId={id}
+ *      until data.state === "success" | "fail" | timeout
+ *   3. Parse data.resultJson (JSON string) → resultUrls[0]
  *
  * Kie success convention: code === 200 (not 0).
- * Task id is returned as data.taskId (camelCase). data.recordId is a secondary
- * identifier also returned by Kie but not used for polling.
+ * Task id is returned as data.taskId (camelCase).
  */
 
 export interface KlingVideoResult {
@@ -51,26 +51,26 @@ interface PollResponse {
   code: number;
   msg?: string;
   data?: {
-    taskId?:    string;
-    task_id?:   string;
-    status:     "pending" | "processing" | "succeed" | "failed";
-    task_result?: {
-      videos?: Array<{ url: string; duration: number }>;
-    };
+    taskId?:     string;
+    /** Generation state from Kie recordInfo endpoint. */
+    state?:      "waiting" | "queuing" | "generating" | "success" | "fail";
+    /** JSON-encoded string containing { resultUrls: string[] } on success. */
+    resultJson?: string;
+    failCode?:   number | null;
+    failMsg?:    string | null;
   };
 }
 
 /**
  * Extract the task id from a createTask response data object.
- * Kie image-to-video returns camelCase taskId; legacy/fallback fields also checked.
+ * Kie image-to-video returns camelCase taskId; legacy snake_case fields also checked.
  */
 function extractTaskId(data: Record<string, unknown> | undefined): string | null {
   if (!data) return null;
-  // camelCase (confirmed by Kie image-to-video API) → snake_case → job_id fallbacks
-  const id = (data.taskId as string | undefined)
-    ?? (data.task_id as string | undefined)
-    ?? (data.job_id  as string | undefined)
-    ?? null;
+  const id = (data.taskId  as string | undefined)
+          ?? (data.task_id as string | undefined)
+          ?? (data.job_id  as string | undefined)
+          ?? null;
   const source = data.taskId ? "taskId" : data.task_id ? "task_id" : data.job_id ? "job_id" : "none";
   console.log(`[kie-client] task id field used: ${source} = ${id ?? "(null)"}`);
   return id;
@@ -107,9 +107,8 @@ export async function klingImageToVideo(input: {
     `[kie-client] POST ${createEndpoint}`,
     `model=${model}`,
     `image_urls=${requestBody.input.image_urls.length > 0}`,
-    `duration=${duration}`,
-    `sound=${requestBody.input.sound}`,
-    `callback=false`
+    `duration=${duration}s`,
+    `sound=false`
   );
 
   // ── 1. Create task ─────────────────────────────────────────────────────────
@@ -153,7 +152,9 @@ export async function klingImageToVideo(input: {
   console.log(`[kie-client] Task created: ${taskId} (model=${model}, duration=${duration}s)`);
 
   // ── 2. Poll until complete or timeout ──────────────────────────────────────
-  const pollEndpoint = `${baseUrl}/api/v1/jobs/fetchTask/${taskId}`;
+  // Endpoint: GET /api/v1/jobs/recordInfo?taskId={id}
+  // Status field: data.state — "waiting" | "queuing" | "generating" | "success" | "fail"
+  const pollBase = `${baseUrl}/api/v1/jobs/recordInfo`;
   const deadline = Date.now() + POLL_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
@@ -161,7 +162,7 @@ export async function klingImageToVideo(input: {
 
     let pollBody: PollResponse;
     try {
-      const pollResp = await fetch(pollEndpoint, {
+      const pollResp = await fetch(`${pollBase}?taskId=${encodeURIComponent(taskId)}`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!pollResp.ok) {
@@ -179,21 +180,35 @@ export async function klingImageToVideo(input: {
       continue;
     }
 
-    const status = pollBody.data?.status;
-    console.log(`[kie-client] Task ${taskId}: ${status}`);
+    const state = pollBody.data?.state;
+    console.log(`[kie-client] Task ${taskId}: state=${state}`);
 
-    if (status === "succeed") {
-      const video = pollBody.data?.task_result?.videos?.[0];
-      if (!video?.url) {
-        throw new Error(`[kie-client] Task ${taskId} succeeded but no video URL in response`);
+    if (state === "success") {
+      // resultJson is a JSON-encoded string containing { resultUrls: string[] }
+      const resultJson = pollBody.data?.resultJson;
+      let videoUrl: string | undefined;
+      if (resultJson) {
+        try {
+          const parsed = JSON.parse(resultJson) as { resultUrls?: string[] };
+          videoUrl = parsed.resultUrls?.[0];
+        } catch {
+          // fall through to error below
+        }
       }
-      return { videoUrl: video.url, durationSeconds: video.duration ?? Number(duration) };
+      if (!videoUrl) {
+        throw new Error(
+          `[kie-client] Task ${taskId} succeeded but no video URL in resultJson: ${resultJson?.slice(0, 200) ?? "(empty)"}`
+        );
+      }
+      console.log(`[kie-client] Task ${taskId}: video ready`);
+      return { videoUrl, durationSeconds: Number(duration) };
     }
 
-    if (status === "failed") {
-      throw new Error(`[kie-client] Task ${taskId} failed on Kie.ai`);
+    if (state === "fail") {
+      const reason = pollBody.data?.failMsg ?? "(no failMsg)";
+      throw new Error(`[kie-client] Task ${taskId} failed on Kie.ai: ${reason}`);
     }
-    // "pending" | "processing" — keep polling
+    // "waiting" | "queuing" | "generating" — keep polling
   }
 
   throw new Error(
