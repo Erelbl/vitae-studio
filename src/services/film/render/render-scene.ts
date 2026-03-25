@@ -359,6 +359,12 @@ export async function renderScene(
           leftKlingUrl = data?.signedUrl ?? null;
         }
       }
+      // Summary: log visual source for each page
+      const rightSource = rightKlingUrl ? "kling-video" : "css-motion (no path)";
+      const leftSource  = secondPage
+        ? leftKlingUrl ? "kling-video" : "css-motion (no path)"
+        : "n/a (single-page)";
+      console.log(`[film-render] Visual source — right: ${rightSource}, left: ${leftSource}`);
     } else {
       console.log(`[film-render] KIE_API_KEY not set — skipping Kling generation, using CSS motion`);
     }
