@@ -5,13 +5,13 @@
  * Falls back to "fallback" on any error — this must never block rendering.
  *
  * Uses GOOGLE_AI_API_KEY (already required by the illustration pipeline).
- * Model: gemini-2.0-flash (cheap, fast, multimodal text output).
+ * Model: gemini-2.5-flash-lite (cheap, fast, multimodal text output).
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { SceneType } from "./prompt-library";
 
-const CLASSIFIER_MODEL = "gemini-1.5-flash";
+const CLASSIFIER_MODEL = "gemini-2.5-flash-lite";
 
 const CLASSIFY_PROMPT = `You are a scene type classifier for illustrated book pages (watercolor style).
 
@@ -45,6 +45,7 @@ export async function classifyPageImage(imageUrl: string): Promise<SceneType> {
   }
 
   try {
+    console.log(`[kling-classify] model=${CLASSIFIER_MODEL}`);
     const resp = await fetch(imageUrl);
     if (!resp.ok) {
       console.warn(`[kling-classify] Image fetch failed (${resp.status}) — defaulting to fallback`);

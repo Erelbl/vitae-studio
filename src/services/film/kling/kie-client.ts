@@ -12,7 +12,8 @@
  *   3. Return the video URL from task_result
  *
  * Kie success convention: code === 200 (not 0).
- * Task id may be returned as task_id or job_id depending on API version.
+ * Task id is returned as data.taskId (camelCase). data.recordId is a secondary
+ * identifier also returned by Kie but not used for polling.
  */
 
 export interface KlingVideoResult {
@@ -50,19 +51,29 @@ interface PollResponse {
   code: number;
   msg?: string;
   data?: {
-    task_id?: string;
-    job_id?:  string;
-    status:   "pending" | "processing" | "succeed" | "failed";
+    taskId?:    string;
+    task_id?:   string;
+    status:     "pending" | "processing" | "succeed" | "failed";
     task_result?: {
       videos?: Array<{ url: string; duration: number }>;
     };
   };
 }
 
-/** Extract task/job id from createTask data — handles task_id or job_id. */
+/**
+ * Extract the task id from a createTask response data object.
+ * Kie image-to-video returns camelCase taskId; legacy/fallback fields also checked.
+ */
 function extractTaskId(data: Record<string, unknown> | undefined): string | null {
   if (!data) return null;
-  return (data.task_id as string) ?? (data.job_id as string) ?? null;
+  // camelCase (confirmed by Kie image-to-video API) → snake_case → job_id fallbacks
+  const id = (data.taskId as string | undefined)
+    ?? (data.task_id as string | undefined)
+    ?? (data.job_id  as string | undefined)
+    ?? null;
+  const source = data.taskId ? "taskId" : data.task_id ? "task_id" : data.job_id ? "job_id" : "none";
+  console.log(`[kie-client] task id field used: ${source} = ${id ?? "(null)"}`);
+  return id;
 }
 
 /**
@@ -136,7 +147,7 @@ export async function klingImageToVideo(input: {
   const taskId = extractTaskId(createBody.data);
   if (!taskId) {
     throw new Error(
-      `[kie-client] Task created (code ${createBody.code}) but no task_id/job_id in response data: ${JSON.stringify(createBody.data)}`
+      `[kie-client] Task created (code ${createBody.code}) but no taskId/task_id/job_id in response data: ${JSON.stringify(createBody.data)}`
     );
   }
   console.log(`[kie-client] Task created: ${taskId} (model=${model}, duration=${duration}s)`);
