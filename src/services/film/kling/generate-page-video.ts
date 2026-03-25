@@ -45,10 +45,12 @@ export async function generatePageVideo(
 
     // 2. Select prompt
     const prompt = getKlingPrompt(sceneType);
-    console.log(`${tag} prompt="${prompt.slice(0, 90)}…" model=${process.env.KIE_VIDEO_MODEL ?? "kling-v2-6"}`);
+    const rawModel = process.env.KIE_VIDEO_MODEL ?? "kling-2.6/image-to-video";
+    const effectiveModel = rawModel.replace(/\/(text|image)-to-video$/, "") + "/image-to-video";
+    console.log(`${tag} prompt="${prompt.slice(0, 90)}…" model=${effectiveModel} duration=10s`);
 
     // 3. Generate video (blocks until Kling finishes or timeout)
-    const { videoUrl } = await klingImageToVideo({ imageUrl, prompt });
+    const { videoUrl } = await klingImageToVideo({ imageUrl, prompt, durationSeconds: 10 });
     console.log(`${tag} video ready`);
 
     // 4. Download

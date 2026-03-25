@@ -311,11 +311,16 @@ export async function renderScene(
 
     if (process.env.KIE_API_KEY) {
       const storageBucket = filmEnv.storageBucket ?? "films";
+      const rightPageId = pageIds[0] ?? "(none)";
+      const leftPageId  = pageIds[1] ?? "(none)";
+      console.log(`[film-render] Kling pages — right: ${rightPageId}, left: ${isSpread ? leftPageId : "n/a (single-page)"}`);
 
       // ── Right page ──────────────────────────────────────────────────────
       let rightPath = (sceneRow.right_page_video_path as string | null) ?? null;
-      if (!rightPath && primaryPage.slot1?.url) {
-        console.log(`[film-render] Generating Kling video for right page (scene ${sceneId})`);
+      if (rightPath) {
+        console.log(`[film-render] Right page Kling video cached → ${rightPath}`);
+      } else if (primaryPage.slot1?.url) {
+        console.log(`[film-render] Generating Kling video for right page (pageId=${rightPageId})`);
         rightPath = await generatePageVideo({
           imageUrl:      primaryPage.slot1.url,
           side:          "right",
@@ -329,6 +334,8 @@ export async function renderScene(
             .update({ right_page_video_path: rightPath, updated_at: new Date().toISOString() })
             .eq("id", sceneId);
         }
+      } else {
+        console.log(`[film-render] Right page has no slot1 image — skipping Kling, using CSS motion`);
       }
       if (rightPath) {
         const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 3600);
@@ -338,8 +345,10 @@ export async function renderScene(
       // ── Left page ───────────────────────────────────────────────────────
       if (secondPage) {
         let leftPath = (sceneRow.left_page_video_path as string | null) ?? null;
-        if (!leftPath && secondPage.slot1?.url) {
-          console.log(`[film-render] Generating Kling video for left page (scene ${sceneId})`);
+        if (leftPath) {
+          console.log(`[film-render] Left page Kling video cached → ${leftPath}`);
+        } else if (secondPage.slot1?.url) {
+          console.log(`[film-render] Generating Kling video for left page (pageId=${leftPageId})`);
           leftPath = await generatePageVideo({
             imageUrl:      secondPage.slot1.url,
             side:          "left",
@@ -353,6 +362,8 @@ export async function renderScene(
               .update({ left_page_video_path: leftPath, updated_at: new Date().toISOString() })
               .eq("id", sceneId);
           }
+        } else {
+          console.log(`[film-render] Left page has no slot1 image — skipping Kling, using CSS motion`);
         }
         if (leftPath) {
           const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 3600);
@@ -360,10 +371,8 @@ export async function renderScene(
         }
       }
       // Summary: log visual source for each page
-      const rightSource = rightKlingUrl ? "kling-video" : "css-motion (no path)";
-      const leftSource  = secondPage
-        ? leftKlingUrl ? "kling-video" : "css-motion (no path)"
-        : "n/a (single-page)";
+      const rightSource = rightKlingUrl ? "kling-video" : "css-motion";
+      const leftSource  = isSpread ? (leftKlingUrl ? "kling-video" : "css-motion") : "n/a (single-page)";
       console.log(`[film-render] Visual source — right: ${rightSource}, left: ${leftSource}`);
     } else {
       console.log(`[film-render] KIE_API_KEY not set — skipping Kling generation, using CSS motion`);
