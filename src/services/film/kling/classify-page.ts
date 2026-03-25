@@ -11,7 +11,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { SceneType } from "./prompt-library";
 
-const CLASSIFIER_MODEL = "gemini-2.0-flash";
+const CLASSIFIER_MODEL = "gemini-2.0-flash-lite";
 
 const CLASSIFY_PROMPT = `You are a scene type classifier for illustrated book pages (watercolor style).
 

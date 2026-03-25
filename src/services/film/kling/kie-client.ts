@@ -34,6 +34,7 @@ function getKieEnv(): { apiKey: string; baseUrl: string; model: string } {
 interface CreateResponse {
   code: number;
   message?: string;
+  msg?: string;
   data?: { task_id: string; status?: string };
 }
 
@@ -57,12 +58,32 @@ export async function klingImageToVideo(input: {
   prompt: string;
   durationSeconds?: 5 | 10;
 }): Promise<KlingVideoResult> {
-  const { apiKey, baseUrl, model } = getKieEnv();
+  const { apiKey, baseUrl, model: rawModel } = getKieEnv();
+  // Always use image-to-video variant regardless of KIE_VIDEO_MODEL value.
+  // Strip any existing task-type suffix (e.g. /text-to-video) and enforce /image-to-video.
+  const baseModel = rawModel.replace(/\/(text|image)-to-video$/, "");
+  const model = `${baseModel}/image-to-video`;
   const duration = String(input.durationSeconds ?? 5);
 
   const createEndpoint = `${baseUrl}/api/v1/jobs/createTask`;
-  const hasImageUrl = Boolean(input.imageUrl);
-  console.log(`[kie-client] POST ${createEndpoint} model=${model} image_urls=${hasImageUrl}`);
+  const requestBody = {
+    model,
+    input: {
+      prompt:           input.prompt,
+      negative_prompt:  "",
+      image_urls:       [input.imageUrl],
+      duration,
+      sound:            false,
+    },
+  };
+  console.log(
+    `[kie-client] POST ${createEndpoint}`,
+    `model=${model}`,
+    `image_urls=${requestBody.input.image_urls.length > 0}`,
+    `duration=${duration}`,
+    `sound=${requestBody.input.sound}`,
+    `callback=false`
+  );
 
   // ── 1. Create task ─────────────────────────────────────────────────────────
   const createResp = await fetch(createEndpoint, {
@@ -71,15 +92,7 @@ export async function klingImageToVideo(input: {
       Authorization:  `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      input: {
-        prompt:     input.prompt,
-        image_urls: [input.imageUrl],
-        duration,
-        sound:      false,
-      },
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!createResp.ok) {
@@ -92,7 +105,7 @@ export async function klingImageToVideo(input: {
   const createBody = (await createResp.json()) as CreateResponse;
   if (createBody.code !== 0 || !createBody.data?.task_id) {
     throw new Error(
-      `[kie-client] Task creation error: ${createBody.message ?? JSON.stringify(createBody)}`
+      `[kie-client] Task creation error: ${createBody.message ?? createBody.msg ?? JSON.stringify(createBody)}`
     );
   }
 
