@@ -4,11 +4,11 @@
  * Required environment variables (set in .env.local / Vercel):
  *   KIE_API_KEY       — API key for api.kie.ai
  *   KIE_API_BASE_URL  — base URL, e.g. https://api.kie.ai (no trailing slash)
- *   KIE_VIDEO_MODEL   — model identifier, e.g. kling-v2-6
+ *   KIE_VIDEO_MODEL   — model identifier, e.g. kling-2.6/image-to-video
  *
  * Flow:
- *   1. POST /v1/videos/image2video → receive task_id
- *   2. Poll GET /v1/videos/image2video/{task_id} until succeed | failed | timeout
+ *   1. POST /api/v1/jobs/createTask → receive task_id
+ *   2. Poll GET /api/v1/jobs/fetchTask/{task_id} until succeed | failed | timeout
  *   3. Return the video URL from task_result
  */
 
@@ -27,7 +27,7 @@ function getKieEnv(): { apiKey: string; baseUrl: string; model: string } {
   return {
     apiKey,
     baseUrl: process.env.KIE_API_BASE_URL ?? "https://api.kie.ai",
-    model:   process.env.KIE_VIDEO_MODEL   ?? "kling-v2-6",
+    model:   process.env.KIE_VIDEO_MODEL   ?? "kling-2.6/image-to-video",
   };
 }
 
@@ -56,25 +56,29 @@ export async function klingImageToVideo(input: {
   imageUrl: string;
   prompt: string;
   durationSeconds?: 5 | 10;
-  mode?: "std" | "pro";
 }): Promise<KlingVideoResult> {
   const { apiKey, baseUrl, model } = getKieEnv();
-  const duration = input.durationSeconds ?? 5;
-  const mode     = input.mode           ?? "std";
+  const duration = String(input.durationSeconds ?? 5);
+
+  const createEndpoint = `${baseUrl}/api/v1/jobs/createTask`;
+  const hasImageUrl = Boolean(input.imageUrl);
+  console.log(`[kie-client] POST ${createEndpoint} model=${model} image_urls=${hasImageUrl}`);
 
   // ── 1. Create task ─────────────────────────────────────────────────────────
-  const createResp = await fetch(`${baseUrl}/v1/videos/image2video`, {
+  const createResp = await fetch(createEndpoint, {
     method: "POST",
     headers: {
       Authorization:  `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model_name: model,
-      image:      input.imageUrl,
-      prompt:     input.prompt,
-      duration,
-      mode,
+      model,
+      input: {
+        prompt:     input.prompt,
+        image_urls: [input.imageUrl],
+        duration,
+        sound:      false,
+      },
     }),
   });
 
@@ -93,9 +97,10 @@ export async function klingImageToVideo(input: {
   }
 
   const taskId = createBody.data.task_id;
-  console.log(`[kie-client] Task created: ${taskId} (model=${model}, ${duration}s, mode=${mode})`);
+  console.log(`[kie-client] Task created: ${taskId} (model=${model}, duration=${duration}s)`);
 
   // ── 2. Poll until complete or timeout ──────────────────────────────────────
+  const pollEndpoint = `${baseUrl}/api/v1/jobs/fetchTask/${taskId}`;
   const deadline = Date.now() + POLL_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
@@ -103,7 +108,7 @@ export async function klingImageToVideo(input: {
 
     let pollBody: PollResponse;
     try {
-      const pollResp = await fetch(`${baseUrl}/v1/videos/image2video/${taskId}`, {
+      const pollResp = await fetch(pollEndpoint, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!pollResp.ok) {
@@ -129,7 +134,7 @@ export async function klingImageToVideo(input: {
       if (!video?.url) {
         throw new Error(`[kie-client] Task ${taskId} succeeded but no video URL in response`);
       }
-      return { videoUrl: video.url, durationSeconds: video.duration ?? duration };
+      return { videoUrl: video.url, durationSeconds: video.duration ?? Number(duration) };
     }
 
     if (status === "failed") {
