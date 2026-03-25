@@ -6,7 +6,7 @@
  *   - requests only subtle, natural motion
  *   - explicitly forbids face/character distortion
  *
- * Prompts are tuned for 5-second clips at standard mode.
+ * Prompts are tuned for 10-second clips at standard mode.
  */
 
 export type SceneType =
@@ -37,10 +37,14 @@ export const PROMPT_LIBRARY: Record<SceneType, string> = {
 
   multiple_characters:
     BASE +
-    " Preserve all characters exactly as illustrated. " +
-    "Add only very small natural gestures — occasional blinking, a slight head tilt, " +
-    "a subtle shoulder shift. No large movement. No invented interaction between characters. " +
-    "Camera stays still.",
+    " Preserve every character exactly as illustrated — faces, clothing, proportions, positions. " +
+    "Bring the scene alive with clearly visible but minimal natural motion: " +
+    "each character should blink at least once, with small individual head movements and " +
+    "gentle body shifts. Where hands are visible, allow a slow natural hand gesture or finger movement. " +
+    "Characters may exchange soft eye contact or a subtle lean toward each other — " +
+    "not all characters should move at the same moment. " +
+    "Motion must be staggered and natural, never synchronised or puppet-like. " +
+    "No invented new actions, no large movement, no face warping. Camera stays still.",
 
   landscape:
     BASE +
