@@ -7,9 +7,12 @@
  *   KIE_VIDEO_MODEL   — model identifier, e.g. kling-2.6/image-to-video
  *
  * Flow:
- *   1. POST /api/v1/jobs/createTask → receive task_id
+ *   1. POST /api/v1/jobs/createTask → receive task id
  *   2. Poll GET /api/v1/jobs/fetchTask/{task_id} until succeed | failed | timeout
  *   3. Return the video URL from task_result
+ *
+ * Kie success convention: code === 200 (not 0).
+ * Task id may be returned as task_id or job_id depending on API version.
  */
 
 export interface KlingVideoResult {
@@ -31,22 +34,35 @@ function getKieEnv(): { apiKey: string; baseUrl: string; model: string } {
   };
 }
 
+/** Kie uses code 200 for success (not 0). Accept both defensively. */
+function isKieSuccess(code: number): boolean {
+  return code === 0 || code === 200;
+}
+
 interface CreateResponse {
   code: number;
   message?: string;
   msg?: string;
-  data?: { task_id: string; status?: string };
+  data?: Record<string, unknown>;
 }
 
 interface PollResponse {
   code: number;
+  msg?: string;
   data?: {
-    task_id: string;
-    status: "pending" | "processing" | "succeed" | "failed";
+    task_id?: string;
+    job_id?:  string;
+    status:   "pending" | "processing" | "succeed" | "failed";
     task_result?: {
       videos?: Array<{ url: string; duration: number }>;
     };
   };
+}
+
+/** Extract task/job id from createTask data — handles task_id or job_id. */
+function extractTaskId(data: Record<string, unknown> | undefined): string | null {
+  if (!data) return null;
+  return (data.task_id as string) ?? (data.job_id as string) ?? null;
 }
 
 /**
@@ -69,11 +85,11 @@ export async function klingImageToVideo(input: {
   const requestBody = {
     model,
     input: {
-      prompt:           input.prompt,
-      negative_prompt:  "",
-      image_urls:       [input.imageUrl],
+      prompt:          input.prompt,
+      negative_prompt: "",
+      image_urls:      [input.imageUrl],
       duration,
-      sound:            false,
+      sound:           false,
     },
   };
   console.log(
@@ -103,13 +119,26 @@ export async function klingImageToVideo(input: {
   }
 
   const createBody = (await createResp.json()) as CreateResponse;
-  if (createBody.code !== 0 || !createBody.data?.task_id) {
+
+  // Log response shape to aid debugging — no secrets exposed
+  console.log(
+    `[kie-client] createTask response: code=${createBody.code}`,
+    `msg=${createBody.msg ?? createBody.message ?? "(none)"}`,
+    `data_keys=${Object.keys(createBody.data ?? {}).join(",") || "(empty)"}`
+  );
+
+  if (!isKieSuccess(createBody.code)) {
     throw new Error(
-      `[kie-client] Task creation error: ${createBody.message ?? createBody.msg ?? JSON.stringify(createBody)}`
+      `[kie-client] Task creation error (code ${createBody.code}): ${createBody.msg ?? createBody.message ?? JSON.stringify(createBody)}`
     );
   }
 
-  const taskId = createBody.data.task_id;
+  const taskId = extractTaskId(createBody.data);
+  if (!taskId) {
+    throw new Error(
+      `[kie-client] Task created (code ${createBody.code}) but no task_id/job_id in response data: ${JSON.stringify(createBody.data)}`
+    );
+  }
   console.log(`[kie-client] Task created: ${taskId} (model=${model}, duration=${duration}s)`);
 
   // ── 2. Poll until complete or timeout ──────────────────────────────────────
@@ -134,7 +163,7 @@ export async function klingImageToVideo(input: {
       continue;
     }
 
-    if (pollBody.code !== 0) {
+    if (!isKieSuccess(pollBody.code)) {
       console.warn(`[kie-client] Poll ${taskId}: code=${pollBody.code} — retrying`);
       continue;
     }
