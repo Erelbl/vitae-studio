@@ -316,13 +316,16 @@ export async function renderScene(
       console.log(`[film-render] Kling pages — right: ${rightPageId}, left: ${isSpread ? leftPageId : "n/a (single-page)"}`);
 
       // ── Right page ──────────────────────────────────────────────────────
+      // Use the first non-null image URL the render system resolved for this page.
+      const rightImageUrl = primaryPage.slot1?.url ?? primaryPage.slot2?.url ?? null;
+      const rightImageSrc = primaryPage.slot1?.url ? "slot1" : primaryPage.slot2?.url ? "slot2" : "none";
       let rightPath = (sceneRow.right_page_video_path as string | null) ?? null;
       if (rightPath) {
         console.log(`[film-render] Right page Kling video cached → ${rightPath}`);
-      } else if (primaryPage.slot1?.url) {
-        console.log(`[film-render] Generating Kling video for right page (pageId=${rightPageId})`);
+      } else if (rightImageUrl) {
+        console.log(`[film-render] Generating Kling video for right page (pageId=${rightPageId}, src=${rightImageSrc})`);
         rightPath = await generatePageVideo({
-          imageUrl:      primaryPage.slot1.url,
+          imageUrl:      rightImageUrl,
           side:          "right",
           orderId,
           filmProjectId,
@@ -335,7 +338,7 @@ export async function renderScene(
             .eq("id", sceneId);
         }
       } else {
-        console.log(`[film-render] Right page has no slot1 image — skipping Kling, using CSS motion`);
+        console.log(`[film-render] Right page has no resolved image — skipping Kling, using CSS motion`);
       }
       if (rightPath) {
         const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 3600);
@@ -344,13 +347,15 @@ export async function renderScene(
 
       // ── Left page ───────────────────────────────────────────────────────
       if (secondPage) {
+        const leftImageUrl = secondPage.slot1?.url ?? secondPage.slot2?.url ?? null;
+        const leftImageSrc = secondPage.slot1?.url ? "slot1" : secondPage.slot2?.url ? "slot2" : "none";
         let leftPath = (sceneRow.left_page_video_path as string | null) ?? null;
         if (leftPath) {
           console.log(`[film-render] Left page Kling video cached → ${leftPath}`);
-        } else if (secondPage.slot1?.url) {
-          console.log(`[film-render] Generating Kling video for left page (pageId=${leftPageId})`);
+        } else if (leftImageUrl) {
+          console.log(`[film-render] Generating Kling video for left page (pageId=${leftPageId}, src=${leftImageSrc})`);
           leftPath = await generatePageVideo({
-            imageUrl:      secondPage.slot1.url,
+            imageUrl:      leftImageUrl,
             side:          "left",
             orderId,
             filmProjectId,
@@ -363,7 +368,7 @@ export async function renderScene(
               .eq("id", sceneId);
           }
         } else {
-          console.log(`[film-render] Left page has no slot1 image — skipping Kling, using CSS motion`);
+          console.log(`[film-render] Left page has no resolved image — skipping Kling, using CSS motion`);
         }
         if (leftPath) {
           const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 3600);
