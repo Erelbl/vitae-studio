@@ -2,6 +2,7 @@ import React from "react";
 import {
   AbsoluteFill,
   Img,
+  OffthreadVideo,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
@@ -28,6 +29,12 @@ export interface ScenePageData {
   textAlign: string;
   textX: number | null;
   textY: number | null;
+  /**
+   * Signed HTTPS URL to a Kling-generated page video stored in the films bucket.
+   * When set, ImageFill renders this video as the visual source for slot1 instead
+   * of the static illustration + CSS motion. Null → Remotion CSS-motion fallback.
+   */
+  klingVideoUrl?: string | null;
 }
 
 export interface SceneCompositionProps {
@@ -72,6 +79,12 @@ export interface SceneCompositionProps {
   transitionOut: "fade" | "none";
   /** Narration audio duration in ms — used to sync text reveal with speech. */
   narrationDurationMs: number | null;
+  /**
+   * Signed HTTPS URL to a Kling-generated video for the primary (right) page.
+   * When set, ImageFill uses this video as the visual source instead of the
+   * static illustration + CSS motion. Null → Remotion CSS-motion fallback.
+   */
+  klingVideoUrl?: string | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -222,6 +235,16 @@ interface PageTimingOverride {
 }
 
 const PageTimingCtx = React.createContext<PageTimingOverride | null>(null);
+
+/**
+ * Per-page Kling video URL context.
+ *
+ * Set by the spread coordinator (or single-page root) to the signed HTTPS URL
+ * of the Kling-generated MP4 for this page. ImageFill reads it and, when non-null,
+ * renders the video instead of the static illustration + CSS motion effects.
+ * Null (default) → existing Remotion CSS-motion fallback.
+ */
+const PageKlingCtx = React.createContext<string | null>(null);
 
 /** Count real words (non-whitespace tokens) in a text string. */
 function countWords(text: string | null): number {
@@ -444,6 +467,28 @@ function ImageFill({
   // Check for per-page timing override (spread coordination).
   const timingOverride = React.useContext(PageTimingCtx);
   const delayFrac = timingOverride?.imageRevealDelayFrac ?? 0;
+
+  // ── Kling video override ───────────────────────────────────────────────────
+  // When a Kling-generated page video is available, use it as the visual source
+  // for this page instead of the static illustration + CSS motion effects.
+  // Text overlays, narration sync, and all other Remotion layers are unaffected.
+  const klingVideoUrl = React.useContext(PageKlingCtx);
+  if (klingVideoUrl) {
+    return (
+      <AbsoluteFill style={{ overflow: "hidden" }}>
+        <OffthreadVideo
+          src={klingVideoUrl}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+        />
+      </AbsoluteFill>
+    );
+  }
 
   if (!slot) {
     return (
@@ -1565,6 +1610,7 @@ export function SceneComposition({
   narrationDurationMs,
   pageType,
   personName,
+  klingVideoUrl,
 }: SceneCompositionProps) {
   useAlbumFont();
 
@@ -1753,14 +1799,16 @@ export function SceneComposition({
               overflow: "hidden",
             }}
           >
-            <PageTimingCtx.Provider value={leftTiming}>
-              <PageContent
-                {...secondPage}
-                kbScale={kbScale}
-                narrationDurationMs={narrationDurationMs}
-                textParallaxPx={textParallaxPx}
-              />
-            </PageTimingCtx.Provider>
+            <PageKlingCtx.Provider value={secondPage.klingVideoUrl ?? null}>
+              <PageTimingCtx.Provider value={leftTiming}>
+                <PageContent
+                  {...secondPage}
+                  kbScale={kbScale}
+                  narrationDurationMs={narrationDurationMs}
+                  textParallaxPx={textParallaxPx}
+                />
+              </PageTimingCtx.Provider>
+            </PageKlingCtx.Provider>
           </div>
 
           {/* Right page (primary page — lower page number, read first in Hebrew) */}
@@ -1774,22 +1822,24 @@ export function SceneComposition({
               overflow: "hidden",
             }}
           >
-            <PageTimingCtx.Provider value={rightTiming}>
-              <PageContent
-                slot1={slot1}
-                slot2={slot2}
-                layoutType={layoutType}
-                textContent={textContent}
-                textSize={textSize}
-                fontSizePx={fontSizePx}
-                textAlign={textAlign}
-                textX={textX}
-                textY={textY}
-                kbScale={kbScale}
-                narrationDurationMs={narrationDurationMs}
-                textParallaxPx={textParallaxPx}
-              />
-            </PageTimingCtx.Provider>
+            <PageKlingCtx.Provider value={klingVideoUrl ?? null}>
+              <PageTimingCtx.Provider value={rightTiming}>
+                <PageContent
+                  slot1={slot1}
+                  slot2={slot2}
+                  layoutType={layoutType}
+                  textContent={textContent}
+                  textSize={textSize}
+                  fontSizePx={fontSizePx}
+                  textAlign={textAlign}
+                  textX={textX}
+                  textY={textY}
+                  kbScale={kbScale}
+                  narrationDurationMs={narrationDurationMs}
+                  textParallaxPx={textParallaxPx}
+                />
+              </PageTimingCtx.Provider>
+            </PageKlingCtx.Provider>
           </div>
 
           {/* Spine shadow between pages — mimics open-book binding */}
@@ -1839,22 +1889,24 @@ export function SceneComposition({
             overflow: "hidden",
           }}
         >
-          <PageContent
-            slot1={slot1}
-            slot2={slot2}
-            layoutType={layoutType}
-            textContent={textContent}
-            textSize={textSize}
-            fontSizePx={fontSizePx}
-            textAlign={textAlign}
-            textX={textX}
-            textY={textY}
-            kbScale={kbScale}
-            narrationDurationMs={narrationDurationMs}
-            textParallaxPx={textParallaxPx}
-            pageType={pageType}
-            personName={personName}
-          />
+          <PageKlingCtx.Provider value={klingVideoUrl ?? null}>
+            <PageContent
+              slot1={slot1}
+              slot2={slot2}
+              layoutType={layoutType}
+              textContent={textContent}
+              textSize={textSize}
+              fontSizePx={fontSizePx}
+              textAlign={textAlign}
+              textX={textX}
+              textY={textY}
+              kbScale={kbScale}
+              narrationDurationMs={narrationDurationMs}
+              textParallaxPx={textParallaxPx}
+              pageType={pageType}
+              personName={personName}
+            />
+          </PageKlingCtx.Provider>
         </div>
       </div>
     </AbsoluteFill>

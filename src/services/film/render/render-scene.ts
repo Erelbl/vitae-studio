@@ -24,6 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildRenderHash } from "@/services/film/utils/build-render-hash";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
 import { filmEnv } from "@/lib/film-env-node";
+import { generatePageVideo } from "@/services/film/kling/generate-page-video";
 import type { SlotImageData, ScenePageData } from "@/remotion/SceneComposition";
 
 export interface RenderSceneInput {
@@ -299,6 +300,69 @@ export async function renderScene(
       allPagesData.length >= 2 ? allPagesData[1] : null;
     const isSpread = secondPage !== null;
 
+    // ── Kling page video generation ───────────────────────────────────────
+    //
+    // If KIE_API_KEY is configured, generate a Kling 2.6 video for each page.
+    // Existing paths are reused (no regeneration on re-render unless cleared).
+    // Failures are non-fatal — fall back to Remotion CSS motion silently.
+
+    let rightKlingUrl: string | null = null;
+    let leftKlingUrl:  string | null = null;
+
+    if (process.env.KIE_API_KEY) {
+      const storageBucket = filmEnv.storageBucket ?? "films";
+
+      // ── Right page ──────────────────────────────────────────────────────
+      let rightPath = (sceneRow.right_page_video_path as string | null) ?? null;
+      if (!rightPath && primaryPage.slot1?.url) {
+        console.log(`[film-render] Generating Kling video for right page (scene ${sceneId})`);
+        rightPath = await generatePageVideo({
+          imageUrl:      primaryPage.slot1.url,
+          side:          "right",
+          orderId,
+          filmProjectId,
+          sceneId,
+        });
+        if (rightPath) {
+          await adminClient
+            .from("film_scenes")
+            .update({ right_page_video_path: rightPath, updated_at: new Date().toISOString() })
+            .eq("id", sceneId);
+        }
+      }
+      if (rightPath) {
+        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 3600);
+        rightKlingUrl = data?.signedUrl ?? null;
+      }
+
+      // ── Left page ───────────────────────────────────────────────────────
+      if (secondPage) {
+        let leftPath = (sceneRow.left_page_video_path as string | null) ?? null;
+        if (!leftPath && secondPage.slot1?.url) {
+          console.log(`[film-render] Generating Kling video for left page (scene ${sceneId})`);
+          leftPath = await generatePageVideo({
+            imageUrl:      secondPage.slot1.url,
+            side:          "left",
+            orderId,
+            filmProjectId,
+            sceneId,
+          });
+          if (leftPath) {
+            await adminClient
+              .from("film_scenes")
+              .update({ left_page_video_path: leftPath, updated_at: new Date().toISOString() })
+              .eq("id", sceneId);
+          }
+        }
+        if (leftPath) {
+          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 3600);
+          leftKlingUrl = data?.signedUrl ?? null;
+        }
+      }
+    } else {
+      console.log(`[film-render] KIE_API_KEY not set — skipping Kling generation, using CSS motion`);
+    }
+
     // ── Derive page type from spread key ─────────────────────────────────
     // Cover, dedication, and back_cover scenes have page_spread_key matching
     // their page_type. Content spreads have keys like "spread_01".
@@ -343,7 +407,12 @@ export async function renderScene(
       textAlign: primaryPage.textAlign,
       textX: primaryPage.textX,
       textY: primaryPage.textY,
-      secondPage,
+      // Kling video for the right (primary) page — null falls back to CSS motion
+      klingVideoUrl: rightKlingUrl,
+      // Spread: merge left-page Kling URL into secondPage data
+      secondPage: secondPage
+        ? { ...secondPage, klingVideoUrl: leftKlingUrl }
+        : null,
       motionPreset:
         (sceneRow.motion_preset as string) === "ken_burns"
           ? "ken_burns"
