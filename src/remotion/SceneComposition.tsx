@@ -555,16 +555,16 @@ function ImageFill({
     slot?.frameStyle ? "cover" : "contain";
 
   // ── Kling video ───────────────────────────────────────────────────────────
+  // The Kling video is pre-cropped by prepareCroppedImageForKling() before
+  // generation — its content already represents the preview-visible region.
+  // Do NOT re-apply wrapperStyle scale/offset here (that would double-crop).
+  // The video fills the page frame at 100%×100%; inset crop + mask still apply.
   if (klingVideoUrl) {
-    // Debug: log once per render pass at frame 0 (right) or activation frame (left).
     const klingLogFrame = delayFrame > 0 ? delayFrame : 0;
     if (frame === klingLogFrame) {
-      const previewLeft = `${((cropX - s / 2) * 100).toFixed(1)}%`;
-      const previewTop  = `${((cropY - s / 2) * 100).toFixed(1)}%`;
       console.log(
-        `[ImageFill] type=kling-video` +
+        `[ImageFill] type=kling-video (pre-cropped)` +
         ` | crop=(${cropX.toFixed(3)},${cropY.toFixed(3)}) scale=${s.toFixed(3)}` +
-        ` | wrapperStyle: left=${previewLeft} top=${previewTop} size=${(s * 100).toFixed(0)}%` +
         ` | frameStyle=${slot?.frameStyle ?? "none"} mask-applied=${maskUrl ? "true" : "false"}` +
         ` | hasInset=${hasInset} delayFrame=${delayFrame}`
       );
@@ -572,15 +572,21 @@ function ImageFill({
     return (
       <>
         <AbsoluteFill style={{ background: BG_CARD }} />
-        {/* Same wrapperStyle as static images — preview-matching crop/scale/position. */}
         <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
-            <div style={{ ...wrapperStyle, overflow: "hidden" }}>
+            <AbsoluteFill
+              style={{
+                overflow: "hidden",
+                ...(hasInset
+                  ? { clipPath: `inset(${it * 100}% ${ir * 100}% ${ib * 100}% ${il * 100}%)` }
+                  : {}),
+              }}
+            >
               <OffthreadVideo
                 src={klingVideoUrl}
                 style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}
               />
-            </div>
+            </AbsoluteFill>
           </Sequence>
         </AbsoluteFill>
       </>
