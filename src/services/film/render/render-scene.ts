@@ -442,6 +442,23 @@ export async function renderScene(
       }
     }
 
+    // ── Narration audio signed URL ────────────────────────────────────────────
+    // Bake the narration MP3 directly into the scene video via Remotion <Audio>.
+    // This eliminates the separate ffmpeg mux step during final assembly.
+    const audioPath = (sceneRow.audio_path as string | null) ?? null;
+    let narrationUrl: string | null = null;
+    if (audioPath) {
+      const { data: audioData } = await adminClient.storage.from(storageBucket).createSignedUrl(audioPath, 3600);
+      narrationUrl = audioData?.signedUrl ?? null;
+      if (!narrationUrl) {
+        console.warn(`[film-render] Failed to create signed URL for narration audio: ${audioPath}`);
+      } else {
+        console.log(`[film-render] Narration audio signed URL created for: ${audioPath}`);
+      }
+    } else {
+      console.log(`[film-render] No narration audio for scene ${sceneId} — rendering silent`);
+    }
+
     // Build render hash using the FRESH resolved Kling paths from this run.
     // Previously this read from the stale sceneRow snapshot (fetched before
     // Kling generation), which produced the same hash as the pre-Kling render
@@ -488,6 +505,8 @@ export async function renderScene(
         (sceneRow.transition_out as string) === "fade" ? "fade" : ("none" as const),
       narrationDurationMs:
         (sceneRow.audio_duration_ms as number | null) ?? null,
+      // Signed URL to narration MP3 — baked into the scene video via Remotion <Audio>.
+      narrationUrl,
       // Special page type — triggers cover/dedication/back_cover layouts.
       // Null for standard content spreads.
       pageType,
@@ -545,7 +564,7 @@ export async function renderScene(
     );
 
     try {
-      // Render video (silent — no audio in this phase)
+      // Render video (narration audio baked in via Remotion <Audio> when narrationUrl is set)
       console.log(
         `[film-render] Rendering scene ${sceneId} (${durationInFrames} frames @ ${fps}fps, layout: ${primaryPage.layoutType}, ${isSpread ? "spread" : "single-page"})`
       );
@@ -597,8 +616,8 @@ export async function renderScene(
         })
         .eq("id", sceneId);
 
-      const rightSrc = rightKlingUrl ? "kling" : "css-motion";
-      const leftSrc  = isSpread ? (leftKlingUrl ? "kling" : "css-motion") : "n/a";
+      const rightSrc = rightKlingUrl ? "kling" : "static";
+      const leftSrc  = isSpread ? (leftKlingUrl ? "kling" : "static") : "n/a";
       console.log(
         `[film-render] Scene ${sceneId} rendered successfully`,
         `→ site reads: ${videoStoragePath}`,

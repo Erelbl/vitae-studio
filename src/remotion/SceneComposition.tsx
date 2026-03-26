@@ -1,8 +1,10 @@
 import React from "react";
 import {
   AbsoluteFill,
+  Audio,
   Img,
   OffthreadVideo,
+  Sequence,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
@@ -85,6 +87,12 @@ export interface SceneCompositionProps {
    * Null → static resolved page image (no CSS motion, no Ken Burns).
    */
   klingVideoUrl?: string | null;
+  /**
+   * Signed HTTPS URL to the narration MP3 for this scene.
+   * When set, the audio plays from frame 0 of the composition — narration
+   * is baked directly into the rendered scene MP4 (no separate mux step needed).
+   */
+  narrationUrl?: string | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -412,31 +420,46 @@ function ImageFill({
   slot: SlotImageData | null;
   kbScale?: number; // kept in signature for call-site compatibility; unused — no Ken Burns on static
 }) {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const timingOverride = React.useContext(PageTimingCtx);
+  const klingVideoUrl = React.useContext(PageKlingCtx);
+
+  // ── Sequential activation delay ──────────────────────────────────────────
+  // For left-page spreads, imageRevealDelayFrac > 0 keeps the left page visually
+  // inactive until the right-page narration segment ends. Right page always has
+  // delayFrac = 0, so it activates immediately.
+  const delayFrame = Math.round(durationInFrames * (timingOverride?.imageRevealDelayFrac ?? 0));
+  if (frame < delayFrame) {
+    // Left page not yet active — show background card colour, matching the album's
+    // warm off-white. The right page is fully visible to the right of this blank area.
+    return <AbsoluteFill style={{ background: BG_CARD }} />;
+  }
+
   // ── Kling video override ───────────────────────────────────────────────────
   // When a Kling-generated page video is available, use it as the visual source.
-  // Text overlays, narration sync, and all other Remotion layers are unaffected.
-  const klingVideoUrl = React.useContext(PageKlingCtx);
+  // <Sequence from={delayFrame}> makes the video start from its own frame 0 at
+  // the moment the left page activates — not from wherever the scene is in time.
   if (klingVideoUrl) {
     return (
       <AbsoluteFill style={{ overflow: "hidden" }}>
-        <OffthreadVideo
-          src={klingVideoUrl}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-          }}
-        />
+        <Sequence from={delayFrame}>
+          <OffthreadVideo
+            src={klingVideoUrl}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+        </Sequence>
       </AbsoluteFill>
     );
   }
 
   // ── Static image fallback ─────────────────────────────────────────────────
-  // No Kling video available. Render the resolved page image as a clean static
-  // frame — no Ken Burns zoom, no 3-phase reveal animation, no CSS filters.
-  // Remotion still handles text, narration, and right→left timing above this layer.
   if (!slot) {
     return (
       <AbsoluteFill
@@ -447,26 +470,23 @@ function ImageFill({
     );
   }
 
-  {
-    const { url, crop_x, crop_y, scale } = slot;
-    const s = Math.max(1, scale);
-    return (
-      <AbsoluteFill style={{ overflow: "hidden" }}>
-        <Img
-          src={url}
-          style={{
-            position: "absolute",
-            width: `${s * 100}%`,
-            height: `${s * 100}%`,
-            left: `${-crop_x * (s - 1) * 100}%`,
-            top: `${-crop_y * (s - 1) * 100}%`,
-            objectFit: "cover",
-          }}
-        />
-      </AbsoluteFill>
-    );
-  }
-
+  const { url, crop_x, crop_y, scale } = slot;
+  const s = Math.max(1, scale);
+  return (
+    <AbsoluteFill style={{ overflow: "hidden" }}>
+      <Img
+        src={url}
+        style={{
+          position: "absolute",
+          width: `${s * 100}%`,
+          height: `${s * 100}%`,
+          left: `${-crop_x * (s - 1) * 100}%`,
+          top: `${-crop_y * (s - 1) * 100}%`,
+          objectFit: "cover",
+        }}
+      />
+    </AbsoluteFill>
+  );
 }
 
 // ── Cinematic vignette layer ──────────────────────────────────────────────────
@@ -1444,6 +1464,7 @@ export function SceneComposition({
   pageType,
   personName,
   klingVideoUrl,
+  narrationUrl,
 }: SceneCompositionProps) {
   useAlbumFont();
 
@@ -1613,6 +1634,8 @@ export function SceneComposition({
 
     return (
       <AbsoluteFill style={{ backgroundColor: "#1a1a1a", opacity }}>
+        {/* Narration audio — plays from frame 0, synced to text reveal timing */}
+        {narrationUrl && <Audio src={narrationUrl} />}
         <div
           style={{
             position: "absolute",
@@ -1704,6 +1727,8 @@ export function SceneComposition({
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#1a1a1a", opacity }}>
+      {/* Narration audio — plays from frame 0, synced to text reveal timing */}
+      {narrationUrl && <Audio src={narrationUrl} />}
       <div
         style={{
           position: "absolute",
