@@ -75,6 +75,20 @@ function getBundlePath(): string {
   return bundleDir;
 }
 
+// ── SVG frame mask paths — must match SceneComposition.tsx FRAME_MASKS exactly ──
+// When a slot has a frameStyle, the mask is baked into the Kling input image so
+// the generated video is already masked with the decorative shape. This avoids
+// any mismatch between the CSS mask in Remotion and what Kling animates.
+const FRAME_MASK_PATHS: Record<string, string> = {
+  torn_top:    "M0,100 L100,100 L100,10 C93,5 87,14 80,8 C73,2 67,13 60,6 C53,1 47,12 40,5 C33,0 27,11 20,4 C13,1 7,13 0,6 Z",
+  torn_bottom: "M0,0 L100,0 L100,90 C93,95 87,86 80,92 C73,98 67,87 60,94 C53,99 47,88 40,95 C33,100 27,89 20,96 C13,99 7,87 0,94 Z",
+  torn_left:   "M100,0 L100,100 L10,100 C5,93 14,87 8,80 C2,73 13,67 6,60 C1,53 12,47 5,40 C0,33 11,27 4,20 C1,13 13,7 6,0 Z",
+  torn_right:  "M0,0 L0,100 L90,100 C95,93 86,87 92,80 C98,73 87,67 94,60 C99,53 88,47 95,40 C100,33 89,27 96,20 C99,13 87,7 94,0 Z",
+  oval:        "M50,4 C76,4 96,25 96,50 C96,75 76,96 50,96 C24,96 4,75 4,50 C4,25 24,4 50,4 Z",
+  arch:        "M4,100 L4,44 C4,18 20,4 50,4 C80,4 96,18 96,44 L96,100 Z",
+  diamond:     "M50,3 L97,50 L50,97 L3,50 Z",
+};
+
 // ── Kling input image preparation ────────────────────────────────────────────
 
 /**
@@ -124,19 +138,25 @@ async function prepareCroppedImageForKling(
   const iyEnd   = Math.max(0, Math.min(1, iyStart + 1 / s));
 
   const EPSILON = 0.005;
-  const isTrivial =
+  const isTrivialCrop =
     ixStart <= EPSILON && ixEnd >= 1 - EPSILON &&
     iyStart <= EPSILON && iyEnd >= 1 - EPSILON;
 
-  if (isTrivial) {
+  // Skip download/upload if the crop is trivial AND there is no frame mask to bake.
+  // A trivial crop WITH a frame mask still needs processing (the mask must be composited).
+  const hasFrameMask = !!(slot.frameStyle && FRAME_MASK_PATHS[slot.frameStyle]);
+  if (isTrivialCrop && !hasFrameMask) {
     console.log(
       `${tag} Kling input=raw-image (trivial crop: scale=${s.toFixed(2)} crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}))`
     );
     return slot.url;
   }
 
+  const inputLabel = hasFrameMask
+    ? `preview-crop+mask(${slot.frameStyle})`
+    : "preview-crop";
   console.log(
-    `${tag} Kling input=preview-resolved-crop` +
+    `${tag} Kling input=${inputLabel}` +
     ` scale=${s.toFixed(2)} crop=(${cropX.toFixed(2)},${cropY.toFixed(2)})` +
     ` → visible=[${ixStart.toFixed(3)},${ixEnd.toFixed(3)}]×[${iyStart.toFixed(3)},${iyEnd.toFixed(3)}]`
   );
@@ -166,12 +186,48 @@ async function prepareCroppedImageForKling(
     `${tag} cropping ${W}×${H} → region (${left},${top}) ${width}×${height}`
   );
 
-  // Crop and encode as JPEG (Kling expects a standard image format)
-  const croppedBuffer = await sharp(imgBuffer)
+  // Crop + resize base pipeline
+  const basePipeline = sharp(imgBuffer)
     .extract({ left, top, width, height })
-    .resize(1024, 1024, { fit: "inside", withoutEnlargement: false })
-    .jpeg({ quality: 92 })
-    .toBuffer();
+    .resize(1024, 1024, { fit: "inside", withoutEnlargement: false });
+
+  let croppedBuffer: Buffer;
+
+  if (hasFrameMask) {
+    // ── Bake the SVG frame mask into the image ───────────────────────────────
+    // 1. Render to PNG (needs alpha channel for dest-in composite).
+    // 2. Composite the SVG mask with dest-in — clips image to mask's white shape.
+    // 3. Flatten onto BG_CARD (#F6F3E9 = 246,243,233) — converts back to opaque.
+    // 4. Encode as JPEG for Kling.
+    //
+    // This ensures Kling receives an image that already looks like the preview's
+    // decorated frame — no mismatch between what Kling animates and what Remotion shows.
+    const pngBuffer = await basePipeline.png().toBuffer();
+    const pngMeta   = await sharp(pngBuffer).metadata();
+    const outW = pngMeta.width  ?? 1024;
+    const outH = pngMeta.height ?? 1024;
+
+    const maskSvg = Buffer.from(
+      `<svg width="${outW}" height="${outH}" viewBox="0 0 100 100" ` +
+      `preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
+      `<path d="${FRAME_MASK_PATHS[slot.frameStyle!]}" fill="white"/>` +
+      `</svg>`
+    );
+
+    croppedBuffer = await sharp(pngBuffer)
+      .ensureAlpha()
+      .composite([{ input: maskSvg, blend: "dest-in" }])
+      .flatten({ background: { r: 246, g: 243, b: 233 } })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+
+    console.log(`${tag} mask composited: ${slot.frameStyle} @ ${outW}×${outH}`);
+  } else {
+    // No frame mask — standard JPEG output
+    croppedBuffer = await basePipeline
+      .jpeg({ quality: 92 })
+      .toBuffer();
+  }
 
   // Upload to a short-lived temp path in the films bucket.
   // The temp file persists but is tiny (~80KB) and namespaced under _kling_crop/.

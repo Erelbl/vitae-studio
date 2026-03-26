@@ -567,14 +567,21 @@ function ImageFill({
     return (
       <>
         <AbsoluteFill style={{ background: BG_CARD }} />
+        {/*
+          Kling video already contains the pre-cropped region for this page
+          (prepareCroppedImageForKling bakes the crop before sending to Kling).
+          DO NOT apply wrapperStyle here — that would double-crop the video,
+          showing only (1/s)² of the original. The video simply fills the frame.
+          maskStyle (SVG shape) is still applied on the outer container.
+        */}
         <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
-            <div style={{ ...wrapperStyle, overflow: "hidden" }}>
+            <AbsoluteFill style={{ overflow: "hidden" }}>
               <OffthreadVideo
                 src={klingVideoUrl}
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
-            </div>
+            </AbsoluteFill>
           </Sequence>
         </AbsoluteFill>
       </>
