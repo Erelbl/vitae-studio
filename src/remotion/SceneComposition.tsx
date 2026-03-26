@@ -15,9 +15,30 @@ import { useAlbumFont } from "./album-font";
 
 export interface SlotImageData {
   url: string;
+  /**
+   * Image CENTER x as a fraction of the container (0–1).
+   * 0.5 = centered (default). Matches the preview/editor's unified crop model.
+   * DO NOT confuse with the old "left-edge pan" model — here 0.5 always centers.
+   */
   crop_x: number;
+  /**
+   * Image CENTER y as a fraction of the container (0–1).
+   * 0.5 = centered (default).
+   */
   crop_y: number;
+  /** Image size relative to container. 1 = fills container exactly. */
   scale: number;
+  /**
+   * SVG mask preset key (e.g. "torn_top", "oval").
+   * When set, the image is masked with the corresponding SVG shape and
+   * objectFit is switched to "cover" so the image fills the mask fully.
+   */
+  frameStyle?: string | null;
+  /** Non-destructive inset crop (fraction 0–1). Applied as clipPath on the image wrapper. */
+  cropInsetTop?: number;
+  cropInsetRight?: number;
+  cropInsetBottom?: number;
+  cropInsetLeft?: number;
 }
 
 /** Per-page data passed to spread scenes. Same fields as the primary page props. */
@@ -143,6 +164,23 @@ const SLIDE_IN_PX = 14;       // 14px on 1080p ≈ 1.3% — imperceptible but pr
  * illustration plane and the text plane. Very subtle (6px max on 1080p).
  */
 const TEXT_PARALLAX_PX = 6;
+
+// ── SVG frame mask presets — identical to AlbumPageView.tsx ──────────────────
+// These match the FRAME_MASKS in the preview exactly so Remotion renders the
+// same decorative crop shapes as the album editor.
+
+const svgMask = (d: string) =>
+  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpath d='${d}' fill='white'/%3E%3C/svg%3E")`;
+
+const FRAME_MASKS: Record<string, string> = {
+  torn_top: svgMask("M0,100 L100,100 L100,10 C93,5 87,14 80,8 C73,2 67,13 60,6 C53,1 47,12 40,5 C33,0 27,11 20,4 C13,1 7,13 0,6 Z"),
+  torn_bottom: svgMask("M0,0 L100,0 L100,90 C93,95 87,86 80,92 C73,98 67,87 60,94 C53,99 47,88 40,95 C33,100 27,89 20,96 C13,99 7,87 0,94 Z"),
+  torn_left: svgMask("M100,0 L100,100 L10,100 C5,93 14,87 8,80 C2,73 13,67 6,60 C1,53 12,47 5,40 C0,33 11,27 4,20 C1,13 13,7 6,0 Z"),
+  torn_right: svgMask("M0,0 L0,100 L90,100 C95,93 86,87 92,80 C98,73 87,67 94,60 C99,53 88,47 95,40 C100,33 89,27 96,20 C99,13 87,7 94,0 Z"),
+  oval: svgMask("M50,4 C76,4 96,25 96,50 C96,75 76,96 50,96 C24,96 4,75 4,50 C4,25 24,4 50,4 Z"),
+  arch: svgMask("M4,100 L4,44 C4,18 20,4 50,4 C80,4 96,18 96,44 L96,100 Z"),
+  diamond: svgMask("M50,3 L97,50 L50,97 L3,50 Z"),
+};
 
 // NOTE: There is no intra-spread breathing pause. The spread is one unified scene.
 // Breathing pauses happen BETWEEN scenes (via scene duration padding + assembly xfade),
@@ -429,26 +467,30 @@ function AnimatedP({
 // ── ImageFill — visual source selector ───────────────────────────────────────
 
 /**
- * Visual source for a page slot.
+ * Visual source for a page slot — exact mirror of AlbumPageView.tsx ImageFill.
+ *
+ * Crop model (matches preview/editor source of truth):
+ *   crop_x / crop_y = image CENTER as a fraction of the container (0.5 = centered)
+ *   scale           = image size relative to container (1 = fills container)
+ *
+ * Formula (same as preview):
+ *   width  = scale × 100%
+ *   height = scale × 100%
+ *   left   = (crop_x − scale/2) × 100%
+ *   top    = (crop_y − scale/2) × 100%
+ *
+ * At default (scale=1, crop=0.5,0.5): width=100%, left=0 → fills container.
  *
  * Priority:
- *   1. Kling-generated page video (from PageKlingCtx) → rendered as OffthreadVideo
- *   2. Static resolved page image (slot) → rendered as plain Img with crop model
- *   3. No image at all → placeholder gradient
- *
- * No Ken Burns, no CSS-filter animation, no 3-phase reveal.
- * Remotion handles text, narration timing, and transitions above this layer.
- *
- * Crop model (identical to album preview):
- *   scale ≥ 1  → image rendered at scale × 100% of container
- *   crop_x 0-1 → horizontal pan (0 = left-edge visible, 1 = right-edge visible)
- *   crop_y 0-1 → vertical pan   (0 = top-edge visible,  1 = bottom-edge visible)
+ *   1. Kling-generated page video (PageKlingCtx) — same crop/scale applied
+ *   2. Static resolved page image (slot)
+ *   3. No image — placeholder gradient
  */
 function ImageFill({
   slot,
 }: {
   slot: SlotImageData | null;
-  kbScale?: number; // kept in signature for call-site compatibility; unused — no Ken Burns on static
+  kbScale?: number; // kept in signature for call-site compatibility; unused
 }) {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
@@ -456,12 +498,9 @@ function ImageFill({
   const klingVideoUrl = React.useContext(PageKlingCtx);
 
   // ── Sequential activation delay ──────────────────────────────────────────
-  // For left-page spreads, imageRevealDelayFrac > 0 keeps the left page blank
-  // until the right-page narration segment ends. Right page has delayFrac = 0.
   const delayFrame = Math.round(durationInFrames * (timingOverride?.imageRevealDelayFrac ?? 0));
 
   // ── Left-page fade-in opacity ─────────────────────────────────────────────
-  // Only applied when there is a real delay (left page). Right page is always 1.
   const fadeOpacity =
     delayFrame > 0
       ? interpolate(frame, [delayFrame, delayFrame + LEFT_FADE_IN_FRAMES], [0, 1], {
@@ -470,47 +509,72 @@ function ImageFill({
         })
       : 1;
 
-  // Before activation: show background card colour.
   if (frame < delayFrame) {
     return <AbsoluteFill style={{ background: BG_CARD }} />;
   }
 
-  // ── Crop model — identical to the album preview ──────────────────────────
-  // Apply slot crop/scale to both Kling video and static image so the scene
-  // matches the preview layout exactly (same crop window, same zoom).
-  // For Kling (16:9 source), objectFit:"cover" handles the AR mismatch the
-  // same way it does for static illustrations.
-  const s     = slot ? Math.max(1, slot.scale) : 1;
-  const cropX = slot?.crop_x ?? 0;
-  const cropY = slot?.crop_y ?? 0;
-  const mediaStyle: React.CSSProperties = {
+  // ── Preview-matching crop formula ─────────────────────────────────────────
+  // crop_x/crop_y are IMAGE CENTER coords (0.5 = centered), matching the
+  // preview's unified crop model. Legacy (0,0) values are treated as (0.5,0.5).
+  const rawCropX = slot?.crop_x ?? 0.5;
+  const rawCropY = slot?.crop_y ?? 0.5;
+  const isLegacyZero = rawCropX === 0 && rawCropY === 0;
+  const cropX = isLegacyZero ? 0.5 : rawCropX;
+  const cropY = isLegacyZero ? 0.5 : rawCropY;
+  const s = Math.max(0.1, slot?.scale ?? 1);
+
+  // Image wrapper position — mirrors (crop_x − s/2) formula from AlbumPageView.tsx
+  const wrapperStyle: React.CSSProperties = {
     position: "absolute",
     width:  `${s * 100}%`,
     height: `${s * 100}%`,
-    left:   `${-cropX * (s - 1) * 100}%`,
-    top:    `${-cropY * (s - 1) * 100}%`,
-    objectFit: "cover",
+    left:   `${(cropX - s / 2) * 100}%`,
+    top:    `${(cropY - s / 2) * 100}%`,
   };
 
+  // Inset crop — applied as clipPath on the image wrapper (same as preview)
+  const it = slot?.cropInsetTop    ?? 0;
+  const ir = slot?.cropInsetRight  ?? 0;
+  const ib = slot?.cropInsetBottom ?? 0;
+  const il = slot?.cropInsetLeft   ?? 0;
+  const hasInset = it > 0 || ir > 0 || ib > 0 || il > 0;
+  if (hasInset) {
+    wrapperStyle.clipPath = `inset(${it * 100}% ${ir * 100}% ${ib * 100}% ${il * 100}%)`;
+  }
+
+  // Frame mask — SVG mask applied on the overflow:hidden container (same as preview)
+  const maskUrl = slot?.frameStyle ? (FRAME_MASKS[slot.frameStyle] ?? undefined) : undefined;
+  const maskStyle: React.CSSProperties | undefined = maskUrl
+    ? { maskImage: maskUrl, maskSize: "100% 100%" }
+    : undefined;
+
+  // objectFit: "contain" when no frame mask (show full illustration, no crop by AR).
+  // "cover" with a frame mask so the image fills the decorative shape completely.
+  // For Kling video: always "cover" — 16:9 video into square, center crop is correct.
+  const imageObjectFit: React.CSSProperties["objectFit"] =
+    slot?.frameStyle ? "cover" : "contain";
+
   // ── Kling video ───────────────────────────────────────────────────────────
-  // <Sequence from={delayFrame}> resets the video clock to 0 at activation so
-  // the video always starts from its beginning, not mid-way through the scene.
   if (klingVideoUrl) {
     if (frame === delayFrame && delayFrame > 0) {
       console.log(
         `[ImageFill] left-page activated | delayFrame=${delayFrame}` +
         ` fadeInFrames=${LEFT_FADE_IN_FRAMES}` +
         ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
-        ` source=kling`
+        ` frameStyle=${slot?.frameStyle ?? "none"} source=kling`
       );
     }
     return (
       <>
-        {/* Keep BG_CARD visible underneath during fade-in to avoid black flash */}
         <AbsoluteFill style={{ background: BG_CARD }} />
-        <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity }}>
+        <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
-            <OffthreadVideo src={klingVideoUrl} style={mediaStyle} />
+            <div style={{ ...wrapperStyle, overflow: "hidden" }}>
+              <OffthreadVideo
+                src={klingVideoUrl}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            </div>
           </Sequence>
         </AbsoluteFill>
       </>
@@ -534,15 +598,20 @@ function ImageFill({
       `[ImageFill] left-page activated | delayFrame=${delayFrame}` +
       ` fadeInFrames=${LEFT_FADE_IN_FRAMES}` +
       ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
-      ` source=static`
+      ` frameStyle=${slot.frameStyle ?? "none"} source=static`
     );
   }
 
   return (
     <>
       <AbsoluteFill style={{ background: BG_CARD }} />
-      <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity }}>
-        <Img src={slot.url} style={mediaStyle} />
+      <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
+        <div style={{ ...wrapperStyle, overflow: "hidden" }}>
+          <Img
+            src={slot.url}
+            style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}
+          />
+        </div>
       </AbsoluteFill>
     </>
   );

@@ -130,7 +130,7 @@ async function fetchScenePageData(
   // 2. Fetch page_images for ALL pages at once
   const { data: allPageImages } = await adminClient
     .from("page_images")
-    .select("page_id, slot, photo_id, crop_x, crop_y, scale")
+    .select("page_id, slot, photo_id, crop_x, crop_y, scale, frame_style, crop_inset_top, crop_inset_right, crop_inset_bottom, crop_inset_left")
     .in("page_id", pageIds)
     .in("slot", [1, 2]);
 
@@ -186,14 +186,24 @@ async function fetchScenePageData(
         crop_y: number;
         scale: number;
         photo_id: string | null;
+        frame_style: string | null;
+        crop_inset_top: number;
+        crop_inset_right: number;
+        crop_inset_bottom: number;
+        crop_inset_left: number;
       }
     >();
     for (const pi of pageImages) {
       slotMap.set(pi.slot as number, {
-        crop_x: (pi.crop_x as number) ?? 0,
-        crop_y: (pi.crop_y as number) ?? 0,
+        crop_x: (pi.crop_x as number) ?? 0.5,
+        crop_y: (pi.crop_y as number) ?? 0.5,
         scale: (pi.scale as number) ?? 1,
         photo_id: pi.photo_id as string | null,
+        frame_style: (pi.frame_style as string | null) ?? null,
+        crop_inset_top:    (pi.crop_inset_top    as number) ?? 0,
+        crop_inset_right:  (pi.crop_inset_right  as number) ?? 0,
+        crop_inset_bottom: (pi.crop_inset_bottom as number) ?? 0,
+        crop_inset_left:   (pi.crop_inset_left   as number) ?? 0,
       });
     }
 
@@ -207,21 +217,28 @@ async function fetchScenePageData(
           if (url) {
             return {
               url,
-              crop_x: slotData.crop_x,
-              crop_y: slotData.crop_y,
-              scale: slotData.scale,
+              crop_x:   slotData.crop_x,
+              crop_y:   slotData.crop_y,
+              scale:    slotData.scale,
+              frameStyle:      slotData.frame_style,
+              cropInsetTop:    slotData.crop_inset_top,
+              cropInsetRight:  slotData.crop_inset_right,
+              cropInsetBottom: slotData.crop_inset_bottom,
+              cropInsetLeft:   slotData.crop_inset_left,
             };
           }
         }
       }
 
       // Legacy fallback: slot 1 → pages.illustration_storage_path
+      // Use (0.5, 0.5) so the legacy image is centered, matching the preview's
+      // legacy (0, 0) → (0.5, 0.5) correction in resolveSlot().
       if (slot === 1 && page.illustration_storage_path) {
         const url = await resolveSlotUrl(
           page.illustration_storage_path as string
         );
         if (url) {
-          return { url, crop_x: 0, crop_y: 0, scale: 1 };
+          return { url, crop_x: 0.5, crop_y: 0.5, scale: 1 };
         }
       }
 
@@ -516,16 +533,20 @@ export async function renderScene(
 
     // ── Pre-render inputs summary (critical debug) ───────────────────────────
     {
-      const rightSrc = rightKlingUrl  ? "kling-video" : "static-image";
-      const leftSrc  = isSpread ? (leftKlingUrl ? "kling-video" : "static-image") : "n/a";
+      const fmtSlot = (s: SlotImageData | null, label: string) => {
+        if (!s) return `${label}=none`;
+        const cx = s.crop_x, cy = s.crop_y, sc = s.scale;
+        const fs = s.frameStyle ?? "-";
+        return `${label}: crop=(${cx.toFixed(2)},${cy.toFixed(2)}) scale=${sc.toFixed(2)} frame=${fs}`;
+      };
+      const rightMode = rightKlingUrl ? "kling-video-in-frame" : "static-image-in-frame";
+      const leftMode  = isSpread ? (leftKlingUrl ? "kling-video-in-frame" : "static-image-in-frame") : "n/a";
       console.log(
         `[film-render] FINAL INPUTS sceneId=${sceneId}`,
-        `| right_page_video_path=${resolvedRightKlingPath ?? "none"}`,
-        `| left_page_video_path=${resolvedLeftKlingPath ?? "none"}`,
-        `| rightKlingUrl=${rightKlingUrl ? "✓ set" : "✗ null"}`,
-        `| leftKlingUrl=${leftKlingUrl ? "✓ set" : "✗ null"}`,
-        `| right_visual=${rightSrc}`,
-        `| left_visual=${leftSrc}`,
+        `| right=${rightMode}`,
+        `| left=${leftMode}`,
+        `| ${fmtSlot(primaryPage.slot1, "right-slot1")}`,
+        isSpread ? `| ${fmtSlot(secondPage!.slot1, "left-slot1")}` : "",
         `| hash=${renderHash}`
       );
     }
