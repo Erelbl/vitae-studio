@@ -548,23 +548,48 @@ function ImageFill({
     ? { maskImage: maskUrl, maskSize: "100% 100%" }
     : undefined;
 
-  // objectFit: "contain" when no frame mask (show full illustration, no crop by AR).
-  // "cover" with a frame mask so the image fills the decorative shape completely.
-  // For Kling video: always "cover" — 16:9 video into square, center crop is correct.
+  // objectFit for STATIC images:
+  //   "contain" when no frame mask → full illustration visible, no AR crop.
+  //   "cover"   with a frame mask → fills decorative shape completely.
   const imageObjectFit: React.CSSProperties["objectFit"] =
     slot?.frameStyle ? "cover" : "contain";
 
+  // ── Kling video positioning (derived from preview wrapperStyle) ────────────
+  // prepareCroppedImageForKling already extracted the exact visible region that
+  // the preview shows via wrapperStyle left=(crop_x-s/2)×100%. The crop focal
+  // point (crop_x, crop_y) therefore sits at the CENTER of the Kling video's
+  // content.
+  //
+  // Kling 2.6 outputs 16:9 video regardless of input AR. A 1024×1024 input is
+  // letterboxed into the 16:9 frame. To fill the composition frame without bars:
+  //   • objectFit: "cover"  — scales by the frame's dominant axis, no bars
+  //   • objectPosition: "50% 50%" — centers on the content (which is at 50/50
+  //     within the Kling output because the input was square and letterboxed
+  //     symmetrically)
+  //
+  // Preview equivalent: wrapperStyle left = (${(cropX - s / 2) * 100}%
+  //                                    top  = (${(cropY - s / 2) * 100}%
+  // After pre-crop the video's content IS the visible region → anchor = center.
+  // Always "cover" — fills the frame regardless of Kling's output AR
+  // (Kling letterboxes 1:1 input into 16:9; cover+center exposes the content area).
+  const klingObjectFit: React.CSSProperties["objectFit"] = "cover";
+  const klingObjectPosition = "50% 50%";
+
   // ── Kling video ───────────────────────────────────────────────────────────
   if (klingVideoUrl) {
-    // Debug: log once per render pass.
-    // For right-page (delayFrame=0) fire at frame 0. For left-page fire when it activates.
+    // Debug: log once per render pass at frame 0 (right) or activation frame (left).
     const klingLogFrame = delayFrame > 0 ? delayFrame : 0;
     if (frame === klingLogFrame) {
+      // Preview anchor for comparison — the wrapperStyle values the static image uses.
+      const previewLeft = `${((cropX - s / 2) * 100).toFixed(1)}%`;
+      const previewTop  = `${((cropY - s / 2) * 100).toFixed(1)}%`;
       console.log(
-        `[ImageFill] kling-video | delayFrame=${delayFrame}` +
-        ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
-        ` frameStyle=${slot?.frameStyle ?? "none"} frameStyle-applied=${maskUrl ? "true" : "false"}` +
-        ` objectFit=${imageObjectFit} hasInset=${hasInset} type=kling-video`
+        `[ImageFill] type=kling-video` +
+        ` | crop=(${cropX.toFixed(3)},${cropY.toFixed(3)}) scale=${s.toFixed(3)}` +
+        ` | preview-anchor: left=${previewLeft} top=${previewTop} (wrapperStyle)` +
+        ` | kling-anchor: objectFit=${klingObjectFit} objectPosition=${klingObjectPosition}` +
+        ` | frameStyle=${slot?.frameStyle ?? "none"} mask-applied=${maskUrl ? "true" : "false"}` +
+        ` | hasInset=${hasInset} delayFrame=${delayFrame}`
       );
     }
     return (
@@ -572,14 +597,17 @@ function ImageFill({
         <AbsoluteFill style={{ background: BG_CARD }} />
         {/*
           Kling video already contains the pre-cropped region for this page
-          (prepareCroppedImageForKling bakes the crop before sending to Kling).
-          DO NOT apply wrapperStyle (scale transform) — the content is already cropped,
-          re-applying scale would double-crop showing only (1/s)² of the original.
+          (prepareCroppedImageForKling extracted exactly the visible region using
+          the same wrapperStyle formula: ixStart = 0.5 - cropX/s).
+          The crop focal point therefore sits at the CENTER of the Kling video
+          content → objectPosition "50% 50%" matches the preview's anchor exactly.
 
-          Visual framing is kept identical to the static image path:
-            - SVG frame mask (maskStyle) on the outer container ✓
-            - objectFit matches imageObjectFit ("contain" or "cover") ✓
-            - cropInset clip path applied on the inner container ✓
+          objectFit "cover" fills the frame without bars even when Kling outputs
+          16:9 video from a square input (Kling letterboxes 1:1 → 16:9 symmetrically,
+          so cover+center exposes precisely the letterboxed content area).
+
+          DO NOT apply wrapperStyle (scale transform) — the content is already
+          cropped; re-applying scale would double-crop to (1/s)² of the original.
         */}
         <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
@@ -593,7 +621,12 @@ function ImageFill({
             >
               <OffthreadVideo
                 src={klingVideoUrl}
-                style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: klingObjectFit,
+                  objectPosition: klingObjectPosition,
+                }}
               />
             </AbsoluteFill>
           </Sequence>
@@ -614,14 +647,18 @@ function ImageFill({
     );
   }
 
-  // Debug: log once per render pass (same logic as Kling path above).
+  // Debug: log once per render pass.
   const staticLogFrame = delayFrame > 0 ? delayFrame : 0;
   if (frame === staticLogFrame) {
+    const previewLeft = `${((cropX - s / 2) * 100).toFixed(1)}%`;
+    const previewTop  = `${((cropY - s / 2) * 100).toFixed(1)}%`;
     console.log(
-      `[ImageFill] static-image | delayFrame=${delayFrame}` +
-      ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
-      ` frameStyle=${slot.frameStyle ?? "none"} frameStyle-applied=${maskUrl ? "true" : "false"}` +
-      ` objectFit=${imageObjectFit} hasInset=${hasInset} type=image`
+      `[ImageFill] type=image` +
+      ` | crop=(${cropX.toFixed(3)},${cropY.toFixed(3)}) scale=${s.toFixed(3)}` +
+      ` | preview-anchor: left=${previewLeft} top=${previewTop} size=${(s*100).toFixed(0)}%×${(s*100).toFixed(0)}%` +
+      ` | objectFit=${imageObjectFit}` +
+      ` | frameStyle=${slot.frameStyle ?? "none"} mask-applied=${maskUrl ? "true" : "false"}` +
+      ` | hasInset=${hasInset} delayFrame=${delayFrame}`
     );
   }
 
