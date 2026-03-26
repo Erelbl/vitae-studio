@@ -21,9 +21,9 @@ export interface KlingVideoResult {
   durationSeconds: number;
 }
 
-/** Poll every 8 s, give up after 4 minutes. */
+/** Poll every 8 s, give up after 7 minutes. */
 const POLL_INTERVAL_MS = 8_000;
-const POLL_TIMEOUT_MS  = 4 * 60 * 1_000;
+const POLL_TIMEOUT_MS  = 7 * 60 * 1_000;
 
 function getKieEnv(): { apiKey: string; baseUrl: string; model: string } {
   const apiKey = process.env.KIE_API_KEY;

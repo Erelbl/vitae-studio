@@ -35,6 +35,12 @@ function isNsfwError(err: unknown): boolean {
   return /nsfw/i.test(msg);
 }
 
+/** True when the Kie failure message indicates a poll timeout. */
+function isTimeoutError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("timed out");
+}
+
 /**
  * Returns the storage path inside the films bucket on success, or null on failure.
  * Safe to call in the render worker — failures are logged but never propagated.
@@ -77,6 +83,18 @@ export async function generatePageVideo(
         } catch (retryErr) {
           console.warn(
             `${tag} NSFW retry also failed — using static image fallback:`,
+            retryErr instanceof Error ? retryErr.message : String(retryErr)
+          );
+          return null;
+        }
+      } else if (isTimeoutError(firstErr)) {
+        console.warn(`${tag} timeout — retrying once`);
+        try {
+          ({ videoUrl } = await klingImageToVideo({ imageUrl, prompt, durationSeconds: 10 }));
+          console.log(`${tag} timeout retry succeeded`);
+        } catch (retryErr) {
+          console.warn(
+            `${tag} timeout retry also failed — using static image fallback:`,
             retryErr instanceof Error ? retryErr.message : String(retryErr)
           );
           return null;
