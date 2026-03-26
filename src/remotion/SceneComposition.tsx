@@ -155,6 +155,15 @@ const TEXT_PARALLAX_PX = 6;
  */
 const LEFT_IMAGE_PREROLL_SEC = 0.3;
 
+/**
+ * Left-page visual fade-in duration (frames).
+ * When the left page activates, its image/video fades in over this many frames
+ * instead of appearing abruptly. At 30fps, 10 frames ≈ 0.33s.
+ * Applied only to the left page (imageRevealDelayFrac > 0); the right page
+ * activates immediately at full opacity.
+ */
+const LEFT_FADE_IN_FRAMES = 10;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function resolveAlbumFontSize(
@@ -290,20 +299,37 @@ function AnimatedP({
     const nonEmptyLines = rawLines.filter((l) => l.trim().length > 0);
     const lineCount = nonEmptyLines.length;
 
-    // Debug: log once at the frame when this page's reveal begins.
-    if (frame === textStart && lineCount > 0) {
-      console.log(
-        `[AnimatedP] line-reveal: ${lineCount} lines, window [${textStart}–${textEnd}]`
-      );
-    }
-
     if (lineCount === 0) return <p style={style} />;
 
-    // Distribute reveal window evenly across non-empty lines.
-    // Each line's sweep takes sweepFrames; lines stagger by stepFrames.
     const totalWindow = Math.max(1, textEnd - textStart);
-    const stepFrames = lineCount > 1 ? totalWindow / lineCount : totalWindow;
-    const sweepFrames = Math.max(1, stepFrames * 0.85);
+
+    // ── Proportional line timing ─────────────────────────────────────────────
+    // Weight each line by its character count so short lines don't linger and
+    // long lines don't rush past. This is a deterministic, zero-dependency
+    // approximation of per-line speech duration.
+    const lineWeights = nonEmptyLines.map((l) => Math.max(1, l.trim().length));
+    const totalWeight = lineWeights.reduce((a, b) => a + b, 0);
+    // Frames allocated to each line (proportional to weight, minimum 2 frames).
+    const lineAllocations = lineWeights.map((w) =>
+      Math.max(2, Math.round((w / totalWeight) * totalWindow))
+    );
+    // Cumulative start frame for each non-empty line.
+    const lineStarts: number[] = [];
+    let accumFrame = textStart;
+    for (const alloc of lineAllocations) {
+      lineStarts.push(accumFrame);
+      accumFrame += alloc;
+    }
+
+    // Debug: log once at the start of this page's reveal window.
+    if (frame === textStart) {
+      console.log(
+        `[AnimatedP] line-reveal: ${lineCount} lines window=[${textStart}–${textEnd}]` +
+        ` | ${nonEmptyLines
+          .map((_, i) => `L${i + 1}:${lineWeights[i]}ch→${lineAllocations[i]}fr`)
+          .join(" ")}`
+      );
+    }
 
     // Gradient soft-edge width (% of line width).
     const SOFT_EDGE = 10;
@@ -317,7 +343,11 @@ function AnimatedP({
             return <span key={i} style={{ display: "block", height: "0.5em" }} />;
           }
           const idx = nonEmptyIdx++;
-          const lineRevealStart = textStart + idx * stepFrames;
+          const lineRevealStart = lineStarts[idx];
+          // Sweep occupies 85% of the line's allocation; the rest is "hold" before
+          // the next line begins. This matches natural speech where the speaker
+          // finishes articulating the line slightly before moving on.
+          const sweepFrames = Math.max(2, Math.round(lineAllocations[idx] * 0.85));
           const lineRevealEnd = lineRevealStart + sweepFrames;
           const lineProgress = interpolate(
             frame,
@@ -426,36 +456,64 @@ function ImageFill({
   const klingVideoUrl = React.useContext(PageKlingCtx);
 
   // ── Sequential activation delay ──────────────────────────────────────────
-  // For left-page spreads, imageRevealDelayFrac > 0 keeps the left page visually
-  // inactive until the right-page narration segment ends. Right page always has
-  // delayFrac = 0, so it activates immediately.
+  // For left-page spreads, imageRevealDelayFrac > 0 keeps the left page blank
+  // until the right-page narration segment ends. Right page has delayFrac = 0.
   const delayFrame = Math.round(durationInFrames * (timingOverride?.imageRevealDelayFrac ?? 0));
+
+  // ── Left-page fade-in opacity ─────────────────────────────────────────────
+  // Only applied when there is a real delay (left page). Right page is always 1.
+  const fadeOpacity =
+    delayFrame > 0
+      ? interpolate(frame, [delayFrame, delayFrame + LEFT_FADE_IN_FRAMES], [0, 1], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      : 1;
+
+  // Before activation: show background card colour.
   if (frame < delayFrame) {
-    // Left page not yet active — show background card colour, matching the album's
-    // warm off-white. The right page is fully visible to the right of this blank area.
     return <AbsoluteFill style={{ background: BG_CARD }} />;
   }
 
-  // ── Kling video override ───────────────────────────────────────────────────
-  // When a Kling-generated page video is available, use it as the visual source.
-  // <Sequence from={delayFrame}> makes the video start from its own frame 0 at
-  // the moment the left page activates — not from wherever the scene is in time.
+  // ── Crop model — identical to the album preview ──────────────────────────
+  // Apply slot crop/scale to both Kling video and static image so the scene
+  // matches the preview layout exactly (same crop window, same zoom).
+  // For Kling (16:9 source), objectFit:"cover" handles the AR mismatch the
+  // same way it does for static illustrations.
+  const s     = slot ? Math.max(1, slot.scale) : 1;
+  const cropX = slot?.crop_x ?? 0;
+  const cropY = slot?.crop_y ?? 0;
+  const mediaStyle: React.CSSProperties = {
+    position: "absolute",
+    width:  `${s * 100}%`,
+    height: `${s * 100}%`,
+    left:   `${-cropX * (s - 1) * 100}%`,
+    top:    `${-cropY * (s - 1) * 100}%`,
+    objectFit: "cover",
+  };
+
+  // ── Kling video ───────────────────────────────────────────────────────────
+  // <Sequence from={delayFrame}> resets the video clock to 0 at activation so
+  // the video always starts from its beginning, not mid-way through the scene.
   if (klingVideoUrl) {
+    if (frame === delayFrame && delayFrame > 0) {
+      console.log(
+        `[ImageFill] left-page activated | delayFrame=${delayFrame}` +
+        ` fadeInFrames=${LEFT_FADE_IN_FRAMES}` +
+        ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
+        ` source=kling`
+      );
+    }
     return (
-      <AbsoluteFill style={{ overflow: "hidden" }}>
-        <Sequence from={delayFrame}>
-          <OffthreadVideo
-            src={klingVideoUrl}
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
-          />
-        </Sequence>
-      </AbsoluteFill>
+      <>
+        {/* Keep BG_CARD visible underneath during fade-in to avoid black flash */}
+        <AbsoluteFill style={{ background: BG_CARD }} />
+        <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity }}>
+          <Sequence from={delayFrame}>
+            <OffthreadVideo src={klingVideoUrl} style={mediaStyle} />
+          </Sequence>
+        </AbsoluteFill>
+      </>
     );
   }
 
@@ -465,27 +523,28 @@ function ImageFill({
       <AbsoluteFill
         style={{
           background: "linear-gradient(135deg, #E8E0D0 0%, #C8BCA8 100%)",
+          opacity: fadeOpacity,
         }}
       />
     );
   }
 
-  const { url, crop_x, crop_y, scale } = slot;
-  const s = Math.max(1, scale);
+  if (frame === delayFrame && delayFrame > 0) {
+    console.log(
+      `[ImageFill] left-page activated | delayFrame=${delayFrame}` +
+      ` fadeInFrames=${LEFT_FADE_IN_FRAMES}` +
+      ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
+      ` source=static`
+    );
+  }
+
   return (
-    <AbsoluteFill style={{ overflow: "hidden" }}>
-      <Img
-        src={url}
-        style={{
-          position: "absolute",
-          width: `${s * 100}%`,
-          height: `${s * 100}%`,
-          left: `${-crop_x * (s - 1) * 100}%`,
-          top: `${-crop_y * (s - 1) * 100}%`,
-          objectFit: "cover",
-        }}
-      />
-    </AbsoluteFill>
+    <>
+      <AbsoluteFill style={{ background: BG_CARD }} />
+      <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity }}>
+        <Img src={slot.url} style={mediaStyle} />
+      </AbsoluteFill>
+    </>
   );
 }
 
@@ -1617,6 +1676,19 @@ export function SceneComposition({
     const leftImagePrerollFrames = Math.round(fps * LEFT_IMAGE_PREROLL_SEC);
     const leftImageStartFrame    = Math.max(0, leftTextStart - leftImagePrerollFrames);
     const leftImageDelayFrac     = leftImageStartFrame / durationInFrames;
+
+    // ── Geometry + fade-in debug log (frame 0 only) ─────────────────────────
+    if (frame === 0) {
+      const fmtSlot = (s: SlotImageData | null) =>
+        s ? `crop(${s.crop_x.toFixed(2)},${s.crop_y.toFixed(2)}) scale=${s.scale.toFixed(2)}` : "none";
+      console.log(
+        `[SceneComposition] page-geometry` +
+        ` | pageSize=${pageSize}px` +
+        ` | right: layout=${layoutType} slot1=${fmtSlot(slot1)}` +
+        ` | left: layout=${secondPage.layoutType} slot1=${fmtSlot(secondPage.slot1)}` +
+        ` | left-fade: activatesAtFrame=${leftImageStartFrame} fadeInFrames=${LEFT_FADE_IN_FRAMES}`
+      );
+    }
 
     const rightTiming: PageTimingOverride = {
       textStartFrame:      rightTextStart,
