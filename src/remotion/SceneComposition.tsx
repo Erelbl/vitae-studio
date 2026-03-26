@@ -584,14 +584,14 @@ function ImageFill({
         <AbsoluteFill style={{ background: BG_CARD }} />
         <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
-            <AbsoluteFill
-              style={{
-                overflow: "hidden",
-                ...(hasInset
-                  ? { clipPath: `inset(${it * 100}% ${ir * 100}% ${ib * 100}% ${il * 100}%)` }
-                  : {}),
-              }}
-            >
+            {/*
+             * Kling video: inset is already baked into the pre-cropped input image
+             * by prepareCroppedImageForKling(). Do NOT re-apply the inset clip here —
+             * that would double-clip and cut into correct content.
+             * End-fade static image uses wrapperStyle which already includes the
+             * clipPath inset (set above), so it renders correctly without extra wrapping.
+             */}
+            <AbsoluteFill style={{ overflow: "hidden" }}>
               <OffthreadVideo
                 src={klingVideoUrl}
                 style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}

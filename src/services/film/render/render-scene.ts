@@ -95,15 +95,21 @@ const FRAME_MASK_PATHS: Record<string, string> = {
  * Crops the illustration to exactly the region visible in the album preview,
  * then uploads it as a short-lived temp asset and returns a signed URL for Kling.
  *
- * The preview uses this CSS crop model:
- *   element: width = s×100%, height = s×100%
- *            left  = (crop_x − s/2)×100%,  top = (crop_y − s/2)×100%
- *   objectFit: contain  → full illustration fills the element (square images)
+ * The preview uses this CSS crop model (ImageFill in AlbumPageView.tsx):
+ *   image wrapper: width = s×100%, height = s×100%
+ *                  left  = (crop_x − s/2)×100%,  top = (crop_y − s/2)×100%
+ *   container overflow:hidden clips to the visible page area
  *
  * Visible region of the illustration (image-coordinate fractions 0–1):
- *   ix_start = clamp( 0.5 − crop_x/s,   0, 1 )
- *   ix_end   = clamp( ix_start + 1/s,   0, 1 )
- *   (same for y)
+ *   container range: ix_start_base = clamp( 0.5 − crop_x/s, 0, 1 )
+ *                    ix_end_base   = clamp( ix_start_base + 1/s, 0, 1 )
+ *
+ * Inset crop (cropInsetLeft etc.) is applied as CSS `clipPath: inset()` on the
+ * image wrapper, with percentages relative to the WRAPPER (not the visible region).
+ * Since the wrapper has width = s × container, insetL fraction of the wrapper equals
+ * insetL fraction of the IMAGE. The final visible range is the intersection:
+ *   ix_start = max( ix_start_base, insetL )
+ *   ix_end   = min( ix_end_base,   1 − insetR )
  *
  * When the crop is trivial (full image visible), the original URL is returned
  * as-is — no download, no upload.
@@ -137,20 +143,26 @@ async function prepareCroppedImageForKling(
   const iyStartBase = Math.max(0, Math.min(1, 0.5 - cropY / s));
   const iyEndBase   = Math.max(0, Math.min(1, iyStartBase + 1 / s));
 
-  // Apply inset crop — same semantics as the preview's clipPath on the image wrapper.
-  // Each inset shrinks the visible region by the given fraction of that region's extent.
+  // Apply inset crop — matches the preview's clipPath: inset() on the image wrapper.
+  //
+  // The preview's ImageFill applies `clipPath: inset(il%, ir%, it%, ib%)` to the
+  // image wrapper div (width = scale × container). CSS inset() percentages are
+  // relative to the element's own bounding box, so insetL fraction of the wrapper
+  // equals insetL fraction of the IMAGE (since the image fills the wrapper).
+  //
+  // Container overflow:hidden constrains the visible range to [ixStartBase, ixEndBase].
+  // Inset clips the image to [insetL, 1-insetR] in image coordinates.
+  // Final visible region = intersection of both constraints.
   const insetT = slot.cropInsetTop    ?? 0;
   const insetR = slot.cropInsetRight  ?? 0;
   const insetB = slot.cropInsetBottom ?? 0;
   const insetL = slot.cropInsetLeft   ?? 0;
   const hasInset = insetT > 0 || insetR > 0 || insetB > 0 || insetL > 0;
 
-  const visW = ixEndBase - ixStartBase;
-  const visH = iyEndBase - iyStartBase;
-  const ixStart = Math.max(0, Math.min(1, ixStartBase + visW * insetL));
-  const ixEnd   = Math.max(ixStart, Math.min(1, ixEndBase - visW * insetR));
-  const iyStart = Math.max(0, Math.min(1, iyStartBase + visH * insetT));
-  const iyEnd   = Math.max(iyStart, Math.min(1, iyEndBase - visH * insetB));
+  const ixStart = Math.max(ixStartBase, insetL);
+  const ixEnd   = Math.min(ixEndBase,   1 - insetR);
+  const iyStart = Math.max(iyStartBase, insetT);
+  const iyEnd   = Math.min(iyEndBase,   1 - insetB);
 
   const EPSILON = 0.005;
   const isTrivialCrop =
