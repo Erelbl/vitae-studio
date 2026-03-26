@@ -517,9 +517,11 @@ export async function renderScene(
       const videoBuffer = await fs.readFile(tmpVideo);
       const thumbBuffer = await fs.readFile(tmpThumb);
 
-      // Paths relative to the "films" bucket — no bucket-name prefix
-      const videoStoragePath = `${orderId}/${filmProjectId}/scenes/${sceneId}/scene.mp4`;
-      const thumbStoragePath = `${orderId}/${filmProjectId}/scenes/${sceneId}/thumbnail.jpg`;
+      // Versioned paths — render hash ensures each unique render produces a new file.
+      // The DB rendered_scene_path always points to the latest hash, so the site
+      // never serves a stale cached version after re-renders.
+      const videoStoragePath = `${orderId}/${filmProjectId}/scenes/${sceneId}/scene-${renderHash}.mp4`;
+      const thumbStoragePath = `${orderId}/${filmProjectId}/scenes/${sceneId}/thumb-${renderHash}.jpg`;
 
       await uploadFilmAsset(videoStoragePath, videoBuffer, "video/mp4");
       await uploadFilmAsset(thumbStoragePath, thumbBuffer, "image/jpeg");

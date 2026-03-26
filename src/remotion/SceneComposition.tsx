@@ -456,21 +456,12 @@ function AnimatedP({
  */
 function ImageFill({
   slot,
-  kbScale = 1,
 }: {
   slot: SlotImageData | null;
-  kbScale?: number;
+  kbScale?: number; // kept in signature for call-site compatibility; unused — no Ken Burns on static
 }) {
-  const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-
-  // Check for per-page timing override (spread coordination).
-  const timingOverride = React.useContext(PageTimingCtx);
-  const delayFrac = timingOverride?.imageRevealDelayFrac ?? 0;
-
   // ── Kling video override ───────────────────────────────────────────────────
-  // When a Kling-generated page video is available, use it as the visual source
-  // for this page instead of the static illustration + CSS motion effects.
+  // When a Kling-generated page video is available, use it as the visual source.
   // Text overlays, narration sync, and all other Remotion layers are unaffected.
   const klingVideoUrl = React.useContext(PageKlingCtx);
   if (klingVideoUrl) {
@@ -490,6 +481,10 @@ function ImageFill({
     );
   }
 
+  // ── Static image fallback ─────────────────────────────────────────────────
+  // No Kling video available. Render the resolved page image as a clean static
+  // frame — no Ken Burns zoom, no 3-phase reveal animation, no CSS filters.
+  // Remotion still handles text, narration, and right→left timing above this layer.
   if (!slot) {
     return (
       <AbsoluteFill
@@ -500,126 +495,11 @@ function ImageFill({
     );
   }
 
-  const { url, crop_x, crop_y, scale } = slot;
-  const s = Math.max(1, scale);
-
-  // Ken Burns progress (0→1 over full scene) — needed for breath timing.
-  const kbProgress = durationInFrames > 1 ? frame / (durationInFrames - 1) : 0;
-
-  // Overall reveal progress: 0 → 1 over IMAGE_REVEAL_END_FRAC of scene.
-  // In spread mode, the left page's reveal starts later (delayFrac > 0),
-  // creating a staggered "book opening" feel.
-  const revealStart = Math.round(durationInFrames * delayFrac);
-  const revealEnd = revealStart + Math.round(durationInFrames * IMAGE_REVEAL_END_FRAC);
-  const revealProgress = interpolate(frame, [revealStart, revealEnd], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-
-  const isRevealed = revealProgress >= 1;
-
-  // ── Phase A: Outline sketch ──────────────────────────────────────────────
-  // High contrast + grayscale for a pencil-edge look, fading to moderate.
-  const phaseAProgress = interpolate(
-    revealProgress, [0, PHASE_A_END], [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
-
-  // ── Phase B: Color fill ──────────────────────────────────────────────────
-  // Filters ease from sketch values back to identity (no filter).
-  const phaseBProgress = interpolate(
-    revealProgress, [PHASE_A_END, PHASE_B_END], [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
-
-  // Compute CSS filter values across the 3 phases.
-  let filterContrast: number;
-  let filterBrightness: number;
-  let filterGrayscale: number;
-
-  if (isRevealed) {
-    // Phase C: no filters at all — pixel-identical to original.
-    filterContrast = 1;
-    filterBrightness = 1;
-    filterGrayscale = 0;
-  } else if (revealProgress <= PHASE_A_END) {
-    // Phase A: sketch look easing in, then holding.
-    // Ramp up contrast quickly in first 40% of phase A, hold for rest.
-    const rampIn = interpolate(phaseAProgress, [0, 0.4], [0, 1], {
-      extrapolateLeft: "clamp", extrapolateRight: "clamp",
-    });
-    filterContrast = interpolate(rampIn, [0, 1], [1.2, SKETCH_CONTRAST]);
-    filterBrightness = interpolate(rampIn, [0, 1], [1.0, SKETCH_BRIGHTNESS]);
-    filterGrayscale = SKETCH_GRAYSCALE;
-  } else {
-    // Phase B: ease from sketch → normal.
-    filterContrast = interpolate(phaseBProgress, [0, 1], [SKETCH_CONTRAST, 1]);
-    filterBrightness = interpolate(phaseBProgress, [0, 1], [SKETCH_BRIGHTNESS, 1]);
-    filterGrayscale = interpolate(phaseBProgress, [0, 1], [FILL_GRAYSCALE_START, 0]);
-  }
-
-  // ── Mask: directional sweep + radial softness ────────────────────────────
-  // Directional: a soft vertical edge sweeping right-to-left.
-  const sweepX = isRevealed
-    ? MASK_SWEEP_END_PCT
-    : interpolate(revealProgress, [0, 0.85], [MASK_SWEEP_START_PCT, MASK_SWEEP_END_PCT], {
-        extrapolateLeft: "clamp", extrapolateRight: "clamp",
-      });
-
-  // Radial: expanding soft ellipse from center.
-  const radialSize = isRevealed
-    ? RADIAL_END_PCT
-    : interpolate(revealProgress, [0, 1], [RADIAL_START_PCT, RADIAL_END_PCT], {
-        extrapolateLeft: "clamp", extrapolateRight: "clamp",
-      });
-
-  // Combine both masks: the visible area is the intersection.
-  // Sweep mask: gradient from opaque to transparent at the sweep edge.
-  // Radial mask: soft-edged ellipse from center.
-  const sweepMask = `linear-gradient(to left, black 0%, black ${Math.max(0, sweepX - 20)}%, transparent ${sweepX}%)`;
-  const radialMask = `radial-gradient(ellipse ${radialSize}% ${radialSize}% at 50% 50%, black 50%, transparent 100%)`;
-
-  const combinedMask = isRevealed ? undefined : `${sweepMask}, ${radialMask}`;
-  // For intersecting masks, we need maskComposite. But for a painting feel,
-  // using the radial as primary mask and the sweep as a secondary layer works
-  // well. With default mask-composite (add), the union of both masks is shown,
-  // creating an organic, irregular reveal edge.
-
-  // Ambient breath: ±1.5% brightness oscillation — one full cycle per scene.
-  // Only active in Phase C (stable) so it doesn't fight the reveal filters.
-  // sin-wave gives a smooth, natural feel (like soft sunlight shifting).
-  const breathDelta = isRevealed
-    ? Math.sin(2 * Math.PI * kbProgress) * BREATH_AMPLITUDE
-    : 0;
-  const breathBrightness = 1.0 + breathDelta;
-
-  // Build filter string.
-  const filterStr = isRevealed
-    ? (Math.abs(breathDelta) > 0.001
-        ? `brightness(${breathBrightness.toFixed(3)})`
-        : undefined)
-    : [
-        filterContrast !== 1 ? `contrast(${filterContrast.toFixed(2)})` : "",
-        filterBrightness !== 1 ? `brightness(${filterBrightness.toFixed(2)})` : "",
-        filterGrayscale > 0.01 ? `grayscale(${filterGrayscale.toFixed(2)})` : "",
-      ]
-        .filter(Boolean)
-        .join(" ") || undefined;
-
-  return (
-    <AbsoluteFill style={{ overflow: "hidden" }}>
-      {/* Ken Burns outer wrapper — scales from centre without shifting crop */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          transform: kbScale !== 1 ? `scale(${kbScale})` : undefined,
-          transformOrigin: "center center",
-          filter: filterStr,
-          maskImage: combinedMask,
-          WebkitMaskImage: combinedMask,
-        }}
-      >
+  {
+    const { url, crop_x, crop_y, scale } = slot;
+    const s = Math.max(1, scale);
+    return (
+      <AbsoluteFill style={{ overflow: "hidden" }}>
         <Img
           src={url}
           style={{
@@ -631,9 +511,10 @@ function ImageFill({
             objectFit: "cover",
           }}
         />
-      </div>
-    </AbsoluteFill>
-  );
+      </AbsoluteFill>
+    );
+  }
+
 }
 
 // ── Cinematic vignette layer ──────────────────────────────────────────────────

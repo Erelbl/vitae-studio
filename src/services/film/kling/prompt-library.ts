@@ -69,3 +69,16 @@ export const PROMPT_LIBRARY: Record<SceneType, string> = {
 export function getKlingPrompt(sceneType: SceneType): string {
   return PROMPT_LIBRARY[sceneType] ?? PROMPT_LIBRARY.fallback;
 }
+
+/**
+ * Safe-retry prompt used when Kie rejects a page with NSFW moderation.
+ * Explicitly emphasises family-friendly, fully-clothed, G-rated content
+ * while still requesting the minimal natural motion needed for the film.
+ */
+export const NSFW_RETRY_PROMPT =
+  "Children's book watercolor illustration. Fully clothed characters only. " +
+  "Family-friendly, G-rated scene. No adult, sensual, or suggestive content of any kind. " +
+  BASE +
+  " Preserve all characters exactly as illustrated — faces, clothing, proportions. " +
+  "Add only the most minimal believable ambient motion: gentle eye blinking, soft breathing. " +
+  "No large movement. No invented elements. Camera stays still.";
