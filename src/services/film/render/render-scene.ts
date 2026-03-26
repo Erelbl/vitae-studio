@@ -306,16 +306,15 @@ export async function renderScene(
     // Existing paths are reused (no regeneration on re-render unless cleared).
     // Failures are non-fatal — fall back to Remotion CSS motion silently.
 
+    const storageBucket = filmEnv.storageBucket ?? "films";
     let rightKlingUrl: string | null = null;
     let leftKlingUrl:  string | null = null;
     // Track the actual resolved Kling storage paths for this run.
-    // Hoisted outside the KIE block so the render hash can use the FRESH paths
-    // (not the stale sceneRow snapshot which may have been null before generation).
+    // Hoisted outside the KIE block so the render hash and re-fetch can access them.
     let resolvedRightKlingPath: string | null = null;
     let resolvedLeftKlingPath:  string | null = null;
 
     if (process.env.KIE_API_KEY) {
-      const storageBucket = filmEnv.storageBucket ?? "films";
       const rightPageId = pageIds[0] ?? "(none)";
       const leftPageId  = pageIds[1] ?? "(none)";
       console.log(`[film-render] Kling pages — right: ${rightPageId}, left: ${isSpread ? leftPageId : "n/a (single-page)"}`);
@@ -407,6 +406,42 @@ export async function renderScene(
       personName = (orderRow?.person_name as string | null) ?? null;
     }
 
+    // ── Re-fetch scene row for the freshest Kling paths ──────────────────────
+    // The initial sceneRow was fetched at the very start of renderScene.
+    // If Kling paths were saved to DB during this run (or by a concurrent process),
+    // refresh resolved paths and signed URLs before building compositionProps.
+    {
+      const { data: freshRow } = await adminClient
+        .from("film_scenes")
+        .select("right_page_video_path, left_page_video_path")
+        .eq("id", sceneId)
+        .single();
+
+      const freshRightPath = (freshRow?.right_page_video_path as string | null) ?? null;
+      const freshLeftPath  = (freshRow?.left_page_video_path  as string | null) ?? null;
+
+      if (freshRightPath && freshRightPath !== resolvedRightKlingPath) {
+        resolvedRightKlingPath = freshRightPath;
+        rightKlingUrl = null; // force signed URL refresh below
+      }
+      if (freshLeftPath && freshLeftPath !== resolvedLeftKlingPath) {
+        resolvedLeftKlingPath = freshLeftPath;
+        leftKlingUrl = null; // force signed URL refresh below
+      }
+
+      // Ensure valid signed URLs for all resolved paths (retry on initial failure)
+      if (resolvedRightKlingPath && !rightKlingUrl) {
+        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedRightKlingPath, 3600);
+        rightKlingUrl = data?.signedUrl ?? null;
+        if (!rightKlingUrl) console.warn(`[film-render] Pre-render: signed URL failed for right path: ${resolvedRightKlingPath}`);
+      }
+      if (resolvedLeftKlingPath && !leftKlingUrl) {
+        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedLeftKlingPath, 3600);
+        leftKlingUrl = data?.signedUrl ?? null;
+        if (!leftKlingUrl) console.warn(`[film-render] Pre-render: signed URL failed for left path: ${resolvedLeftKlingPath}`);
+      }
+    }
+
     // Build render hash using the FRESH resolved Kling paths from this run.
     // Previously this read from the stale sceneRow snapshot (fetched before
     // Kling generation), which produced the same hash as the pre-Kling render
@@ -437,7 +472,7 @@ export async function renderScene(
       textAlign: primaryPage.textAlign,
       textX: primaryPage.textX,
       textY: primaryPage.textY,
-      // Kling video for the right (primary) page — null falls back to CSS motion
+      // Kling video for the right (primary) page — null → static resolved image
       klingVideoUrl: rightKlingUrl,
       // Spread: merge left-page Kling URL into secondPage data
       secondPage: secondPage
@@ -460,14 +495,18 @@ export async function renderScene(
       personName,
     };
 
-    // ── Pre-render debug summary ──────────────────────────────────────────
+    // ── Pre-render inputs summary (critical debug) ───────────────────────────
     {
-      const rightSrc  = rightKlingUrl  ? "kling-video" : "static-image";
-      const leftSrc   = isSpread ? (leftKlingUrl ? "kling-video" : "static-image") : "n/a (single-page)";
+      const rightSrc = rightKlingUrl  ? "kling-video" : "static-image";
+      const leftSrc  = isSpread ? (leftKlingUrl ? "kling-video" : "static-image") : "n/a";
       console.log(
-        `[film-render] Render inputs — sceneId=${sceneId}`,
-        `| right: ${rightSrc} path=${resolvedRightKlingPath ?? "none"} url=${rightKlingUrl ? "✓" : "✗"}`,
-        `| left: ${leftSrc} path=${resolvedLeftKlingPath ?? "none"} url=${leftKlingUrl ? "✓" : "✗"}`,
+        `[film-render] FINAL INPUTS sceneId=${sceneId}`,
+        `| right_page_video_path=${resolvedRightKlingPath ?? "none"}`,
+        `| left_page_video_path=${resolvedLeftKlingPath ?? "none"}`,
+        `| rightKlingUrl=${rightKlingUrl ? "✓ set" : "✗ null"}`,
+        `| leftKlingUrl=${leftKlingUrl ? "✓ set" : "✗ null"}`,
+        `| right_visual=${rightSrc}`,
+        `| left_visual=${leftSrc}`,
         `| hash=${renderHash}`
       );
     }

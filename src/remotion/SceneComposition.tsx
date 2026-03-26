@@ -31,8 +31,8 @@ export interface ScenePageData {
   textY: number | null;
   /**
    * Signed HTTPS URL to a Kling-generated page video stored in the films bucket.
-   * When set, ImageFill renders this video as the visual source for slot1 instead
-   * of the static illustration + CSS motion. Null → Remotion CSS-motion fallback.
+   * When set, ImageFill renders this video as the visual source for this page.
+   * Null → static resolved page image (no CSS motion, no Ken Burns).
    */
   klingVideoUrl?: string | null;
 }
@@ -81,8 +81,8 @@ export interface SceneCompositionProps {
   narrationDurationMs: number | null;
   /**
    * Signed HTTPS URL to a Kling-generated video for the primary (right) page.
-   * When set, ImageFill uses this video as the visual source instead of the
-   * static illustration + CSS motion. Null → Remotion CSS-motion fallback.
+   * When set, ImageFill renders the video as the visual source.
+   * Null → static resolved page image (no CSS motion, no Ken Burns).
    */
   klingVideoUrl?: string | null;
 }
@@ -100,42 +100,7 @@ const TEXT_DARK = "#2A2420";
  */
 const FONT_SCALE = 2.5;
 
-// ── Reveal animation timing ──────────────────────────────────────────────────
-
-/**
- * 3-phase image reveal: outline sketch → color fill → stable.
- *
- * Phase A (0 – PHASE_A_END): "Outline sketch"
- *   High contrast + grayscale produce an edge/pencil look.
- *   A directional mask sweeps in to suggest brush strokes.
- *
- * Phase B (PHASE_A_END – PHASE_B_END): "Color fill"
- *   Contrast eases back to normal, grayscale fades to 0.
- *   Mask continues expanding until full coverage.
- *
- * Phase C (PHASE_B_END – 1.0): "Stable"
- *   All filters removed. Image is pixel-identical to original.
- */
-const IMAGE_REVEAL_END_FRAC = 0.55;
-/** End of outline sketch phase (fraction of reveal progress 0–1). */
-const PHASE_A_END = 0.3;
-/** End of color fill phase (fraction of reveal progress 0–1). */
-const PHASE_B_END = 0.92;
-
-/** Phase A: high contrast + full grayscale for sketch look. */
-const SKETCH_CONTRAST = 2.8;
-const SKETCH_BRIGHTNESS = 1.25;
-const SKETCH_GRAYSCALE = 1.0;
-/** Phase B start: moderate desaturation, easing toward normal. */
-const FILL_GRAYSCALE_START = 0.55;
-
-/** Directional mask sweep: right-to-left (Hebrew reading direction). */
-const MASK_SWEEP_START_PCT = 105; // starts off-screen right
-const MASK_SWEEP_END_PCT = -10;   // ends past left edge
-/** Soft radial mask (combined with sweep for organic feel). */
-const RADIAL_START_PCT = 30;
-const RADIAL_END_PCT = 160;
-/** Ken Burns zoom — subtle, premium feel. */
+/** Ken Burns zoom — subtle, premium feel. Only affects text parallax (image uses Kling or static). */
 const KB_ZOOM_END = 1.05;
 
 /** Text writing/reveal starts at this fraction of scene duration. */
@@ -162,13 +127,6 @@ const NARRATION_START_OFFSET_SEC = 0.15;
  */
 const SLIDE_IN_FRAMES = 22;  // slightly longer than FADE_FRAMES for smoothness
 const SLIDE_IN_PX = 14;       // 14px on 1080p ≈ 1.3% — imperceptible but present
-
-/**
- * Ambient luminance breath: very slow ±1.5% brightness oscillation.
- * Applied after the image reveal completes (Phase C only).
- * Creates a gentle sense of life — like candlelight or soft sunlight.
- */
-const BREATH_AMPLITUDE = 0.015;
 
 /**
  * Text parallax: counter-drift of text overlays vs Ken Burns image zoom.
@@ -430,24 +388,18 @@ function AnimatedP({
   );
 }
 
-// ── ImageFill with crop model + 3-phase reveal animation ─────────────────────
+// ── ImageFill — visual source selector ───────────────────────────────────────
 
 /**
- * Full-bleed image with the same crop/zoom model as AlbumPageView.ImageFill,
- * plus a 3-phase reveal that simulates the image being illustrated live.
+ * Visual source for a page slot.
  *
- * Phase A — "Outline sketch" (0 – PHASE_A_END of reveal):
- *   High contrast + full grayscale creates an edge/pencil-art look.
- *   A directional mask sweeps in from the right (Hebrew reading direction)
- *   combined with a tight radial vignette, suggesting brush strokes.
+ * Priority:
+ *   1. Kling-generated page video (from PageKlingCtx) → rendered as OffthreadVideo
+ *   2. Static resolved page image (slot) → rendered as plain Img with crop model
+ *   3. No image at all → placeholder gradient
  *
- * Phase B — "Color fill" (PHASE_A_END – PHASE_B_END of reveal):
- *   Contrast eases back to 1.0, grayscale fades to 0 (full color).
- *   Radial mask expands to full coverage. The image "fills in" with color.
- *
- * Phase C — "Stable" (PHASE_B_END – 1.0 of reveal):
- *   All CSS filters removed. The final rendered image is pixel-identical
- *   to the original album illustration. No visual modification remains.
+ * No Ken Burns, no CSS-filter animation, no 3-phase reveal.
+ * Remotion handles text, narration timing, and transitions above this layer.
  *
  * Crop model (identical to album preview):
  *   scale ≥ 1  → image rendered at scale × 100% of container
