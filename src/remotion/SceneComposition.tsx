@@ -493,7 +493,7 @@ function ImageFill({
   kbScale?: number; // kept in signature for call-site compatibility; unused
 }) {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
+  const { durationInFrames, fps } = useVideoConfig();
   const timingOverride = React.useContext(PageTimingCtx);
   const klingVideoUrl = React.useContext(PageKlingCtx);
 
@@ -569,6 +569,16 @@ function ImageFill({
         ` | hasInset=${hasInset} delayFrame=${delayFrame}`
       );
     }
+    // Fade the original still image back in over the last 15 frames of the Kling clip
+    const KLING_END_FADE_FRAMES = 15;
+    const klingClipFrames = Math.round(10 * fps);
+    const endFadeOpacity = interpolate(
+      frame,
+      [delayFrame + klingClipFrames - KLING_END_FADE_FRAMES, delayFrame + klingClipFrames],
+      [0, 1],
+      { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+    );
+
     return (
       <>
         <AbsoluteFill style={{ background: BG_CARD }} />
@@ -586,6 +596,14 @@ function ImageFill({
                 src={klingVideoUrl}
                 style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}
               />
+              {slot && (
+                <div style={{ ...wrapperStyle, overflow: "hidden", opacity: endFadeOpacity }}>
+                  <Img
+                    src={slot.url}
+                    style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}
+                  />
+                </div>
+              )}
             </AbsoluteFill>
           </Sequence>
         </AbsoluteFill>

@@ -132,10 +132,25 @@ async function prepareCroppedImageForKling(
   const cropY = isLegacyZero ? 0.5 : slot.crop_y;
 
   // Visible region in image-coordinate fractions (0 = start, 1 = end of image)
-  const ixStart = Math.max(0, Math.min(1, 0.5 - cropX / s));
-  const ixEnd   = Math.max(0, Math.min(1, ixStart + 1 / s));
-  const iyStart = Math.max(0, Math.min(1, 0.5 - cropY / s));
-  const iyEnd   = Math.max(0, Math.min(1, iyStart + 1 / s));
+  const ixStartBase = Math.max(0, Math.min(1, 0.5 - cropX / s));
+  const ixEndBase   = Math.max(0, Math.min(1, ixStartBase + 1 / s));
+  const iyStartBase = Math.max(0, Math.min(1, 0.5 - cropY / s));
+  const iyEndBase   = Math.max(0, Math.min(1, iyStartBase + 1 / s));
+
+  // Apply inset crop — same semantics as the preview's clipPath on the image wrapper.
+  // Each inset shrinks the visible region by the given fraction of that region's extent.
+  const insetT = slot.cropInsetTop    ?? 0;
+  const insetR = slot.cropInsetRight  ?? 0;
+  const insetB = slot.cropInsetBottom ?? 0;
+  const insetL = slot.cropInsetLeft   ?? 0;
+  const hasInset = insetT > 0 || insetR > 0 || insetB > 0 || insetL > 0;
+
+  const visW = ixEndBase - ixStartBase;
+  const visH = iyEndBase - iyStartBase;
+  const ixStart = Math.max(0, Math.min(1, ixStartBase + visW * insetL));
+  const ixEnd   = Math.max(ixStart, Math.min(1, ixEndBase - visW * insetR));
+  const iyStart = Math.max(0, Math.min(1, iyStartBase + visH * insetT));
+  const iyEnd   = Math.max(iyStart, Math.min(1, iyEndBase - visH * insetB));
 
   const EPSILON = 0.005;
   const isTrivialCrop =
@@ -158,7 +173,8 @@ async function prepareCroppedImageForKling(
   console.log(
     `${tag} Kling input=${inputLabel}` +
     ` scale=${s.toFixed(2)} crop=(${cropX.toFixed(2)},${cropY.toFixed(2)})` +
-    ` → visible=[${ixStart.toFixed(3)},${ixEnd.toFixed(3)}]×[${iyStart.toFixed(3)},${iyEnd.toFixed(3)}]`
+    ` → visible=[${ixStart.toFixed(3)},${ixEnd.toFixed(3)}]×[${iyStart.toFixed(3)},${iyEnd.toFixed(3)}]` +
+    (hasInset ? ` inset=(t=${insetT},r=${insetR},b=${insetB},l=${insetL})` : "")
   );
 
   // Dynamic import — sharp is a native Node.js module
