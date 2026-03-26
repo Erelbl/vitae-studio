@@ -80,6 +80,10 @@ export const PROMPT_LIBRARY: Record<SceneType, string> = {
     "No invented elements. Camera is fixed.",
 };
 
+export function getKlingPrompt(sceneType: SceneType): string {
+  return PROMPT_LIBRARY[sceneType] ?? PROMPT_LIBRARY.fallback;
+}
+
 /**
  * Safe-retry prompt used when Kie rejects a page with NSFW moderation.
  * Explicitly emphasises family-friendly, fully-clothed, G-rated content
