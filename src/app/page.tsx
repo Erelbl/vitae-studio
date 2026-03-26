@@ -15,6 +15,7 @@ import { FAQSection } from "@/components/home/FAQSection";
 import { FounderSection } from "@/components/home/FounderSection";
 import { FinalCta } from "@/components/home/FinalCta";
 import { ContactSection } from "@/components/home/ContactSection";
+import { FilmPreviewSection } from "@/components/home/FilmPreviewSection";
 import { FOOTER } from "@/content/landing-content";
 
 const DRAFT_STORAGE_KEY = "vitae_draft";
@@ -140,6 +141,8 @@ export default function LandingPage() {
         <UseCases />
 
         <ImageComparisonSection />
+
+        <FilmPreviewSection />
 
         <PackagesSection />
 
