@@ -554,26 +554,24 @@ function ImageFill({
   const imageObjectFit: React.CSSProperties["objectFit"] =
     slot?.frameStyle ? "cover" : "contain";
 
-  // ── Kling video positioning (derived from preview wrapperStyle) ────────────
-  // prepareCroppedImageForKling already extracted the exact visible region that
-  // the preview shows via wrapperStyle left=(crop_x-s/2)×100%. The crop focal
-  // point (crop_x, crop_y) therefore sits at the CENTER of the Kling video's
-  // content.
+  // ── Kling video object-position (derived from preview wrapperStyle) ─────────
+  // prepareCroppedImageForKling extracted the exact visible region using the
+  // same formula as the preview (ixStart = 0.5 − cropX/s), so the video's
+  // content already represents the (crop_x, crop_y) focal point.
   //
-  // Kling 2.6 outputs 16:9 video regardless of input AR. A 1024×1024 input is
-  // letterboxed into the 16:9 frame. To fill the composition frame without bars:
-  //   • objectFit: "cover"  — scales by the frame's dominant axis, no bars
-  //   • objectPosition: "50% 50%" — centers on the content (which is at 50/50
-  //     within the Kling output because the input was square and letterboxed
-  //     symmetrically)
+  // Map the focal point fraction directly to object-position so the browser
+  // places that point at the same relative position within the container:
+  //   object-position: cropX*100%  cropY*100%
   //
-  // Preview equivalent: wrapperStyle left = (${(cropX - s / 2) * 100}%
-  //                                    top  = (${(cropY - s / 2) * 100}%
-  // After pre-crop the video's content IS the visible region → anchor = center.
-  // Always "cover" — fills the frame regardless of Kling's output AR
-  // (Kling letterboxes 1:1 input into 16:9; cover+center exposes the content area).
-  const klingObjectFit: React.CSSProperties["objectFit"] = "cover";
-  const klingObjectPosition = "50% 50%";
+  // For the default case (cropX=0.5, cropY=0.5, square container) this equals
+  // "50% 50%" and the video fills the frame identically to the preview.
+  // For off-center crops this shifts the anchor to mirror the preview's
+  // wrapperStyle left/top offset without re-applying the scale transform.
+  //
+  // objectFit uses the same imageObjectFit as static images — do NOT force
+  // "cover" here, that would make the video full-bleed and bypass the frame
+  // containment that objectFit:"contain" provides.
+  const klingObjectPosition = `${cropX * 100}% ${cropY * 100}%`;
 
   // ── Kling video ───────────────────────────────────────────────────────────
   if (klingVideoUrl) {
@@ -587,7 +585,7 @@ function ImageFill({
         `[ImageFill] type=kling-video` +
         ` | crop=(${cropX.toFixed(3)},${cropY.toFixed(3)}) scale=${s.toFixed(3)}` +
         ` | preview-anchor: left=${previewLeft} top=${previewTop} (wrapperStyle)` +
-        ` | kling-anchor: objectFit=${klingObjectFit} objectPosition=${klingObjectPosition}` +
+        ` | kling-anchor: objectFit=${imageObjectFit} objectPosition=${klingObjectPosition}` +
         ` | frameStyle=${slot?.frameStyle ?? "none"} mask-applied=${maskUrl ? "true" : "false"}` +
         ` | hasInset=${hasInset} delayFrame=${delayFrame}`
       );
@@ -596,18 +594,12 @@ function ImageFill({
       <>
         <AbsoluteFill style={{ background: BG_CARD }} />
         {/*
-          Kling video already contains the pre-cropped region for this page
-          (prepareCroppedImageForKling extracted exactly the visible region using
-          the same wrapperStyle formula: ixStart = 0.5 - cropX/s).
-          The crop focal point therefore sits at the CENTER of the Kling video
-          content → objectPosition "50% 50%" matches the preview's anchor exactly.
-
-          objectFit "cover" fills the frame without bars even when Kling outputs
-          16:9 video from a square input (Kling letterboxes 1:1 → 16:9 symmetrically,
-          so cover+center exposes precisely the letterboxed content area).
-
-          DO NOT apply wrapperStyle (scale transform) — the content is already
-          cropped; re-applying scale would double-crop to (1/s)² of the original.
+          Kling video contains the pre-cropped visible region
+          (prepareCroppedImageForKling uses ixStart = 0.5 − cropX/s, same as preview).
+          objectFit = imageObjectFit (contain / cover) — same as static image, no full-bleed.
+          objectPosition = cropX*100% cropY*100% — mirrors the preview's wrapperStyle anchor.
+          DO NOT apply wrapperStyle scale — content is already cropped; re-applying would
+          double-crop to (1/s)² of the original.
         */}
         <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
@@ -624,8 +616,8 @@ function ImageFill({
                 style={{
                   width: "100%",
                   height: "100%",
-                  objectFit: klingObjectFit,
-                  objectPosition: klingObjectPosition,
+                  objectFit: imageObjectFit,       // same as static image — no full-bleed
+                  objectPosition: klingObjectPosition, // crop-derived focal point
                 }}
               />
             </AbsoluteFill>
