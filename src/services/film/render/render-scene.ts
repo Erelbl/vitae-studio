@@ -169,19 +169,18 @@ async function prepareCroppedImageForKling(
     ixStart <= EPSILON && ixEnd >= 1 - EPSILON &&
     iyStart <= EPSILON && iyEnd >= 1 - EPSILON;
 
-  // Skip download/upload if the crop is trivial AND there is no frame mask to bake.
-  // A trivial crop WITH a frame mask still needs processing (the mask must be composited).
+  // Always process — non-square source images (portrait/landscape illustrations)
+  // must be baked onto a square canvas matching the preview's contain framing before
+  // being sent to Kling. Returning the raw URL would let Kling crop non-square input
+  // to fill its internal square frame, losing the side/top-bottom margins visible in
+  // the preview. The contain resize below always produces 1024×1024 output.
   const hasFrameMask = !!(slot.frameStyle && FRAME_MASK_PATHS[slot.frameStyle]);
-  if (isTrivialCrop && !hasFrameMask) {
-    console.log(
-      `${tag} Kling input=raw-image (trivial crop: scale=${s.toFixed(2)} crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}))`
-    );
-    return slot.url;
-  }
 
   const inputLabel = hasFrameMask
     ? `preview-crop+mask(${slot.frameStyle})`
-    : "preview-crop";
+    : isTrivialCrop
+      ? "preview-contain"
+      : "preview-crop";
   console.log(
     `${tag} Kling input=${inputLabel}` +
     ` scale=${s.toFixed(2)} crop=(${cropX.toFixed(2)},${cropY.toFixed(2)})` +
@@ -214,10 +213,15 @@ async function prepareCroppedImageForKling(
     `${tag} cropping ${W}×${H} → region (${left},${top}) ${width}×${height}`
   );
 
-  // Crop + resize base pipeline
+  // Crop + resize base pipeline.
+  // fit:"contain" always produces exactly 1024×1024 by letterboxing non-square
+  // regions onto the BG_CARD background — matching the preview's contain framing
+  // (objectFit:"contain" in SceneComposition ImageFill for no-mask slots).
+  // fit:"inside" would produce non-square output for portrait/landscape crops,
+  // causing Kling to crop the image to fill its internal square frame.
   const basePipeline = sharp(imgBuffer)
     .extract({ left, top, width, height })
-    .resize(1024, 1024, { fit: "inside", withoutEnlargement: false });
+    .resize(1024, 1024, { fit: "contain", background: { r: 246, g: 243, b: 233 }, withoutEnlargement: false });
 
   let croppedBuffer: Buffer;
 
