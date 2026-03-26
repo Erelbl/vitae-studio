@@ -75,6 +75,120 @@ function getBundlePath(): string {
   return bundleDir;
 }
 
+// ── Kling input image preparation ────────────────────────────────────────────
+
+/**
+ * Crops the illustration to exactly the region visible in the album preview,
+ * then uploads it as a short-lived temp asset and returns a signed URL for Kling.
+ *
+ * The preview uses this CSS crop model:
+ *   element: width = s×100%, height = s×100%
+ *            left  = (crop_x − s/2)×100%,  top = (crop_y − s/2)×100%
+ *   objectFit: contain  → full illustration fills the element (square images)
+ *
+ * Visible region of the illustration (image-coordinate fractions 0–1):
+ *   ix_start = clamp( 0.5 − crop_x/s,   0, 1 )
+ *   ix_end   = clamp( ix_start + 1/s,   0, 1 )
+ *   (same for y)
+ *
+ * When the crop is trivial (full image visible), the original URL is returned
+ * as-is — no download, no upload.
+ *
+ * NOTE: Assumes square illustrations (standard for AI-generated watercolor art).
+ * For non-square images objectFit:contain adds letterboxing that this function
+ * does not model — the result is still a useful approximation.
+ *
+ * @param slot  Resolved slot data (url + crop params) for this page.
+ * @param tag   Log prefix e.g. "[film-render/right]".
+ * @param adminClient  Supabase admin client (needed for signed-URL creation).
+ * @param storageBucket  Film storage bucket name.
+ * @returns Signed HTTPS URL pointing to the crop-correct image for Kling.
+ */
+async function prepareCroppedImageForKling(
+  slot: SlotImageData,
+  tag: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  storageBucket: string
+): Promise<string> {
+  const s = Math.max(1, slot.scale);
+  // Apply the same legacy-zero correction as the preview's resolveSlot()
+  const isLegacyZero = slot.crop_x === 0 && slot.crop_y === 0;
+  const cropX = isLegacyZero ? 0.5 : slot.crop_x;
+  const cropY = isLegacyZero ? 0.5 : slot.crop_y;
+
+  // Visible region in image-coordinate fractions (0 = start, 1 = end of image)
+  const ixStart = Math.max(0, Math.min(1, 0.5 - cropX / s));
+  const ixEnd   = Math.max(0, Math.min(1, ixStart + 1 / s));
+  const iyStart = Math.max(0, Math.min(1, 0.5 - cropY / s));
+  const iyEnd   = Math.max(0, Math.min(1, iyStart + 1 / s));
+
+  const EPSILON = 0.005;
+  const isTrivial =
+    ixStart <= EPSILON && ixEnd >= 1 - EPSILON &&
+    iyStart <= EPSILON && iyEnd >= 1 - EPSILON;
+
+  if (isTrivial) {
+    console.log(
+      `${tag} Kling input=raw-image (trivial crop: scale=${s.toFixed(2)} crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}))`
+    );
+    return slot.url;
+  }
+
+  console.log(
+    `${tag} Kling input=preview-resolved-crop` +
+    ` scale=${s.toFixed(2)} crop=(${cropX.toFixed(2)},${cropY.toFixed(2)})` +
+    ` → visible=[${ixStart.toFixed(3)},${ixEnd.toFixed(3)}]×[${iyStart.toFixed(3)},${iyEnd.toFixed(3)}]`
+  );
+
+  // Dynamic import — sharp is a native Node.js module
+  const sharp = (await import("sharp")).default;
+
+  // Download the full illustration
+  const resp = await fetch(slot.url);
+  if (!resp.ok) {
+    throw new Error(`${tag} Failed to download illustration for cropping: HTTP ${resp.status}`);
+  }
+  const imgBuffer = Buffer.from(await resp.arrayBuffer());
+
+  // Determine actual pixel dimensions
+  const meta = await sharp(imgBuffer).metadata();
+  const W = meta.width  ?? 1024;
+  const H = meta.height ?? 1024;
+
+  // Map fraction coords → pixel coords
+  const left   = Math.max(0, Math.round(ixStart * W));
+  const top    = Math.max(0, Math.round(iyStart * H));
+  const width  = Math.max(1, Math.min(W - left, Math.round((ixEnd - ixStart) * W)));
+  const height = Math.max(1, Math.min(H - top,  Math.round((iyEnd - iyStart) * H)));
+
+  console.log(
+    `${tag} cropping ${W}×${H} → region (${left},${top}) ${width}×${height}`
+  );
+
+  // Crop and encode as JPEG (Kling expects a standard image format)
+  const croppedBuffer = await sharp(imgBuffer)
+    .extract({ left, top, width, height })
+    .resize(1024, 1024, { fit: "inside", withoutEnlargement: false })
+    .jpeg({ quality: 92 })
+    .toBuffer();
+
+  // Upload to a short-lived temp path in the films bucket.
+  // The temp file persists but is tiny (~80KB) and namespaced under _kling_crop/.
+  const tempPath = `_kling_crop/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  await uploadFilmAsset(tempPath, croppedBuffer, "image/jpeg");
+
+  // Signed URL valid for 2h — long enough for Kling's 4min generation + polling
+  const { data: signedData } = await adminClient.storage
+    .from(storageBucket)
+    .createSignedUrl(tempPath, 7200);
+  if (!signedData?.signedUrl) {
+    throw new Error(`${tag} Failed to create signed URL for cropped illustration`);
+  }
+
+  return signedData.signedUrl;
+}
+
 // ── Page data resolution ──────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_DATA: ScenePageData = {
@@ -320,8 +434,15 @@ export async function renderScene(
     // ── Kling page video generation ───────────────────────────────────────
     //
     // If KIE_API_KEY is configured, generate a Kling 2.6 video for each page.
+    // The input image is crop-corrected to match the exact preview-visible region
+    // (same crop_x/crop_y/scale as the album editor) before being sent to Kling.
+    //
     // Existing paths are reused (no regeneration on re-render unless cleared).
-    // Failures are non-fatal — fall back to Remotion CSS motion silently.
+    // To force regeneration after a crop change, clear film_scenes.right_page_video_path
+    // and/or left_page_video_path for the affected scenes — the next render will
+    // re-generate with the updated crop.
+    //
+    // Failures are non-fatal — fall back to static image silently.
 
     const storageBucket = filmEnv.storageBucket ?? "films";
     let rightKlingUrl: string | null = null;
@@ -337,14 +458,28 @@ export async function renderScene(
       console.log(`[film-render] Kling pages — right: ${rightPageId}, left: ${isSpread ? leftPageId : "n/a (single-page)"}`);
 
       // ── Right page ──────────────────────────────────────────────────────
-      // Use the first non-null image URL the render system resolved for this page.
-      const rightImageUrl = primaryPage.slot1?.url ?? primaryPage.slot2?.url ?? null;
-      const rightImageSrc = primaryPage.slot1?.url ? "slot1" : primaryPage.slot2?.url ? "slot2" : "none";
+      // Resolve the crop-correct image: use the exact preview-visible region
+      // (crop_x/crop_y/scale applied) rather than the raw illustration asset.
+      const rightSlot = primaryPage.slot1 ?? primaryPage.slot2 ?? null;
+      let rightImageUrl: string | null = null;
+      if (rightSlot) {
+        try {
+          rightImageUrl = await prepareCroppedImageForKling(
+            rightSlot, "[film-render/right]", adminClient, storageBucket
+          );
+        } catch (cropErr) {
+          console.warn(
+            `[film-render] Right page crop-for-Kling failed — falling back to raw illustration URL:`,
+            cropErr instanceof Error ? cropErr.message : String(cropErr)
+          );
+          rightImageUrl = rightSlot.url;
+        }
+      }
       let rightPath = (sceneRow.right_page_video_path as string | null) ?? null;
       if (rightPath) {
         console.log(`[film-render] Right page Kling video cached → ${rightPath}`);
       } else if (rightImageUrl) {
-        console.log(`[film-render] Generating Kling video for right page (pageId=${rightPageId}, src=${rightImageSrc})`);
+        console.log(`[film-render] Generating Kling video for right page (pageId=${rightPageId})`);
         rightPath = await generatePageVideo({
           imageUrl:      rightImageUrl,
           side:          "right",
@@ -370,13 +505,26 @@ export async function renderScene(
 
       // ── Left page ───────────────────────────────────────────────────────
       if (secondPage) {
-        const leftImageUrl = secondPage.slot1?.url ?? secondPage.slot2?.url ?? null;
-        const leftImageSrc = secondPage.slot1?.url ? "slot1" : secondPage.slot2?.url ? "slot2" : "none";
+        const leftSlot = secondPage.slot1 ?? secondPage.slot2 ?? null;
+        let leftImageUrl: string | null = null;
+        if (leftSlot) {
+          try {
+            leftImageUrl = await prepareCroppedImageForKling(
+              leftSlot, "[film-render/left]", adminClient, storageBucket
+            );
+          } catch (cropErr) {
+            console.warn(
+              `[film-render] Left page crop-for-Kling failed — falling back to raw illustration URL:`,
+              cropErr instanceof Error ? cropErr.message : String(cropErr)
+            );
+            leftImageUrl = leftSlot.url;
+          }
+        }
         let leftPath = (sceneRow.left_page_video_path as string | null) ?? null;
         if (leftPath) {
           console.log(`[film-render] Left page Kling video cached → ${leftPath}`);
         } else if (leftImageUrl) {
-          console.log(`[film-render] Generating Kling video for left page (pageId=${leftPageId}, src=${leftImageSrc})`);
+          console.log(`[film-render] Generating Kling video for left page (pageId=${leftPageId})`);
           leftPath = await generatePageVideo({
             imageUrl:      leftImageUrl,
             side:          "left",

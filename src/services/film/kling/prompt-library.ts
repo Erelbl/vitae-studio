@@ -25,7 +25,9 @@ const BASE =
   "Do not alter, morph, or redesign any character. " +
   "Preserve all facial features and identities exactly as shown. " +
   "No face distortion. No character redesign. No added or removed characters. " +
-  "Subtle, realistic, natural motion only. No exaggerated animation. Cinematic quality.";
+  "Subtle, realistic, natural motion only. No exaggerated animation. Cinematic quality. " +
+  "Animate only the illustrated content shown in the image. " +
+  "Do not alter or animate any surrounding background, page border, or layout framing.";
 
 export const PROMPT_LIBRARY: Record<SceneType, string> = {
   single_character:
