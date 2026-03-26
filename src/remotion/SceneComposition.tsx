@@ -556,12 +556,15 @@ function ImageFill({
 
   // ── Kling video ───────────────────────────────────────────────────────────
   if (klingVideoUrl) {
-    if (frame === delayFrame && delayFrame > 0) {
+    // Debug: log once per render pass.
+    // For right-page (delayFrame=0) fire at frame 0. For left-page fire when it activates.
+    const klingLogFrame = delayFrame > 0 ? delayFrame : 0;
+    if (frame === klingLogFrame) {
       console.log(
-        `[ImageFill] left-page activated | delayFrame=${delayFrame}` +
-        ` fadeInFrames=${LEFT_FADE_IN_FRAMES}` +
+        `[ImageFill] kling-video | delayFrame=${delayFrame}` +
         ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
-        ` frameStyle=${slot?.frameStyle ?? "none"} source=kling`
+        ` frameStyle=${slot?.frameStyle ?? "none"} frameStyle-applied=${maskUrl ? "true" : "false"}` +
+        ` objectFit=${imageObjectFit} hasInset=${hasInset} type=kling-video`
       );
     }
     return (
@@ -570,16 +573,27 @@ function ImageFill({
         {/*
           Kling video already contains the pre-cropped region for this page
           (prepareCroppedImageForKling bakes the crop before sending to Kling).
-          DO NOT apply wrapperStyle here — that would double-crop the video,
-          showing only (1/s)² of the original. The video simply fills the frame.
-          maskStyle (SVG shape) is still applied on the outer container.
+          DO NOT apply wrapperStyle (scale transform) — the content is already cropped,
+          re-applying scale would double-crop showing only (1/s)² of the original.
+
+          Visual framing is kept identical to the static image path:
+            - SVG frame mask (maskStyle) on the outer container ✓
+            - objectFit matches imageObjectFit ("contain" or "cover") ✓
+            - cropInset clip path applied on the inner container ✓
         */}
         <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
-            <AbsoluteFill style={{ overflow: "hidden" }}>
+            <AbsoluteFill
+              style={{
+                overflow: "hidden",
+                ...(hasInset
+                  ? { clipPath: `inset(${it * 100}% ${ir * 100}% ${ib * 100}% ${il * 100}%)` }
+                  : {}),
+              }}
+            >
               <OffthreadVideo
                 src={klingVideoUrl}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}
               />
             </AbsoluteFill>
           </Sequence>
@@ -600,12 +614,14 @@ function ImageFill({
     );
   }
 
-  if (frame === delayFrame && delayFrame > 0) {
+  // Debug: log once per render pass (same logic as Kling path above).
+  const staticLogFrame = delayFrame > 0 ? delayFrame : 0;
+  if (frame === staticLogFrame) {
     console.log(
-      `[ImageFill] left-page activated | delayFrame=${delayFrame}` +
-      ` fadeInFrames=${LEFT_FADE_IN_FRAMES}` +
+      `[ImageFill] static-image | delayFrame=${delayFrame}` +
       ` crop=(${cropX.toFixed(2)},${cropY.toFixed(2)}) scale=${s.toFixed(2)}` +
-      ` frameStyle=${slot.frameStyle ?? "none"} source=static`
+      ` frameStyle=${slot.frameStyle ?? "none"} frameStyle-applied=${maskUrl ? "true" : "false"}` +
+      ` objectFit=${imageObjectFit} hasInset=${hasInset} type=image`
     );
   }
 
