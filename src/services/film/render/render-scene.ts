@@ -308,6 +308,11 @@ export async function renderScene(
 
     let rightKlingUrl: string | null = null;
     let leftKlingUrl:  string | null = null;
+    // Track the actual resolved Kling storage paths for this run.
+    // Hoisted outside the KIE block so the render hash can use the FRESH paths
+    // (not the stale sceneRow snapshot which may have been null before generation).
+    let resolvedRightKlingPath: string | null = null;
+    let resolvedLeftKlingPath:  string | null = null;
 
     if (process.env.KIE_API_KEY) {
       const storageBucket = filmEnv.storageBucket ?? "films";
@@ -338,11 +343,13 @@ export async function renderScene(
             .eq("id", sceneId);
         }
       } else {
-        console.log(`[film-render] Right page has no resolved image — skipping Kling, using CSS motion`);
+        console.log(`[film-render] Right page has no resolved image — skipping Kling, using static fallback`);
       }
+      resolvedRightKlingPath = rightPath;
       if (rightPath) {
         const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 3600);
         rightKlingUrl = data?.signedUrl ?? null;
+        if (!rightKlingUrl) console.warn(`[film-render] Failed to create signed URL for right Kling path: ${rightPath}`);
       }
 
       // ── Left page ───────────────────────────────────────────────────────
@@ -368,19 +375,17 @@ export async function renderScene(
               .eq("id", sceneId);
           }
         } else {
-          console.log(`[film-render] Left page has no resolved image — skipping Kling, using CSS motion`);
+          console.log(`[film-render] Left page has no resolved image — skipping Kling, using static fallback`);
         }
+        resolvedLeftKlingPath = leftPath;
         if (leftPath) {
           const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 3600);
           leftKlingUrl = data?.signedUrl ?? null;
+          if (!leftKlingUrl) console.warn(`[film-render] Failed to create signed URL for left Kling path: ${leftPath}`);
         }
       }
-      // Summary: log visual source for each page
-      const rightSource = rightKlingUrl ? "kling-video" : "css-motion";
-      const leftSource  = isSpread ? (leftKlingUrl ? "kling-video" : "css-motion") : "n/a (single-page)";
-      console.log(`[film-render] Visual source — right: ${rightSource}, left: ${leftSource}`);
     } else {
-      console.log(`[film-render] KIE_API_KEY not set — skipping Kling generation, using CSS motion`);
+      console.log(`[film-render] KIE_API_KEY not set — skipping Kling generation, using static fallback`);
     }
 
     // ── Derive page type from spread key ─────────────────────────────────
@@ -402,10 +407,10 @@ export async function renderScene(
       personName = (orderRow?.person_name as string | null) ?? null;
     }
 
-    // Build render hash — includes Kling paths so that adding/changing page videos
-    // changes the hash and causes the render worker to re-render the scene.
-    const klingRightPath = (sceneRow.right_page_video_path as string | null) ?? null;
-    const klingLeftPath  = (sceneRow.left_page_video_path  as string | null) ?? null;
+    // Build render hash using the FRESH resolved Kling paths from this run.
+    // Previously this read from the stale sceneRow snapshot (fetched before
+    // Kling generation), which produced the same hash as the pre-Kling render
+    // and caused the scene to overwrite its own path with stale hash metadata.
     const renderHash = buildRenderHash({
       narrationText: sceneRow.narration_text as string | null,
       voiceId: sceneRow.voice_id as string | null,
@@ -413,8 +418,8 @@ export async function renderScene(
       transitionIn: sceneRow.transition_in as string | null,
       transitionOut: sceneRow.transition_out as string | null,
       pageIds,
-      klingRightPath,
-      klingLeftPath,
+      klingRightPath: resolvedRightKlingPath,
+      klingLeftPath:  resolvedLeftKlingPath,
     });
 
     // Compute duration
@@ -454,6 +459,18 @@ export async function renderScene(
       // Person name fetched from orders table — shown on cover page.
       personName,
     };
+
+    // ── Pre-render debug summary ──────────────────────────────────────────
+    {
+      const rightSrc  = rightKlingUrl  ? "kling-video" : "static-image";
+      const leftSrc   = isSpread ? (leftKlingUrl ? "kling-video" : "static-image") : "n/a (single-page)";
+      console.log(
+        `[film-render] Render inputs — sceneId=${sceneId}`,
+        `| right: ${rightSrc} path=${resolvedRightKlingPath ?? "none"} url=${rightKlingUrl ? "✓" : "✗"}`,
+        `| left: ${leftSrc} path=${resolvedLeftKlingPath ?? "none"} url=${leftKlingUrl ? "✓" : "✗"}`,
+        `| hash=${renderHash}`
+      );
+    }
 
     // Resolve pre-built bundle path
     const serveUrl = getBundlePath();
