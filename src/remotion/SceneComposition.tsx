@@ -554,38 +554,17 @@ function ImageFill({
   const imageObjectFit: React.CSSProperties["objectFit"] =
     slot?.frameStyle ? "cover" : "contain";
 
-  // ── Kling video object-position (derived from preview wrapperStyle) ─────────
-  // prepareCroppedImageForKling extracted the exact visible region using the
-  // same formula as the preview (ixStart = 0.5 − cropX/s), so the video's
-  // content already represents the (crop_x, crop_y) focal point.
-  //
-  // Map the focal point fraction directly to object-position so the browser
-  // places that point at the same relative position within the container:
-  //   object-position: cropX*100%  cropY*100%
-  //
-  // For the default case (cropX=0.5, cropY=0.5, square container) this equals
-  // "50% 50%" and the video fills the frame identically to the preview.
-  // For off-center crops this shifts the anchor to mirror the preview's
-  // wrapperStyle left/top offset without re-applying the scale transform.
-  //
-  // objectFit uses the same imageObjectFit as static images — do NOT force
-  // "cover" here, that would make the video full-bleed and bypass the frame
-  // containment that objectFit:"contain" provides.
-  const klingObjectPosition = `${cropX * 100}% ${cropY * 100}%`;
-
   // ── Kling video ───────────────────────────────────────────────────────────
   if (klingVideoUrl) {
     // Debug: log once per render pass at frame 0 (right) or activation frame (left).
     const klingLogFrame = delayFrame > 0 ? delayFrame : 0;
     if (frame === klingLogFrame) {
-      // Preview anchor for comparison — the wrapperStyle values the static image uses.
       const previewLeft = `${((cropX - s / 2) * 100).toFixed(1)}%`;
       const previewTop  = `${((cropY - s / 2) * 100).toFixed(1)}%`;
       console.log(
         `[ImageFill] type=kling-video` +
         ` | crop=(${cropX.toFixed(3)},${cropY.toFixed(3)}) scale=${s.toFixed(3)}` +
-        ` | preview-anchor: left=${previewLeft} top=${previewTop} (wrapperStyle)` +
-        ` | kling-anchor: objectFit=${imageObjectFit} objectPosition=${klingObjectPosition}` +
+        ` | wrapperStyle: left=${previewLeft} top=${previewTop} size=${(s * 100).toFixed(0)}%` +
         ` | frameStyle=${slot?.frameStyle ?? "none"} mask-applied=${maskUrl ? "true" : "false"}` +
         ` | hasInset=${hasInset} delayFrame=${delayFrame}`
       );
@@ -593,34 +572,15 @@ function ImageFill({
     return (
       <>
         <AbsoluteFill style={{ background: BG_CARD }} />
-        {/*
-          Kling video contains the pre-cropped visible region
-          (prepareCroppedImageForKling uses ixStart = 0.5 − cropX/s, same as preview).
-          objectFit = imageObjectFit (contain / cover) — same as static image, no full-bleed.
-          objectPosition = cropX*100% cropY*100% — mirrors the preview's wrapperStyle anchor.
-          DO NOT apply wrapperStyle scale — content is already cropped; re-applying would
-          double-crop to (1/s)² of the original.
-        */}
+        {/* Same wrapperStyle as static images — preview-matching crop/scale/position. */}
         <AbsoluteFill style={{ overflow: "hidden", opacity: fadeOpacity, ...(maskStyle ?? {}) }}>
           <Sequence from={delayFrame}>
-            <AbsoluteFill
-              style={{
-                overflow: "hidden",
-                ...(hasInset
-                  ? { clipPath: `inset(${it * 100}% ${ir * 100}% ${ib * 100}% ${il * 100}%)` }
-                  : {}),
-              }}
-            >
+            <div style={{ ...wrapperStyle, overflow: "hidden" }}>
               <OffthreadVideo
                 src={klingVideoUrl}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: imageObjectFit,       // same as static image — no full-bleed
-                  objectPosition: klingObjectPosition, // crop-derived focal point
-                }}
+                style={{ width: "100%", height: "100%", objectFit: imageObjectFit }}
               />
-            </AbsoluteFill>
+            </div>
           </Sequence>
         </AbsoluteFill>
       </>
