@@ -21,19 +21,16 @@ export type SceneType =
  * Added first so it can never be overridden by per-type additions.
  */
 const BASE =
-  "Preserve the exact watercolor illustration style. " +
-  "Do not alter, morph, or redesign any character. " +
-  "Preserve all facial features and identities exactly as shown. " +
-  "No face distortion. No character redesign. No added or removed characters. " +
-  "Subtle, realistic, natural motion only. No exaggerated animation. Cinematic quality. " +
-  "Animate only the illustrated content shown in the image. " +
-  "Do not alter or animate any surrounding background, page border, or layout framing. " +
-  "Preserve the exact composition and framing of the original image. " +
-  "Do not reframe, zoom out, change camera angle, or shift the subject unnaturally within the frame. " +
-  "Motion should feel like the illustration is gently coming to life, not like a full animation. " +
-  "The scene should begin with a subtle illustration reveal effect: colors and details softly appear as if being painted in, in a smooth and cinematic way. " +
-  "No visible hand, no drawing tools, no active sketching, and no artificial timelapse drawing effect. " +
-  "The reveal must be soft, refined, and blend naturally into the scene's motion.";
+  "Preserve the exact watercolor illustration style and original composition. " +
+  "Do not alter, redesign, add, or remove characters. " +
+  "Preserve facial features and identity exactly. No face distortion. " +
+  "Animate only the illustrated content. Do not alter the page border, layout, or framing. " +
+  "Use subtle, natural, realistic motion only. No exaggerated animation. " +
+  "Do not reframe, zoom out, change camera angle, or shift subjects unnaturally. " +
+  "The image should feel gently brought to life, not fully re-animated. " +
+  "No cinematic transitions, no reveal effects, and no stylized scene changes. " +
+  "The scene must remain visually stable from start to end. " +
+  "No fade in, no fade out, no dissolve, no added text, and no overlays.";
 
 /**
  * FACIAL INTEGRITY RULES — applied to all prompts involving characters.
@@ -41,13 +38,13 @@ const BASE =
  * If the model cannot preserve faces perfectly, it must not animate them at all.
  */
 const FACIAL_INTEGRITY_RULES =
-  " FACIAL INTEGRITY RULES: Facial identity preservation is the absolute highest priority. " +
-  "Preserve the exact facial structure, proportions, eye placement, nose shape, mouth shape, and hairstyle of every character precisely as illustrated. " +
-  "No AI face drift. No re-interpretation, smoothing, or stylistic deviation of any facial feature. " +
-  "Do not alter expressions significantly. Do not move lips or eyes in ways that risk distorting identity. " +
-  "If there is any uncertainty about preserving a face perfectly, do NOT animate that face. " +
-  "Instead, keep the face completely still and redirect all motion to: soft breathing, subtle posture shift, hand movement, hair movement, clothing movement, or environmental motion such as light, background, and shadows. " +
-  "No cartoonization of faces. No jitter. No flicker on facial regions.";
+  " FACIAL INTEGRITY RULES: Facial identity preservation is the highest priority. " +
+  "Preserve exact facial structure, proportions, eyes, nose, mouth, and hairstyle. " +
+  "No face distortion, no redesign, no identity drift. " +
+  "Do not animate lips or strong expressions. " +
+  "If facial accuracy is at risk, keep the face completely still. " +
+  "Instead, use subtle motion in body, hands, hair, clothing, or background. " +
+  "No jitter, no flicker, no cartoon-like behavior.";
 
 export const PROMPT_LIBRARY: Record<SceneType, string> = {
   single_character:
@@ -61,22 +58,15 @@ export const PROMPT_LIBRARY: Record<SceneType, string> = {
     "The character must remain visually consistent and naturally anchored in the frame. " +
     "Camera is fixed or drifts very slightly without reframing.",
 
-  multiple_characters:
-    BASE +
-    FACIAL_INTEGRITY_RULES +
-    " Preserve every character exactly as illustrated: faces, clothing, proportions, and relationships. " +
-    "Maintain the exact spatial relationship between all characters. " +
-    "Reduce facial motion significantly — faces must remain mostly still and stable. " +
-    "Prioritize scene stability over facial movement. " +
-    "Do not animate any interaction between characters that may distort their faces. " +
-    "Bring the scene alive with clearly visible but minimal natural motion: " +
-    "each character may show gentle body shifts, soft breathing, and slow hair or clothing movement. " +
-    "Where hands are visible, allow a slow natural hand gesture or finger movement. " +
-    "Not all characters should move at the same moment. " +
-    "Motion must be staggered and natural, never synchronized or puppet-like. " +
-    "No invented new actions, no large movement, no face warping. " +
-    "Camera is fixed.",
-
+multiple_characters:
+  BASE +
+  " Preserve all characters exactly as shown: faces, proportions, clothing, and relationships. " +
+  FACIAL_INTEGRITY_RULES +
+  " Motion must be minimal and natural: slight breathing or posture shifts only, very subtle hand movement if safe, and gentle background or lighting movement. " +
+  " Avoid large or fast motion, interaction that may distort faces, synchronized group movement, and camera movement. " +
+  " Keep all faces stable and unchanged throughout the scene. " +
+  " The scene must remain visually stable until the final frame.",
+  
   landscape:
     BASE +
     " No characters to animate. Environmental motion only. " +
