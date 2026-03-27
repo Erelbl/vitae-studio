@@ -73,7 +73,7 @@ export const PACKAGES: PackageData[] = [
     key: "video",
     title: "סרטון סיפור חיים בחרוזים",
     subtitle:
-      "הסיפור שלכם מתעורר לחיים עם קריינות מקצועית, מוזיקת רגע והנפשות עדינות",
+      "הסיפור שלכם מתעורר לחיים עם קריינות מקצועית, מוזיקת רקע והנפשות עדינות",
     featured: false,
     hasSize: false,
     pricing: {
@@ -89,7 +89,7 @@ export const PACKAGES: PackageData[] = [
   {
     key: "combo",
     title: "חבילה משולבת",
-    subtitle: "אלבום + סרט — הכל בחבילה אחת",
+    subtitle: "אלבום + סרט - הכל בחבילה אחת",
     badge: "הכי משתלם",
     featured: true,
     hasSize: true,
@@ -116,8 +116,8 @@ export const PACKAGES: PackageData[] = [
     },
     inclusions: [
       "שאלון אישי מעמיק",
-      "כתיבת טקסט בחרוזים עבריים",
-      "עד 40 עמודי איור בצבעי מים",
+      "כתיבת סיפור בחרוזים",
+      "עד 40 עמודים מאויירים בצבעי מים",
       "אישור גרסה לפני הדפסה",
       "משלוח עד הבית",
     ],
