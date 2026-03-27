@@ -77,7 +77,7 @@ export const PACKAGES: PackageData[] = [
     featured: false,
     hasSize: false,
     pricing: {
-      price: { "25": 2000, "30": 2000 },
+      price: { "25": 2400, "30": 2400 },
     },
     inclusions: [
       "שאלון אישי מעמיק",
@@ -94,9 +94,9 @@ export const PACKAGES: PackageData[] = [
     featured: true,
     hasSize: true,
     pricing: {
-      price: { "25": 3780, "30": 4050 },
-      originalPrice: { "25": 4200, "30": 4500 },
-      discountLabel: "כולל 10% הנחה",
+      price: { "25": 3920, "30": 4160 },
+      originalPrice: { "25": 4900, "30": 5200 },
+      discountLabel: "כולל 20% הנחה",
     },
     inclusions: [
       'כל מה שב"אלבום" +',
@@ -112,7 +112,7 @@ export const PACKAGES: PackageData[] = [
     featured: false,
     hasSize: true,
     pricing: {
-      price: { "25": 2200, "30": 2500 },
+      price: { "25": 2500, "30": 2800 },
     },
     inclusions: [
       "שאלון אישי מעמיק",
@@ -126,7 +126,7 @@ export const PACKAGES: PackageData[] = [
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
-/** Format price as Hebrew string, e.g. "₪3,780" */
+/** Format price as Hebrew string, e.g. "₪3,920" */
 export function formatPrice(amount: number): string {
   return `₪${amount.toLocaleString("he-IL")}`;
 }
