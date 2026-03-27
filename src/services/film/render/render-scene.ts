@@ -277,6 +277,241 @@ async function prepareCroppedImageForKling(
   return signedData.signedUrl;
 }
 
+// ── Layouts that use the slot-based full-image preview (ImageFill) ────────────
+// For these layouts, Kling input is produced by buildPreviewBakedKlingImage()
+// (exact preview-bake), NOT by prepareCroppedImageForKling() (old math).
+// Other layouts keep the old path.
+const FULL_IMAGE_BAKE_LAYOUTS = new Set([
+  "FULL_IMAGE",
+  "FULL_IMAGE_TEXT_TOP",
+  "FULL_IMAGE_TEXT_CENTER",
+]);
+
+// ── Shared upload helper ──────────────────────────────────────────────────────
+
+async function uploadKlingAsset(
+  buffer: Buffer,
+  tag: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  storageBucket: string
+): Promise<string> {
+  const tempPath = `_kling_crop/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  await uploadFilmAsset(tempPath, buffer, "image/jpeg");
+  const { data: signedData } = await adminClient.storage
+    .from(storageBucket)
+    .createSignedUrl(tempPath, 7200);
+  if (!signedData?.signedUrl) {
+    throw new Error(`${tag} Failed to create signed URL for Kling asset`);
+  }
+  return signedData.signedUrl;
+}
+
+// ── Preview-baked Kling input (FULL_IMAGE-style) ──────────────────────────────
+
+/**
+ * Builds the Kling input image by exactly reproducing the CSS ImageFill rendering
+ * onto a square canvas. This is the authoritative source of truth for FULL_IMAGE,
+ * FULL_IMAGE_TEXT_TOP, and FULL_IMAGE_TEXT_CENTER layouts.
+ *
+ * The old prepareCroppedImageForKling() is NOT used for these layouts — it is an
+ * approximation that fails when scale > 1, image is non-square, or inset is nonzero
+ * (because CSS inset() fractions are relative to the wrapper, not to the source image).
+ *
+ * CSS model reproduced (AlbumPageView.tsx / SceneComposition.tsx ImageFill):
+ *
+ *   [canvas: CANVAS_SIZE × CANVAS_SIZE, background: BG_CARD]
+ *     [overflow:hidden container, SVG mask applied when frameStyle is set]
+ *       [wrapper:
+ *          width  = scale × CANVAS_SIZE
+ *          height = scale × CANVAS_SIZE
+ *          left   = (cropX − scale/2) × CANVAS_SIZE
+ *          top    = (cropY − scale/2) × CANVAS_SIZE
+ *          clipPath: inset(insetT insetR insetB insetL)  ← fractions of WRAPPER]
+ *         [img: objectFit = contain (no frameStyle) | cover (frameStyle)]
+ *
+ * The result is a 1024×1024 JPEG that matches the preview frame exactly, including:
+ *   - correct scale/pan positioning
+ *   - objectFit contain/cover framing (letterboxing preserved for contain)
+ *   - inset clipping relative to wrapper (not source image)
+ *   - frame mask baked in when frameStyle is set
+ *   - BG_CARD background (#F6F3E9) in all empty/letterbox areas
+ *
+ * SceneComposition renders Kling video at 100%×100% (no re-applied crop math),
+ * so the baked canvas must represent the full page frame.
+ */
+async function buildPreviewBakedKlingImage(
+  slot: SlotImageData,
+  tag: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  storageBucket: string
+): Promise<string> {
+  const CANVAS_SIZE = 1024;
+  const BG = { r: 246, g: 243, b: 233 }; // BG_CARD (#F6F3E9)
+
+  // Legacy (0,0) → treat as centered (0.5,0.5), same as preview resolveSlot()
+  const isLegacyZero = slot.crop_x === 0 && slot.crop_y === 0;
+  const cropX = isLegacyZero ? 0.5 : slot.crop_x;
+  const cropY = isLegacyZero ? 0.5 : slot.crop_y;
+  const scale  = Math.max(0.1, slot.scale);
+
+  const insetT = slot.cropInsetTop    ?? 0;
+  const insetR = slot.cropInsetRight  ?? 0;
+  const insetB = slot.cropInsetBottom ?? 0;
+  const insetL = slot.cropInsetLeft   ?? 0;
+
+  const hasFrameMask = !!(slot.frameStyle && FRAME_MASK_PATHS[slot.frameStyle]);
+  // objectFit: cover when frame mask is active (fills decorative shape), contain otherwise
+  const fitMode = hasFrameMask ? "cover" : "contain";
+
+  // ── Step 1: Compute wrapper rect in canvas pixels ─────────────────────────
+  const wW = scale * CANVAS_SIZE;
+  const wH = scale * CANVAS_SIZE;
+  const wL = (cropX - scale / 2) * CANVAS_SIZE;
+  const wT = (cropY - scale / 2) * CANVAS_SIZE;
+
+  // ── Step 2: Apply clipPath inset (fractions of wrapper) ──────────────────
+  // CSS inset() percentages are relative to the element's own bounding box.
+  // Here that element is the wrapper (wW × wH), NOT the source image or the canvas.
+  const effL = wL + insetL * wW;
+  const effT = wT + insetT * wH;
+  const effR = wL + wW * (1 - insetR);
+  const effB = wT + wH * (1 - insetB);
+
+  // ── Step 3: Intersect effective area with canvas bounds ───────────────────
+  const visL  = Math.max(0, effL);
+  const visT  = Math.max(0, effT);
+  const visR  = Math.min(CANVAS_SIZE, effR);
+  const visB  = Math.min(CANVAS_SIZE, effB);
+  const visWi = Math.round(visR - visL);
+  const visHi = Math.round(visB - visT);
+
+  console.log(
+    `${tag} preview-bake` +
+    ` fit=${fitMode} canvas=${CANVAS_SIZE} scale=${scale.toFixed(3)}` +
+    ` crop=(${cropX.toFixed(3)},${cropY.toFixed(3)})` +
+    ` wrapper=(L=${wL.toFixed(1)},T=${wT.toFixed(1)},W=${wW.toFixed(1)},H=${wH.toFixed(1)})` +
+    ` inset=(t=${insetT},r=${insetR},b=${insetB},l=${insetL})` +
+    ` vis=(L=${visL.toFixed(1)},T=${visT.toFixed(1)},W=${visWi},H=${visHi})` +
+    (hasFrameMask ? ` frameStyle=${slot.frameStyle}` : "")
+  );
+
+  const sharp = (await import("sharp")).default;
+
+  // Download source image
+  const resp = await fetch(slot.url);
+  if (!resp.ok) {
+    throw new Error(`${tag} Failed to download illustration: HTTP ${resp.status}`);
+  }
+  const srcBuffer = Buffer.from(await resp.arrayBuffer());
+
+  // Nothing visible → return blank BG_CARD canvas
+  if (visWi <= 0 || visHi <= 0) {
+    console.log(`${tag} no canvas overlap — returning blank BG_CARD canvas`);
+    const buf = await sharp({
+      create: { width: CANVAS_SIZE, height: CANVAS_SIZE, channels: 3, background: BG }
+    }).jpeg({ quality: 92 }).toBuffer();
+    return uploadKlingAsset(buf, tag, adminClient, storageBucket);
+  }
+
+  // ── Step 4: Resize source image into the full wrapper rect with objectFit ──
+  // The CSS image element fills the wrapper (wW × wH) 100%×100% with objectFit.
+  // Sharp's resize with fit:"contain"/"cover" exactly reproduces this behavior.
+  const wWi = Math.max(1, Math.round(wW));
+  const wHi = Math.max(1, Math.round(wH));
+
+  const wrapperBuffer = await sharp(srcBuffer)
+    .resize(wWi, wHi, {
+      fit: fitMode,
+      background: BG,      // BG_CARD fills letterbox areas (contain only)
+      position: "center",
+      withoutEnlargement: false,
+    })
+    .png()
+    .toBuffer();
+
+  // ── Step 5: Apply inset clip — extract the inset sub-region ──────────────
+  // CSS clipPath inset() clips the wrapper element. We extract the equivalent
+  // pixel region from the wrapper image.
+  const insetLpx = Math.max(0, Math.round(insetL * wWi));
+  const insetTpx = Math.max(0, Math.round(insetT * wHi));
+  const insetRpx = Math.max(0, Math.round(insetR * wWi));
+  const insetBpx = Math.max(0, Math.round(insetB * wHi));
+  const effWi = Math.max(1, wWi - insetLpx - insetRpx);
+  const effHi = Math.max(1, wHi - insetTpx - insetBpx);
+
+  const insetBuffer = await sharp(wrapperBuffer)
+    .extract({ left: insetLpx, top: insetTpx, width: effWi, height: effHi })
+    .png()
+    .toBuffer();
+
+  // ── Step 6: Find the sub-region that lands on the canvas ─────────────────
+  // The inset image top-left is at (effL, effT) in canvas space.
+  // srcL/srcT: offset within inset image where canvas visible area begins.
+  const srcL  = Math.max(0, Math.round(visL - effL));
+  const srcT  = Math.max(0, Math.round(visT - effT));
+  const destW = Math.min(visWi, Math.max(0, effWi - srcL));
+  const destH = Math.min(visHi, Math.max(0, effHi - srcT));
+
+  if (destW <= 0 || destH <= 0) {
+    console.log(`${tag} effective region does not overlap canvas — returning blank`);
+    const buf = await sharp({
+      create: { width: CANVAS_SIZE, height: CANVAS_SIZE, channels: 3, background: BG }
+    }).jpeg({ quality: 92 }).toBuffer();
+    return uploadKlingAsset(buf, tag, adminClient, storageBucket);
+  }
+
+  const visibleSlice = await sharp(insetBuffer)
+    .extract({ left: srcL, top: srcT, width: destW, height: destH })
+    .png()
+    .toBuffer();
+
+  // ── Step 7: Composite onto BG_CARD canvas + optional frame mask ───────────
+  const destL = Math.round(visL);
+  const destT = Math.round(visT);
+
+  let finalBuffer: Buffer;
+
+  if (hasFrameMask) {
+    // Composite the positioned image, then apply the SVG mask at full canvas level.
+    // The CSS mask is on the absolute inset-0 container (full page), so the mask
+    // SVG covers the full CANVAS_SIZE × CANVAS_SIZE area.
+    const preComposite = await sharp({
+      create: { width: CANVAS_SIZE, height: CANVAS_SIZE, channels: 4,
+                background: { r: 246, g: 243, b: 233, alpha: 0 } }
+    })
+    .composite([{ input: visibleSlice, left: destL, top: destT }])
+    .png()
+    .toBuffer();
+
+    const maskSvg = Buffer.from(
+      `<svg width="${CANVAS_SIZE}" height="${CANVAS_SIZE}" viewBox="0 0 100 100" ` +
+      `preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
+      `<path d="${FRAME_MASK_PATHS[slot.frameStyle!]}" fill="white"/>` +
+      `</svg>`
+    );
+
+    finalBuffer = await sharp(preComposite)
+      .ensureAlpha()
+      .composite([{ input: maskSvg, blend: "dest-in" }])
+      .flatten({ background: BG })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+
+    console.log(`${tag} preview-bake mask baked: ${slot.frameStyle} @ ${CANVAS_SIZE}×${CANVAS_SIZE}`);
+  } else {
+    finalBuffer = await sharp({
+      create: { width: CANVAS_SIZE, height: CANVAS_SIZE, channels: 3, background: BG }
+    })
+    .composite([{ input: visibleSlice, left: destL, top: destT }])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  }
+
+  return uploadKlingAsset(finalBuffer, tag, adminClient, storageBucket);
+}
+
 // ── Page data resolution ──────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_DATA: ScenePageData = {
@@ -522,13 +757,17 @@ export async function renderScene(
     // ── Kling page video generation ───────────────────────────────────────
     //
     // If KIE_API_KEY is configured, generate a Kling 2.6 video for each page.
-    // The input image is crop-corrected to match the exact preview-visible region
-    // (same crop_x/crop_y/scale as the album editor) before being sent to Kling.
     //
-    // Existing paths are reused (no regeneration on re-render unless cleared).
-    // To force regeneration after a crop change, clear film_scenes.right_page_video_path
-    // and/or left_page_video_path for the affected scenes — the next render will
-    // re-generate with the updated crop.
+    // FULL_IMAGE / FULL_IMAGE_TEXT_TOP / FULL_IMAGE_TEXT_CENTER:
+    //   buildPreviewBakedKlingImage() — exact CSS preview reproduction.
+    //   The preview is the source of truth; crop math is NOT authoritative here.
+    //
+    // Other layouts:
+    //   prepareCroppedImageForKling() — legacy visible-region extraction.
+    //
+    // Existing Kling paths are reused (no regeneration unless cleared).
+    // To force re-generation after a crop change, clear right_page_video_path
+    // and/or left_page_video_path — the next render will re-generate.
     //
     // Failures are non-fatal — fall back to static image silently.
 
@@ -546,15 +785,15 @@ export async function renderScene(
       console.log(`[film-render] Kling pages — right: ${rightPageId}, left: ${isSpread ? leftPageId : "n/a (single-page)"}`);
 
       // ── Right page ──────────────────────────────────────────────────────
-      // Resolve the crop-correct image: use the exact preview-visible region
-      // (crop_x/crop_y/scale applied) rather than the raw illustration asset.
+      // FULL_IMAGE-style layouts use buildPreviewBakedKlingImage() — exact
+      // CSS preview reproduction. Other layouts use the legacy extraction path.
       const rightSlot = primaryPage.slot1 ?? primaryPage.slot2 ?? null;
       let rightImageUrl: string | null = null;
       if (rightSlot) {
         try {
-          rightImageUrl = await prepareCroppedImageForKling(
-            rightSlot, "[film-render/right]", adminClient, storageBucket
-          );
+          rightImageUrl = FULL_IMAGE_BAKE_LAYOUTS.has(primaryPage.layoutType)
+            ? await buildPreviewBakedKlingImage(rightSlot, "[film-render/right]", adminClient, storageBucket)
+            : await prepareCroppedImageForKling(rightSlot, "[film-render/right]", adminClient, storageBucket);
         } catch (cropErr) {
           console.warn(
             `[film-render] Right page crop-for-Kling failed — falling back to raw illustration URL:`,
@@ -597,9 +836,9 @@ export async function renderScene(
         let leftImageUrl: string | null = null;
         if (leftSlot) {
           try {
-            leftImageUrl = await prepareCroppedImageForKling(
-              leftSlot, "[film-render/left]", adminClient, storageBucket
-            );
+            leftImageUrl = FULL_IMAGE_BAKE_LAYOUTS.has(secondPage.layoutType)
+              ? await buildPreviewBakedKlingImage(leftSlot, "[film-render/left]", adminClient, storageBucket)
+              : await prepareCroppedImageForKling(leftSlot, "[film-render/left]", adminClient, storageBucket);
           } catch (cropErr) {
             console.warn(
               `[film-render] Left page crop-for-Kling failed — falling back to raw illustration URL:`,
