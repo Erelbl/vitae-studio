@@ -62,11 +62,12 @@ multiple_characters:
   BASE +
   " Preserve all characters exactly as shown: faces, proportions, clothing, and relationships. " +
   FACIAL_INTEGRITY_RULES +
-  " Motion must be minimal and natural: slight breathing or posture shifts only, very subtle hand movement if safe, and gentle background or lighting movement. " +
+  " Motion must remain gentle and realistic, but visibly alive: allow slight breathing, subtle posture shifts, small natural hand movement when safe, and soft background motion. " +
+  " If facial accuracy is at risk, keep faces still and redirect motion to hands, shoulders, clothing, hair, or background. " +
   " Avoid large or fast motion, interaction that may distort faces, synchronized group movement, and camera movement. " +
   " Keep all faces stable and unchanged throughout the scene. " +
   " The scene must remain visually stable until the final frame.",
-  
+
   landscape:
     BASE +
     " No characters to animate. Environmental motion only. " +

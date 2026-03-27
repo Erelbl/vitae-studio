@@ -11,8 +11,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *
  * Prerequisites:
  * - Film project must exist
- * - All scenes must be either "rendered" (have an MP4) OR "narration_ready" with
- *   duration_ms set (have audio or are silent — e.g. cover/back_cover).
+ * - All content scenes (excluding cover/back_cover) must be either "rendered" (have an MP4)
+ *   OR "narration_ready" with duration_ms set (have audio).
  *   narration_ready scenes are automatically queued for rendering; the render
  *   worker renders them first, then auto-assembles once all are done.
  *
@@ -57,9 +57,9 @@ export async function POST(
 
   // Fetch all scenes for validation
   // Include duration_ms so we can verify narration_ready scenes have a duration set.
-  const { data: scenes, error: scenesErr } = await adminClient
+  const { data: rawScenes, error: scenesErr } = await adminClient
     .from("film_scenes")
-    .select("id, scene_order, status, rendered_scene_path, duration_ms")
+    .select("id, scene_order, status, rendered_scene_path, duration_ms, page_spread_key")
     .eq("film_project_id", filmProject.id as string)
     .order("scene_order");
 
@@ -70,7 +70,13 @@ export async function POST(
     );
   }
 
-  if (!scenes || scenes.length === 0) {
+  // Exclude album-only page types — safety net for projects built before this exclusion
+  const FILM_EXCLUDED_SPREAD_KEYS = new Set(["cover", "back_cover"]);
+  const scenes = (rawScenes ?? []).filter(
+    (s) => !FILM_EXCLUDED_SPREAD_KEYS.has((s.page_spread_key as string | null) ?? "")
+  );
+
+  if (scenes.length === 0) {
     return NextResponse.json(
       { error: "No scenes found. Build scenes first." },
       { status: 400 }
@@ -79,9 +85,9 @@ export async function POST(
 
   // A scene is assembly-ready if:
   //   - status === "rendered"         → already has an MP4; can be assembled directly
-  //   - status === "narration_ready"  → has audio (or is a silent-audio scene like
-  //     cover/back_cover) and a confirmed duration. We queue it for rendering now;
-  //     the render worker will render it first, then auto-assemble once all are done.
+  //   - status === "narration_ready"  → has audio and a confirmed duration.
+  //     We queue it for rendering now; the render worker will render it first,
+  //     then auto-assemble once all are done.
   //
   // Any other status (pending, queued, rendering, error) means the scene is not yet
   // ready and assembly must be blocked.

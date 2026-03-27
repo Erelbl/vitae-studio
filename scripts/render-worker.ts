@@ -310,15 +310,23 @@ async function fetchAssemblyReadyProjects(): Promise<
   // For each candidate, verify all scenes are rendered
   const ready: Array<{ id: string; order_id: string }> = [];
 
+  // cover and back_cover are excluded from the film pipeline and from assembly.
+  const FILM_EXCLUDED_SPREAD_KEYS = new Set(["cover", "back_cover"]);
+
   for (const proj of projects) {
     const { data: scenes } = await adminClient
       .from("film_scenes")
-      .select("status")
+      .select("status, page_spread_key")
       .eq("film_project_id", proj.id as string);
 
     if (!scenes || scenes.length === 0) continue;
 
-    const allRendered = scenes.every((s) => s.status === "rendered");
+    const assemblyScenes = scenes.filter(
+      (s) => !FILM_EXCLUDED_SPREAD_KEYS.has((s.page_spread_key as string | null) ?? "")
+    );
+    if (assemblyScenes.length === 0) continue;
+
+    const allRendered = assemblyScenes.every((s) => s.status === "rendered");
     if (allRendered) {
       ready.push({
         id: proj.id as string,

@@ -90,7 +90,7 @@ export async function POST(
   // Fetch scenes to process
   let query = adminClient
     .from("film_scenes")
-    .select("id, narration_text, status")
+    .select("id, narration_text, status, page_spread_key")
     .eq("film_project_id", filmProjectId)
     .order("scene_order");
 
@@ -98,7 +98,7 @@ export async function POST(
     query = query.in("id", sceneIds);
   }
 
-  const { data: scenes, error: scenesError } = await query;
+  const { data: rawScenes, error: scenesError } = await query;
 
   if (scenesError) {
     return NextResponse.json(
@@ -107,7 +107,13 @@ export async function POST(
     );
   }
 
-  if (!scenes || scenes.length === 0) {
+  // Exclude album-only page types — safety net for projects built before this exclusion
+  const FILM_EXCLUDED_SPREAD_KEYS = new Set(["cover", "back_cover"]);
+  const scenes = (rawScenes ?? []).filter(
+    (s) => !FILM_EXCLUDED_SPREAD_KEYS.has((s.page_spread_key as string | null) ?? "")
+  );
+
+  if (scenes.length === 0) {
     return NextResponse.json({ generated: 0, skipped: 0, failed: 0, errors: [] });
   }
 

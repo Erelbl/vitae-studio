@@ -1008,8 +1008,9 @@ export async function renderScene(
     }
 
     // ── Derive page type from spread key ─────────────────────────────────
-    // Cover, dedication, and back_cover scenes have page_spread_key matching
-    // their page_type. Content spreads have keys like "spread_01".
+    // Content spreads have page_spread_key like "spread_01".
+    // Legacy scenes may have page_spread_key "cover", "dedication", or "back_cover"
+    // (those page types are excluded from new scene builds but may exist in older DB rows).
     const spreadKey = (sceneRow.page_spread_key as string | null) ?? "";
     const specialTypes = new Set(["cover", "dedication", "back_cover"]);
     const pageType: string | null = specialTypes.has(spreadKey) ? spreadKey : null;
@@ -1253,7 +1254,7 @@ export async function renderScene(
 
       // Update scene record
       const actualDurationMs = Math.round((durationInFrames / fps) * 1000);
-      await adminClient
+      const { error: dbUpdateError } = await adminClient
         .from("film_scenes")
         .update({
           status: "rendered",
@@ -1265,6 +1266,16 @@ export async function renderScene(
           updated_at: new Date().toISOString(),
         })
         .eq("id", sceneId);
+
+      if (dbUpdateError) {
+        console.error(
+          `[film-render] Scene ${sceneId} rendered OK but DB update failed — rendered_scene_path NOT persisted.`,
+          dbUpdateError.message
+        );
+        throw new Error(
+          `DB update failed after successful render: ${dbUpdateError.message}`
+        );
+      }
 
       const rightSrc = rightKlingUrl ? "kling" : "static";
       const leftSrc  = isSpread ? (leftKlingUrl ? "kling" : "static") : "n/a";

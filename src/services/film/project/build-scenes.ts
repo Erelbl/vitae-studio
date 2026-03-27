@@ -57,7 +57,7 @@ export async function buildScenes(
 
   // ── Group pages into spreads ──────────────────────────────────────────────
   // Matches the AlbumPreview spread logic: consecutive pairs of pages.
-  // Special page types (cover, back_cover, dedication) get their own scene.
+  // cover and back_cover are excluded from the film pipeline entirely.
   const spreads = buildSpreads(
     pages as Array<{
       id: string;
@@ -142,15 +142,17 @@ interface Spread {
   pages: PageRow[];
 }
 
-// "dedication" is intentionally excluded: dedication pages are no longer created for new
-// albums. Any legacy page with page_type="dedication" will be treated as a content page
-// and paired into a spread, matching the album preview rendering (which also falls through
-// to ContentPage for unknown/legacy page types).
-const SPECIAL_PAGE_TYPES = new Set(["cover", "back_cover"]);
+// Album page types excluded from the film pipeline entirely.
+// cover and back_cover are album-only assets — they are not narrated, not rendered
+// as film scenes, and not included in the final film assembly.
+// Future intro/outro assets will be separate film concepts, not album page-derived.
+// Any legacy page with page_type="dedication" is treated as a content page and paired
+// into a spread, matching the album preview rendering behaviour.
+const FILM_EXCLUDED_PAGE_TYPES = new Set(["cover", "back_cover"]);
 
 /**
  * Groups album pages into spreads for the film timeline.
- * Special pages (cover, back_cover) become standalone scenes.
+ * Pages of excluded types (cover, back_cover) are skipped entirely.
  * All other pages (illustration_and_text, text_only, and legacy dedication) are
  * paired into 2-page spreads, matching the album preview.
  */
@@ -159,15 +161,11 @@ function buildSpreads(pages: PageRow[]): Spread[] {
   const contentPages: PageRow[] = [];
 
   for (const page of pages) {
-    if (SPECIAL_PAGE_TYPES.has(page.page_type)) {
-      spreads.push({
-        key: page.page_type, // "cover", "dedication", "back_cover"
-        title: spreadTitle(page.page_type),
-        pages: [page],
-      });
-    } else {
-      contentPages.push(page);
+    if (FILM_EXCLUDED_PAGE_TYPES.has(page.page_type)) {
+      // Excluded from the film pipeline — not narrated, rendered, or assembled
+      continue;
     }
+    contentPages.push(page);
   }
 
   // Pair content pages into 2-page spreads
@@ -185,24 +183,5 @@ function buildSpreads(pages: PageRow[]): Spread[] {
     spreadIndex++;
   }
 
-  // Sort: cover first, then content spreads in order, then back_cover last
-  return spreads.sort((a, b) => spreadSortOrder(a.key) - spreadSortOrder(b.key));
-}
-
-function spreadSortOrder(key: string): number {
-  if (key === "cover") return 0;
-  if (key.startsWith("spread_")) return 100 + parseInt(key.split("_")[1], 10);
-  if (key === "back_cover") return 9999;
-  return 500;
-}
-
-function spreadTitle(pageType: string): string | null {
-  switch (pageType) {
-    case "cover":
-      return "כריכה קדמית";
-    case "back_cover":
-      return "כריכה אחורית";
-    default:
-      return null;
-  }
+  return spreads;
 }

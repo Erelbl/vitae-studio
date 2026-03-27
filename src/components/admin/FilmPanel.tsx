@@ -412,10 +412,9 @@ export function FilmPanel({
 
   // A scene is "assembly-ready" if:
   //   - status === "rendered"  → already has a rendered MP4 video
-  //   - status === "narration_ready" with duration_ms set → has audio (or is a
-  //     silent-audio scene like cover/back_cover) and will be queued for rendering
-  //     when the admin clicks "Assemble Film". The render worker processes those
-  //     queued scenes first, then auto-assembles once all are rendered.
+  //   - status === "narration_ready" with duration_ms set → has audio and will be
+  //     queued for rendering when the admin clicks "Assemble Film". The render worker
+  //     processes those queued scenes first, then auto-assembles once all are rendered.
   // Scenes in any other status (pending, queued, rendering, error) are NOT ready.
   const assemblyReadyCount = scenes.filter(
     (s) =>

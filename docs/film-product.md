@@ -143,19 +143,19 @@ The **"תיקוני הגייה"** section in the Film panel (`FilmPanel.tsx` + `
 ## Scene Generation (implemented)
 
 ### What a Film Scene Represents
-A film scene maps to one logical "spread" from the album — typically a 2-page pair that will be shown together in the video with narration and motion effects. Special pages (cover, dedication, back_cover) become standalone scenes.
+A film scene maps to one logical "spread" from the album — typically a 2-page pair that will be shown together in the video with narration and motion effects. `cover` and `back_cover` pages are **excluded from the film pipeline** (no narration, no render, not assembled). Future intro/outro assets will be separate film concepts, not album page-derived.
 
 ### How Scenes Are Generated
 1. Admin clicks "בנה סצנות" in the Film panel
 2. `POST /api/admin/orders/[orderId]/film/build-scenes` is called
 3. Server loads all album pages for the order, ordered by `page_number`
-4. Special pages (cover, dedication, back_cover) become standalone scenes
-5. Content pages are paired into 2-page spreads (matching the album preview logic)
+4. `cover` and `back_cover` pages are skipped entirely — not created as scenes
+5. Content pages (illustration_and_text, text_only, and legacy dedication) are paired into 2-page spreads (matching the album preview logic)
 6. Each scene gets:
    - `source_text` — concatenated `text_content` from its pages
    - `narration_text` — whitespace-normalized version (via `buildNarrationText`)
    - `duration_ms` — estimated from text length (~2.5 words/sec Hebrew speech rate)
-   - `page_spread_key` — e.g. "cover", "spread_01", "back_cover"
+   - `page_spread_key` — e.g. "spread_01", "spread_02"
    - `page_ids_json` — array of page UUIDs in this scene
    - Default motion/transition: `ken_burns` / `fade`
 7. Film project status is updated to `scenes_built`

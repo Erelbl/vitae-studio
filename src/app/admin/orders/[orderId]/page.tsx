@@ -256,7 +256,11 @@ export default async function AdminOrderDetailPage({
       .select("*")
       .eq("film_project_id", filmProject.id)
       .order("scene_order");
-    filmScenes = (scenesData ?? []) as unknown as FilmScene[];
+    // Exclude album-only page types — safety net for projects built before this exclusion
+    const FILM_EXCLUDED_SPREAD_KEYS = new Set(["cover", "back_cover"]);
+    filmScenes = ((scenesData ?? []) as unknown as FilmScene[]).filter(
+      (s) => !FILM_EXCLUDED_SPREAD_KEYS.has(s.page_spread_key ?? "")
+    );
   }
 
   // Resolve signed URLs for voice samples + scene thumbnails (1-hour expiry, admin-only access)

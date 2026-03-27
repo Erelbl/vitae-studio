@@ -240,9 +240,21 @@ export async function assembleFilm(
     throw new Error("No scenes found for this film project");
   }
 
+  // ── Exclude album-only page types from assembly ──────────────────────────
+  // cover and back_cover are not part of the film pipeline.
+  // This filter is a safety net for projects built before this exclusion.
+  const FILM_EXCLUDED_SPREAD_KEYS = new Set(["cover", "back_cover"]);
+  const assemblyScenes = scenes.filter(
+    (s) => !FILM_EXCLUDED_SPREAD_KEYS.has((s.page_spread_key as string | null) ?? "")
+  );
+
+  if (assemblyScenes.length === 0) {
+    throw new Error("No assembly-eligible scenes found for this film project");
+  }
+
   // ── Validate all scenes are rendered ────────────────────────────────────
 
-  const notRendered = scenes.filter((s) => s.status !== "rendered");
+  const notRendered = assemblyScenes.filter((s) => s.status !== "rendered");
   if (notRendered.length > 0) {
     const ids = notRendered
       .map((s) => `#${s.scene_order} (${s.status})`)
@@ -252,7 +264,7 @@ export async function assembleFilm(
     );
   }
 
-  const missingVideo = scenes.filter((s) => !s.rendered_scene_path);
+  const missingVideo = assemblyScenes.filter((s) => !s.rendered_scene_path);
   if (missingVideo.length > 0) {
     throw new Error(
       `Cannot assemble: ${missingVideo.length} scene(s) missing rendered_scene_path`
@@ -269,7 +281,7 @@ export async function assembleFilm(
       `[film-assemble] ═══════════════════════════════════════════════════════`
     );
     console.log(
-      `[film-assemble] Assembling ${scenes.length} rendered scene clips ` +
+      `[film-assemble] Assembling ${assemblyScenes.length} rendered scene clips ` +
         `for project ${filmProjectId}`
     );
     console.log(
@@ -290,8 +302,8 @@ export async function assembleFilm(
 
     const clips: ClipEntry[] = [];
 
-    for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
+    for (let i = 0; i < assemblyScenes.length; i++) {
+      const scene = assemblyScenes[i];
       const sceneId = scene.id as string;
       const videoStoragePath = scene.rendered_scene_path as string;
       const audioStoragePath = scene.audio_path as string | null;
@@ -319,7 +331,7 @@ export async function assembleFilm(
       const durationInFrames = Math.max(1, Math.round((durationMs / 1000) * FPS));
 
       console.log(
-        `[film-assemble] [${i + 1}/${scenes.length}] ✓ Signed URLs ready: ` +
+        `[film-assemble] [${i + 1}/${assemblyScenes.length}] ✓ Signed URLs ready: ` +
           `key=${spreadKey} duration=${(durationMs / 1000).toFixed(2)}s ` +
           `(${durationInFrames} frames) audio=${audioSignedUrl ? "yes" : "none"} ` +
           `video=HTTPS audio=${audioSignedUrl ? "HTTPS" : "none"}`
@@ -448,10 +460,10 @@ export async function assembleFilm(
       `[film-assemble]   Duration: ${Math.round(finalDurSec)}s`
     );
     console.log(
-      `[film-assemble]   Scenes: ${scenes.length}`
+      `[film-assemble]   Scenes: ${assemblyScenes.length}`
     );
     console.log(
-      `[film-assemble]   Transitions: ${Math.max(0, scenes.length - 1)} × wipeleft`
+      `[film-assemble]   Transitions: ${Math.max(0, assemblyScenes.length - 1)} × wipeleft`
     );
     console.log(
       `[film-assemble] ═══════════════════════════════════════════════════════`
