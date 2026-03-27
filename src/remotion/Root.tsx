@@ -61,6 +61,7 @@ export function Root() {
         defaultProps={{
           clips: [],
           transitionDurationInFrames: 24,
+          enableTransitionSound: false,
         } satisfies FinalFilmCompositionProps}
       />
     </>

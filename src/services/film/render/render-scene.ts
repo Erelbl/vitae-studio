@@ -709,7 +709,7 @@ async function fetchScenePageData(
  * 1. Fetch scene row + resolve page layout/image data
  * 2. Pass layout-faithful props to the Remotion composition
  * 3. Render video with renderMedia() — silent (no audio in this phase)
- * 4. Render thumbnail with renderStill() at 15% of the duration
+ * 4. Render thumbnail with renderStill() at ~80% of duration (late stable frame — past text/left-page reveal, before fade-out)
  * 5. Upload both to film storage
  * 6. Update film_scenes row (status, paths, render_hash)
  *
@@ -1072,8 +1072,12 @@ export async function renderScene(
         inputProps: compositionProps,
       });
 
-      // Render thumbnail at ~15% of the scene
-      const thumbFrame = Math.max(0, Math.round(durationInFrames * 0.15));
+      // Render thumbnail from the late stable part of the scene:
+      // - target 80% (past text reveal at 65% and left-page activation for spreads)
+      // - clamp before fade-out (last FADE_FRAMES frames)
+      const FADE_FRAMES = 15; // matches SceneComposition constant
+      const fadeOutStart = Math.max(0, durationInFrames - FADE_FRAMES);
+      const thumbFrame = Math.min(Math.round(durationInFrames * 0.80), Math.max(0, fadeOutStart - 1));
       console.log(`[film-render] Rendering thumbnail at frame ${thumbFrame}`);
       await renderStill({
         composition: compositionWithDuration,

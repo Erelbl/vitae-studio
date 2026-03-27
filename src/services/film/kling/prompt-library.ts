@@ -35,23 +35,43 @@ const BASE =
   "No visible hand, no drawing tools, no active sketching, and no artificial timelapse drawing effect. " +
   "The reveal must be soft, refined, and blend naturally into the scene's motion.";
 
+/**
+ * FACIAL INTEGRITY RULES — applied to all prompts involving characters.
+ * Facial identity preservation is the highest priority.
+ * If the model cannot preserve faces perfectly, it must not animate them at all.
+ */
+const FACIAL_INTEGRITY_RULES =
+  " FACIAL INTEGRITY RULES: Facial identity preservation is the absolute highest priority. " +
+  "Preserve the exact facial structure, proportions, eye placement, nose shape, mouth shape, and hairstyle of every character precisely as illustrated. " +
+  "No AI face drift. No re-interpretation, smoothing, or stylistic deviation of any facial feature. " +
+  "Do not alter expressions significantly. Do not move lips or eyes in ways that risk distorting identity. " +
+  "If there is any uncertainty about preserving a face perfectly, do NOT animate that face. " +
+  "Instead, keep the face completely still and redirect all motion to: soft breathing, subtle posture shift, hand movement, hair movement, clothing movement, or environmental motion such as light, background, and shadows. " +
+  "No cartoonization of faces. No jitter. No flicker on facial regions.";
+
 export const PROMPT_LIBRARY: Record<SceneType, string> = {
   single_character:
     BASE +
+    FACIAL_INTEGRITY_RULES +
     " Focus on the single character. " +
-    "Add gentle eye blinking, slight natural head movement, and soft breathing. " +
+    "Allow minimal natural motion only: micro-expressions are permitted only if the face remains completely stable. " +
+    "Add soft breathing and very slight natural posture shift. " +
+    "No exaggerated expressions. " +
     "Allow minimal hand or finger movement if hands are visible. " +
     "The character must remain visually consistent and naturally anchored in the frame. " +
     "Camera is fixed or drifts very slightly without reframing.",
 
   multiple_characters:
     BASE +
+    FACIAL_INTEGRITY_RULES +
     " Preserve every character exactly as illustrated: faces, clothing, proportions, and relationships. " +
     "Maintain the exact spatial relationship between all characters. " +
+    "Reduce facial motion significantly — faces must remain mostly still and stable. " +
+    "Prioritize scene stability over facial movement. " +
+    "Do not animate any interaction between characters that may distort their faces. " +
     "Bring the scene alive with clearly visible but minimal natural motion: " +
-    "each character may blink, make small individual head movements, and gentle body shifts. " +
+    "each character may show gentle body shifts, soft breathing, and slow hair or clothing movement. " +
     "Where hands are visible, allow a slow natural hand gesture or finger movement. " +
-    "Characters may exchange soft eye contact or a subtle lean toward each other. " +
     "Not all characters should move at the same moment. " +
     "Motion must be staggered and natural, never synchronized or puppet-like. " +
     "No invented new actions, no large movement, no face warping. " +
@@ -67,14 +87,17 @@ export const PROMPT_LIBRARY: Record<SceneType, string> = {
 
   character_action:
     BASE +
+    FACIAL_INTEGRITY_RULES +
     " Allow natural, meaningful movement that fits the illustrated pose and scene. " +
     "Movement can include walking, turning, or interacting, but must remain smooth, controlled, and realistic. " +
+    "Faces must remain stable and undistorted throughout all motion — no deformation under movement. " +
     "Keep the action visually coherent with the original composition and do not introduce strange or exaggerated motion. " +
     "Preserve character identity throughout. " +
     "Camera may follow very slightly only if needed, without breaking the original framing.",
 
   fallback:
     BASE +
+    FACIAL_INTEGRITY_RULES +
     " Preserve the entire scene exactly as illustrated. " +
     "Add only the most minimal believable ambient motion. " +
     "No invented elements. Camera is fixed.",
@@ -93,6 +116,7 @@ export const NSFW_RETRY_PROMPT =
   "Children's book watercolor illustration. Fully clothed characters only. " +
   "Family-friendly, G-rated scene. No adult, sensual, or suggestive content of any kind. " +
   BASE +
+  FACIAL_INTEGRITY_RULES +
   " Preserve all characters exactly as illustrated: faces, clothing, proportions, and relationships. " +
-  "Add only the most minimal believable ambient motion: gentle eye blinking and soft breathing. " +
+  "Add only the most minimal believable ambient motion: soft breathing and gentle clothing movement. " +
   "No large movement. No invented elements. Camera is fixed.";

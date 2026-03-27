@@ -21,6 +21,7 @@ import {
   useCurrentFrame,
   interpolate,
 } from "remotion";
+import { PageTurnTransition } from "./PageTurnTransition";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,47 +44,13 @@ export interface FinalFilmCompositionProps {
   clips: ClipEntry[];
   /** Duration of the page-turn transition overlap in frames (e.g. 24 = 0.8s @30fps). */
   transitionDurationInFrames: number;
-}
-
-// ── Transition overlay ───────────────────────────────────────────────────────
-
-/**
- * Wipeleft transition: outgoing clip wipes off to the left while the incoming
- * clip is revealed from the right. Simulates physically turning a page
- * right-to-left (Hebrew reading direction).
- *
- * During the overlap window, both clips are rendered. The outgoing clip's
- * visible region shrinks from right, and the incoming clip's visible region
- * grows from right — creating a clean wipe edge that sweeps left.
- */
-function WipeleftTransition({
-  progress,
-  children,
-  direction,
-}: {
-  progress: number;
-  children: React.ReactNode;
-  direction: "outgoing" | "incoming";
-}) {
-  if (direction === "outgoing") {
-    // Outgoing: clip away from the right side as progress increases
-    // At progress=0: fully visible. At progress=1: fully clipped away.
-    const clipRight = `${progress * 100}%`;
-    return (
-      <AbsoluteFill style={{ clipPath: `inset(0 ${clipRight} 0 0)` }}>
-        {children}
-      </AbsoluteFill>
-    );
-  }
-
-  // Incoming: reveal from the right side as progress increases
-  // At progress=0: fully clipped. At progress=1: fully visible.
-  const clipLeft = `${(1 - progress) * 100}%`;
-  return (
-    <AbsoluteFill style={{ clipPath: `inset(0 0 0 ${clipLeft})` }}>
-      {children}
-    </AbsoluteFill>
-  );
+  /**
+   * Play the page-turn sound effect on each transition.
+   * Requires public/sounds/page-turn.mp3 to exist and be included in the
+   * Remotion bundle (run `npm run bundle:remotion` after adding the file).
+   * Default: false — set to true once the sound file is in place.
+   */
+  enableTransitionSound?: boolean;
 }
 
 // ── Clip with transition ─────────────────────────────────────────────────────
@@ -94,12 +61,14 @@ function ClipWithTransition({
   totalClips,
   transitionDurationInFrames,
   startFrame,
+  enableTransitionSound,
 }: {
   clip: ClipEntry;
   clipIndex: number;
   totalClips: number;
   transitionDurationInFrames: number;
   startFrame: number;
+  enableTransitionSound: boolean;
 }) {
   const frame = useCurrentFrame();
   const localFrame = frame - startFrame;
@@ -130,21 +99,28 @@ function ClipWithTransition({
   const isInEntryTransition = !isFirst && entryProgress < 1;
   const isInExitTransition = !isLast && exitProgress > 0;
 
-  // During entry: this clip is the "incoming" one being revealed
+  // During entry: this clip is the INCOMING one revealed beneath the turning page.
+  // Sits at zIndex 1 (below the outgoing page at zIndex 2).
   if (isInEntryTransition) {
     return (
-      <WipeleftTransition progress={entryProgress} direction="incoming">
+      <PageTurnTransition progress={entryProgress} role="incoming">
         <OffthreadVideo src={clip.src} />
-      </WipeleftTransition>
+      </PageTurnTransition>
     );
   }
 
-  // During exit: this clip is the "outgoing" one being wiped away
+  // During exit: this clip is the OUTGOING page turning away.
+  // Sits at zIndex 2 (above the incoming scene at zIndex 1).
+  // Sound plays at the start of the turn (frame 0 of the exit window).
   if (isInExitTransition) {
     return (
-      <WipeleftTransition progress={exitProgress} direction="outgoing">
+      <PageTurnTransition
+        progress={exitProgress}
+        role="outgoing"
+        enableSound={enableTransitionSound}
+      >
         <OffthreadVideo src={clip.src} />
-      </WipeleftTransition>
+      </PageTurnTransition>
     );
   }
 
@@ -199,6 +175,7 @@ export function computeTotalDuration(
 export function FinalFilmComposition({
   clips,
   transitionDurationInFrames,
+  enableTransitionSound = false,
 }: FinalFilmCompositionProps) {
   if (clips.length === 0) {
     return <AbsoluteFill style={{ backgroundColor: "#111" }} />;
@@ -227,6 +204,7 @@ export function FinalFilmComposition({
             totalClips={clips.length}
             transitionDurationInFrames={td}
             startFrame={starts[i]}
+            enableTransitionSound={enableTransitionSound}
           />
         </Sequence>
       ))}
