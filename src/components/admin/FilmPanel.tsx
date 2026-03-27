@@ -6,6 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TtsOverridesEditor } from "@/components/admin/TtsOverridesEditor";
 import { previewNarrationText } from "@/services/film/utils/preview-narration-text";
+import {
+  Mic,
+  Play,
+  RotateCcw,
+  Clock,
+  Film,
+  Music,
+  ChevronDown,
+  ChevronUp,
+  Volume2,
+  AlertTriangle,
+  Loader2,
+} from "lucide-react";
 import type {
   FilmProject,
   FilmProjectStatus,
@@ -725,15 +738,15 @@ export function FilmPanel({
             </div>
 
             {/* Scene column headers */}
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground/70 uppercase tracking-wide px-0.5 border-b border-border/30 pb-1.5">
+            <div className="flex items-center gap-3 text-[10px] text-muted-foreground/70 uppercase tracking-wide px-1 border-b border-border/30 pb-2">
               <span className="shrink-0 w-[14px]" />
-              <span className="shrink-0 w-10 text-center">תמונה</span>
+              <span className="shrink-0 w-16 text-center">תמונה</span>
               <span className="shrink-0 w-5 text-center">#</span>
               <span className="shrink-0 w-20">פריסה</span>
               <span className="flex-1">טקסט</span>
-              <span className="shrink-0 w-14 text-end">שמע / משך</span>
-              <span className="shrink-0 w-16 text-end">סטטוס</span>
-              <span className="shrink-0 w-[122px]" />
+              <span className="shrink-0 w-16 text-end">שמע / משך</span>
+              <span className="shrink-0 w-20 text-end">סטטוס</span>
+              <span className="shrink-0 w-[148px]" />
             </div>
 
             {/* Scene rows */}
@@ -905,8 +918,8 @@ function SceneRow({
   const [expanded, setExpanded] = useState(false);
 
   const textPreview = scene.narration_text
-    ? scene.narration_text.length > 55
-      ? scene.narration_text.slice(0, 55) + "…"
+    ? scene.narration_text.length > 80
+      ? scene.narration_text.slice(0, 80) + "…"
       : scene.narration_text
     : "—";
 
@@ -929,7 +942,7 @@ function SceneRow({
   return (
     <div className="border-b border-border/20 last:border-0">
       {/* ── Compact row ─────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 text-xs py-2 group hover:bg-muted/20 transition-colors px-0.5 rounded-sm">
+      <div className="flex items-center gap-3 text-xs py-3 group hover:bg-muted/20 transition-colors px-1 rounded-sm">
         {/* Checkbox */}
         <input
           type="checkbox"
@@ -940,8 +953,8 @@ function SceneRow({
           aria-label={`בחר סצנה ${scene.scene_order}`}
         />
 
-        {/* Thumbnail */}
-        <div className="shrink-0 w-10 h-7 rounded overflow-hidden bg-muted/50 border border-border/30">
+        {/* Thumbnail — enlarged */}
+        <div className="shrink-0 w-16 h-11 rounded-md overflow-hidden bg-muted/50 border border-border/40 shadow-sm">
           {thumbnailUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -950,8 +963,8 @@ function SceneRow({
               className="w-full h-full object-contain"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-muted-foreground/50 text-[8px]">
-              {scene.status === "rendered" ? "?" : "—"}
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground/40">
+              <Film className="w-4 h-4" />
             </div>
           )}
         </div>
@@ -970,61 +983,64 @@ function SceneRow({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex-1 min-w-0 text-start truncate text-[11px] hover:text-foreground transition-colors cursor-pointer"
+          className="flex-1 min-w-0 text-start truncate text-[12px] leading-snug text-foreground/80 hover:text-foreground transition-colors cursor-pointer"
           title={expanded ? "סגור פרטי קריינות" : "הצג פרטי קריינות"}
           dir="rtl"
         >
           {scene.title ? (
-            <span className="font-medium">{scene.title} — </span>
+            <span className="font-semibold text-foreground">{scene.title} — </span>
           ) : null}
           {textPreview}
           {hasOverrides && (
-            <span className="ms-1 text-amber-500 text-[9px]" title="יש תיקוני הגייה">
-              ✎
+            <span className="ms-1.5 text-amber-500" title="יש תיקוני הגייה">
+              <Mic className="inline w-3 h-3" />
             </span>
           )}
         </button>
 
         {/* Audio duration / estimated duration */}
-        <div className="shrink-0 w-14 text-end tabular-nums leading-tight">
+        <div className="shrink-0 w-16 text-end tabular-nums leading-tight">
           {hasAudio ? (
             audioUrl ? (
               <button
                 type="button"
                 onClick={() => setExpanded(true)}
-                className="text-blue-600 font-medium text-[11px] hover:underline cursor-pointer"
+                className="inline-flex items-center gap-1 text-blue-600 font-medium text-[11px] hover:underline cursor-pointer"
                 title="פתח פרטי קריינות ונגן שמע"
               >
-                🔊 {audioDurationSec}s
+                <Volume2 className="w-3 h-3 shrink-0" />
+                {audioDurationSec}s
               </button>
             ) : (
               <span
-                className="text-red-500 text-[11px] cursor-help"
+                className="inline-flex items-center gap-1 text-red-500 text-[11px] cursor-help"
                 title="שמע קיים אך לא ניתן היה ליצור קישור. רענן את הדף."
               >
-                🔊 ⚠
+                <Volume2 className="w-3 h-3 shrink-0" />
+                <AlertTriangle className="w-3 h-3 shrink-0" />
               </span>
             )
           ) : (
-            <span className="text-muted-foreground text-[11px]" title="משך מוערך">
+            <span className="inline-flex items-center gap-1 text-muted-foreground text-[11px]" title="משך מוערך">
+              <Clock className="w-3 h-3 shrink-0" />
               ~{durationSec}s
             </span>
           )}
         </div>
 
         {/* Status */}
-        <span className={`shrink-0 w-16 text-end font-medium ${statusColor}`}>
+        <span className={`shrink-0 w-20 text-end font-medium text-[11px] ${statusColor}`}>
           {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
         </span>
 
         {/* Audio + Queue + Video buttons */}
-        <div className="shrink-0 flex items-center gap-1">
+        <div className="shrink-0 flex items-center gap-1.5">
           {/* Generate audio */}
           <button
             type="button"
             onClick={onGenerateAudio}
             disabled={disabled || isGeneratingAudio || !canGenerateAudio}
-            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border disabled:opacity-35 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground"
             title={
               !canGenerateAudio
                 ? "בחר קול תחילה"
@@ -1033,7 +1049,13 @@ function SceneRow({
                 : "צור שמע"
             }
           >
-            {isGeneratingAudio ? "…" : hasAudio ? "🔊" : "🎙"}
+            {isGeneratingAudio ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : hasAudio ? (
+              <Volume2 className="w-3.5 h-3.5 text-blue-500" />
+            ) : (
+              <Mic className="w-3.5 h-3.5" />
+            )}
           </button>
 
           {/* Queue for render */}
@@ -1046,7 +1068,7 @@ function SceneRow({
               scene.status === "queued" ||
               scene.status === "rendering"
             }
-            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border disabled:opacity-35 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground"
             title={
               scene.status === "queued"
                 ? "בתור לרינדור"
@@ -1057,15 +1079,17 @@ function SceneRow({
                 : "הוסף לתור רינדור"
             }
           >
-            {isRendering
-              ? "…"
-              : scene.status === "queued"
-              ? "⏳"
-              : scene.status === "rendering"
-              ? "⚙"
-              : scene.status === "rendered"
-              ? "↺"
-              : "▶"}
+            {isRendering ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : scene.status === "queued" ? (
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+            ) : scene.status === "rendering" ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+            ) : scene.status === "rendered" ? (
+              <RotateCcw className="w-3.5 h-3.5" />
+            ) : (
+              <Play className="w-3.5 h-3.5" />
+            )}
           </button>
 
           {videoUrl ? (
@@ -1073,49 +1097,53 @@ function SceneRow({
               href={videoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-blue-600"
+              className="h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border transition-colors text-blue-600 hover:text-blue-700"
               title="צפה בסרטון (נפתח בטאב חדש)"
             >
-              ▶
+              <Play className="w-3.5 h-3.5 fill-current" />
             </a>
           ) : (
-            <span className="w-6" />
+            <span className="w-7" />
           )}
 
           {/* Per-scene download: video */}
           {scene.rendered_scene_path ? (
             <a
               href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=video`}
-              className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+              className="h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border transition-colors text-muted-foreground hover:text-foreground"
               title="הורד סרטון (MP4)"
             >
-              🎬
+              <Film className="w-3.5 h-3.5" />
             </a>
           ) : (
-            <span className="w-6" />
+            <span className="w-7" />
           )}
 
           {/* Per-scene download: audio */}
           {scene.audio_path ? (
             <a
               href={`/api/admin/orders/${orderId}/film/download-asset?sceneId=${scene.id}&type=audio`}
-              className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+              className="h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border transition-colors text-muted-foreground hover:text-foreground"
               title="הורד שמע קריינות (MP3)"
             >
-              🎵
+              <Music className="w-3.5 h-3.5" />
             </a>
           ) : (
-            <span className="w-6" />
+            <span className="w-7" />
           )}
 
           {/* Expand/collapse narration detail */}
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="h-6 w-6 flex items-center justify-center rounded text-[10px] border border-border/50 hover:bg-muted/60 transition-colors text-muted-foreground"
+            className="h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border transition-colors text-muted-foreground hover:text-foreground"
             title={expanded ? "סגור פרטי קריינות" : "פרטי קריינות ותיקוני הגייה"}
           >
-            {expanded ? "▲" : "▼"}
+            {expanded ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
           </button>
         </div>
 
@@ -1125,7 +1153,7 @@ function SceneRow({
             className="shrink-0 text-red-500 cursor-help"
             title={scene.error_message}
           >
-            ⚠
+            <AlertTriangle className="w-3.5 h-3.5" />
           </span>
         )}
       </div>
