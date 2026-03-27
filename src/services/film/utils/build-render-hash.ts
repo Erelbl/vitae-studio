@@ -13,6 +13,9 @@ interface RenderHashInput {
    *  Kling videos changes the hash and triggers an automatic re-render. */
   klingRightPath?: string | null;
   klingLeftPath?: string | null;
+  /** Unified-spread Kling video path — set instead of right/left paths when
+   *  is_unified_spread is true. Changes the hash so re-render is triggered. */
+  klingSpreadPath?: string | null;
 }
 
 /**
@@ -28,8 +31,9 @@ export function buildRenderHash(input: RenderHashInput): string {
     transitionOut: input.transitionOut,
     pageIds: input.pageIds,
     imageVersions: input.imageVersions ?? [],
-    klingRightPath: input.klingRightPath ?? null,
-    klingLeftPath:  input.klingLeftPath  ?? null,
+    klingRightPath:  input.klingRightPath  ?? null,
+    klingLeftPath:   input.klingLeftPath   ?? null,
+    klingSpreadPath: input.klingSpreadPath ?? null,
   });
 
   return createHash("sha256").update(payload).digest("hex").slice(0, 16);

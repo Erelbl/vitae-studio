@@ -311,42 +311,17 @@ async function uploadKlingAsset(
 
 /**
  * Builds the Kling input image by exactly reproducing the CSS ImageFill rendering
- * onto a square canvas. This is the authoritative source of truth for FULL_IMAGE,
- * FULL_IMAGE_TEXT_TOP, and FULL_IMAGE_TEXT_CENTER layouts.
+ * onto a square canvas and returns the raw JPEG buffer.
  *
- * The old prepareCroppedImageForKling() is NOT used for these layouts — it is an
- * approximation that fails when scale > 1, image is non-square, or inset is nonzero
- * (because CSS inset() fractions are relative to the wrapper, not to the source image).
+ * This is the low-level helper. Call buildPreviewBakedKlingImage() when you also
+ * need the image uploaded and a signed URL returned.
  *
- * CSS model reproduced (AlbumPageView.tsx / SceneComposition.tsx ImageFill):
- *
- *   [canvas: CANVAS_SIZE × CANVAS_SIZE, background: BG_CARD]
- *     [overflow:hidden container, SVG mask applied when frameStyle is set]
- *       [wrapper:
- *          width  = scale × CANVAS_SIZE
- *          height = scale × CANVAS_SIZE
- *          left   = (cropX − scale/2) × CANVAS_SIZE
- *          top    = (cropY − scale/2) × CANVAS_SIZE
- *          clipPath: inset(insetT insetR insetB insetL)  ← fractions of WRAPPER]
- *         [img: objectFit = contain (no frameStyle) | cover (frameStyle)]
- *
- * The result is a 1024×1024 JPEG that matches the preview frame exactly, including:
- *   - correct scale/pan positioning
- *   - objectFit contain/cover framing (letterboxing preserved for contain)
- *   - inset clipping relative to wrapper (not source image)
- *   - frame mask baked in when frameStyle is set
- *   - BG_CARD background (#F6F3E9) in all empty/letterbox areas
- *
- * SceneComposition renders Kling video at 100%×100% (no re-applied crop math),
- * so the baked canvas must represent the full page frame.
+ * See buildPreviewBakedKlingImage() for the full CSS model documentation.
  */
-async function buildPreviewBakedKlingImage(
+async function buildPreviewBakedKlingImageBuffer(
   slot: SlotImageData,
   tag: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  adminClient: any,
-  storageBucket: string
-): Promise<string> {
+): Promise<Buffer> {
   const CANVAS_SIZE = 1024;
   const BG = { r: 246, g: 243, b: 233 }; // BG_CARD (#F6F3E9)
 
@@ -409,10 +384,9 @@ async function buildPreviewBakedKlingImage(
   // Nothing visible → return blank BG_CARD canvas
   if (visWi <= 0 || visHi <= 0) {
     console.log(`${tag} no canvas overlap — returning blank BG_CARD canvas`);
-    const buf = await sharp({
+    return sharp({
       create: { width: CANVAS_SIZE, height: CANVAS_SIZE, channels: 3, background: BG }
     }).jpeg({ quality: 92 }).toBuffer();
-    return uploadKlingAsset(buf, tag, adminClient, storageBucket);
   }
 
   // ── Step 4: Resize source image into the full wrapper rect with objectFit ──
@@ -456,10 +430,9 @@ async function buildPreviewBakedKlingImage(
 
   if (destW <= 0 || destH <= 0) {
     console.log(`${tag} effective region does not overlap canvas — returning blank`);
-    const buf = await sharp({
+    return sharp({
       create: { width: CANVAS_SIZE, height: CANVAS_SIZE, channels: 3, background: BG }
     }).jpeg({ quality: 92 }).toBuffer();
-    return uploadKlingAsset(buf, tag, adminClient, storageBucket);
   }
 
   const visibleSlice = await sharp(insetBuffer)
@@ -509,7 +482,106 @@ async function buildPreviewBakedKlingImage(
     .toBuffer();
   }
 
-  return uploadKlingAsset(finalBuffer, tag, adminClient, storageBucket);
+  return finalBuffer;
+}
+
+/**
+ * Builds the Kling input image by exactly reproducing the CSS ImageFill rendering
+ * onto a square 1024×1024 JPEG canvas, uploads it to temp storage, and returns a
+ * signed URL valid for 2 hours.
+ *
+ * CSS model reproduced (AlbumPageView.tsx / SceneComposition.tsx ImageFill):
+ *
+ *   [canvas: CANVAS_SIZE × CANVAS_SIZE, background: BG_CARD]
+ *     [overflow:hidden container, SVG mask applied when frameStyle is set]
+ *       [wrapper:
+ *          width  = scale × CANVAS_SIZE
+ *          height = scale × CANVAS_SIZE
+ *          left   = (cropX − scale/2) × CANVAS_SIZE
+ *          top    = (cropY − scale/2) × CANVAS_SIZE
+ *          clipPath: inset(insetT insetR insetB insetL)  ← fractions of WRAPPER]
+ *         [img: objectFit = contain (no frameStyle) | cover (frameStyle)]
+ *
+ * SceneComposition renders Kling video at 100%×100% (no re-applied crop math),
+ * so the baked canvas represents the full page frame exactly.
+ */
+async function buildPreviewBakedKlingImage(
+  slot: SlotImageData,
+  tag: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  storageBucket: string
+): Promise<string> {
+  const buf = await buildPreviewBakedKlingImageBuffer(slot, tag);
+  return uploadKlingAsset(buf, tag, adminClient, storageBucket);
+}
+
+/**
+ * Builds a unified spread image for Kling by compositing both album pages
+ * side by side at the exact Remotion spread geometry (1920×1080 default).
+ *
+ * Layout matches SceneComposition.tsx spread rendering exactly:
+ *   - Left  page (second page / higher page number) at (leftMargin, topMargin)
+ *   - Right page (primary page / lower page number) at (leftMargin + pageSize, topMargin)
+ *   - Dark (#1a1a1a) background fills the video canvas around the pages
+ *
+ * Uploads the composite and returns a signed URL valid for 2 hours.
+ */
+async function buildSpreadKlingImage(
+  rightSlot: SlotImageData | null,
+  leftSlot: SlotImageData | null,
+  tag: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  storageBucket: string,
+  videoWidth: number,
+  videoHeight: number,
+): Promise<string> {
+  const sharp = (await import("sharp")).default;
+  // Dark background matching Remotion's spread AbsoluteFill background
+  const BG_VIDEO  = { r: 26,  g: 26,  b: 26  }; // #1a1a1a
+  const BG_PAGE   = { r: 246, g: 243, b: 233 }; // BG_CARD fallback for blank page
+
+  // Compute Remotion spread geometry — must match SceneComposition.tsx exactly
+  const pageSize   = Math.min(videoHeight, Math.floor(videoWidth / 2));
+  const topMargin  = Math.floor((videoHeight - pageSize) / 2);
+  const leftMargin = Math.floor((videoWidth  - pageSize * 2) / 2);
+
+  console.log(
+    `${tag} spread canvas=${videoWidth}×${videoHeight}` +
+    ` pageSize=${pageSize} top=${topMargin} left=${leftMargin}`
+  );
+
+  // Bake each page to its 1024×1024 buffer then resize to video page size
+  const blankBuf = await sharp({
+    create: { width: pageSize, height: pageSize, channels: 3, background: BG_PAGE }
+  }).jpeg({ quality: 92 }).toBuffer();
+
+  const resize = async (buf: Buffer): Promise<Buffer> =>
+    sharp(buf).resize(pageSize, pageSize, { fit: "fill" }).png().toBuffer();
+
+  const rightResized = rightSlot
+    ? await resize(await buildPreviewBakedKlingImageBuffer(rightSlot, `${tag}/right`))
+    : blankBuf;
+
+  const leftResized = leftSlot
+    ? await resize(await buildPreviewBakedKlingImageBuffer(leftSlot, `${tag}/left`))
+    : blankBuf;
+
+  // Composite onto full video canvas (dark background, pages positioned as in Remotion)
+  const spreadBuf = await sharp({
+    create: { width: videoWidth, height: videoHeight, channels: 3, background: BG_VIDEO }
+  })
+  .composite([
+    { input: leftResized,  left: leftMargin,            top: topMargin },
+    { input: rightResized, left: leftMargin + pageSize,  top: topMargin },
+  ])
+  .jpeg({ quality: 92 })
+  .toBuffer();
+
+  console.log(`${tag} spread image built: ${(spreadBuf.byteLength / 1024).toFixed(0)} KB`);
+
+  return uploadKlingAsset(spreadBuf, tag, adminClient, storageBucket);
 }
 
 // ── Page data resolution ──────────────────────────────────────────────────────
@@ -776,103 +848,159 @@ export async function renderScene(
     let leftKlingUrl:  string | null = null;
     // Track the actual resolved Kling storage paths for this run.
     // Hoisted outside the KIE block so the render hash and re-fetch can access them.
-    let resolvedRightKlingPath: string | null = null;
-    let resolvedLeftKlingPath:  string | null = null;
+    let resolvedRightKlingPath:  string | null = null;
+    let resolvedLeftKlingPath:   string | null = null;
+    let resolvedSpreadKlingPath: string | null = null;
+    let spreadKlingUrl:          string | null = null;
+
+    // Unified spread: one panoramic Kling video spanning both pages.
+    // Only valid for 2-page spread scenes with is_unified_spread = true.
+    const isUnifiedSpread = Boolean(sceneRow.is_unified_spread) && isSpread;
 
     if (process.env.KIE_API_KEY) {
-      const rightPageId = pageIds[0] ?? "(none)";
-      const leftPageId  = pageIds[1] ?? "(none)";
-      console.log(`[film-render] Kling pages — right: ${rightPageId}, left: ${isSpread ? leftPageId : "n/a (single-page)"}`);
-
-      // ── Right page ──────────────────────────────────────────────────────
-      // FULL_IMAGE-style layouts use buildPreviewBakedKlingImage() — exact
-      // CSS preview reproduction. Other layouts use the legacy extraction path.
-      const rightSlot = primaryPage.slot1 ?? primaryPage.slot2 ?? null;
-      let rightImageUrl: string | null = null;
-      if (rightSlot) {
-        try {
-          rightImageUrl = FULL_IMAGE_BAKE_LAYOUTS.has(primaryPage.layoutType)
-            ? await buildPreviewBakedKlingImage(rightSlot, "[film-render/right]", adminClient, storageBucket)
-            : await prepareCroppedImageForKling(rightSlot, "[film-render/right]", adminClient, storageBucket);
-        } catch (cropErr) {
-          console.warn(
-            `[film-render] Right page crop-for-Kling failed — falling back to raw illustration URL:`,
-            cropErr instanceof Error ? cropErr.message : String(cropErr)
-          );
-          rightImageUrl = rightSlot.url;
-        }
-      }
-      let rightPath = (sceneRow.right_page_video_path as string | null) ?? null;
-      if (rightPath) {
-        console.log(`[film-render] Right page Kling video cached → ${rightPath}`);
-      } else if (rightImageUrl) {
-        console.log(`[film-render] Generating Kling video for right page (pageId=${rightPageId})`);
-        rightPath = await generatePageVideo({
-          imageUrl:      rightImageUrl,
-          side:          "right",
-          orderId,
-          filmProjectId,
-          sceneId,
-        });
-        if (rightPath) {
-          await adminClient
-            .from("film_scenes")
-            .update({ right_page_video_path: rightPath, updated_at: new Date().toISOString() })
-            .eq("id", sceneId);
-        }
-      } else {
-        console.log(`[film-render] Right page has no resolved image — skipping Kling, using static fallback`);
-      }
-      resolvedRightKlingPath = rightPath;
-      if (rightPath) {
-        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 3600);
-        rightKlingUrl = data?.signedUrl ?? null;
-        if (!rightKlingUrl) console.warn(`[film-render] Failed to create signed URL for right Kling path: ${rightPath}`);
-      }
-
-      // ── Left page ───────────────────────────────────────────────────────
-      if (secondPage) {
-        const leftSlot = secondPage.slot1 ?? secondPage.slot2 ?? null;
-        let leftImageUrl: string | null = null;
-        if (leftSlot) {
+      if (isUnifiedSpread) {
+        // ── Unified spread: ONE video spanning both pages ──────────────────
+        // The spread video is generated from a composite image that reproduces
+        // the exact Remotion open-book layout (left page | right page side by side).
+        // Cached in spread_video_path — cleared when the toggle is turned off.
+        console.log(`[film-render] Unified spread mode — generating one spread Kling video`);
+        let spreadPath = (sceneRow.spread_video_path as string | null) ?? null;
+        if (spreadPath) {
+          console.log(`[film-render] Spread Kling video cached → ${spreadPath}`);
+        } else {
+          const rightSlot = primaryPage.slot1 ?? primaryPage.slot2 ?? null;
+          const leftSlot  = secondPage!.slot1  ?? secondPage!.slot2  ?? null;
           try {
-            leftImageUrl = FULL_IMAGE_BAKE_LAYOUTS.has(secondPage.layoutType)
-              ? await buildPreviewBakedKlingImage(leftSlot, "[film-render/left]", adminClient, storageBucket)
-              : await prepareCroppedImageForKling(leftSlot, "[film-render/left]", adminClient, storageBucket);
-          } catch (cropErr) {
-            console.warn(
-              `[film-render] Left page crop-for-Kling failed — falling back to raw illustration URL:`,
-              cropErr instanceof Error ? cropErr.message : String(cropErr)
+            const spreadImageUrl = await buildSpreadKlingImage(
+              rightSlot, leftSlot,
+              "[film-render/spread]",
+              adminClient, storageBucket,
+              width, height,
             );
-            leftImageUrl = leftSlot.url;
+            spreadPath = await generatePageVideo({
+              imageUrl:      spreadImageUrl,
+              side:          "spread",
+              orderId,
+              filmProjectId,
+              sceneId,
+            });
+            if (spreadPath) {
+              await adminClient
+                .from("film_scenes")
+                .update({ spread_video_path: spreadPath, updated_at: new Date().toISOString() })
+                .eq("id", sceneId);
+            }
+          } catch (spreadErr) {
+            console.warn(
+              `[film-render] Spread Kling generation failed — falling back to static images:`,
+              spreadErr instanceof Error ? spreadErr.message : String(spreadErr)
+            );
           }
         }
-        let leftPath = (sceneRow.left_page_video_path as string | null) ?? null;
-        if (leftPath) {
-          console.log(`[film-render] Left page Kling video cached → ${leftPath}`);
-        } else if (leftImageUrl) {
-          console.log(`[film-render] Generating Kling video for left page (pageId=${leftPageId})`);
-          leftPath = await generatePageVideo({
-            imageUrl:      leftImageUrl,
-            side:          "left",
+        resolvedSpreadKlingPath = spreadPath;
+        if (spreadPath) {
+          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(spreadPath, 3600);
+          spreadKlingUrl = data?.signedUrl ?? null;
+          if (!spreadKlingUrl) console.warn(`[film-render] Failed to create signed URL for spread path: ${spreadPath}`);
+        }
+        // Unified spread: do NOT generate separate per-page right/left Kling videos.
+        // rightKlingUrl and leftKlingUrl remain null — SceneComposition uses spreadVideoUrl.
+      } else {
+        // ── Normal per-page Kling generation ────────────────────────────────
+        const rightPageId = pageIds[0] ?? "(none)";
+        const leftPageId  = pageIds[1] ?? "(none)";
+        console.log(`[film-render] Kling pages — right: ${rightPageId}, left: ${isSpread ? leftPageId : "n/a (single-page)"}`);
+
+        // ── Right page ────────────────────────────────────────────────────
+        // FULL_IMAGE-style layouts use buildPreviewBakedKlingImage() — exact
+        // CSS preview reproduction. Other layouts use the legacy extraction path.
+        const rightSlot = primaryPage.slot1 ?? primaryPage.slot2 ?? null;
+        let rightImageUrl: string | null = null;
+        if (rightSlot) {
+          try {
+            rightImageUrl = FULL_IMAGE_BAKE_LAYOUTS.has(primaryPage.layoutType)
+              ? await buildPreviewBakedKlingImage(rightSlot, "[film-render/right]", adminClient, storageBucket)
+              : await prepareCroppedImageForKling(rightSlot, "[film-render/right]", adminClient, storageBucket);
+          } catch (cropErr) {
+            console.warn(
+              `[film-render] Right page crop-for-Kling failed — falling back to raw illustration URL:`,
+              cropErr instanceof Error ? cropErr.message : String(cropErr)
+            );
+            rightImageUrl = rightSlot.url;
+          }
+        }
+        let rightPath = (sceneRow.right_page_video_path as string | null) ?? null;
+        if (rightPath) {
+          console.log(`[film-render] Right page Kling video cached → ${rightPath}`);
+        } else if (rightImageUrl) {
+          console.log(`[film-render] Generating Kling video for right page (pageId=${rightPageId})`);
+          rightPath = await generatePageVideo({
+            imageUrl:      rightImageUrl,
+            side:          "right",
             orderId,
             filmProjectId,
             sceneId,
           });
-          if (leftPath) {
+          if (rightPath) {
             await adminClient
               .from("film_scenes")
-              .update({ left_page_video_path: leftPath, updated_at: new Date().toISOString() })
+              .update({ right_page_video_path: rightPath, updated_at: new Date().toISOString() })
               .eq("id", sceneId);
           }
         } else {
-          console.log(`[film-render] Left page has no resolved image — skipping Kling, using static fallback`);
+          console.log(`[film-render] Right page has no resolved image — skipping Kling, using static fallback`);
         }
-        resolvedLeftKlingPath = leftPath;
-        if (leftPath) {
-          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 3600);
-          leftKlingUrl = data?.signedUrl ?? null;
-          if (!leftKlingUrl) console.warn(`[film-render] Failed to create signed URL for left Kling path: ${leftPath}`);
+        resolvedRightKlingPath = rightPath;
+        if (rightPath) {
+          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 3600);
+          rightKlingUrl = data?.signedUrl ?? null;
+          if (!rightKlingUrl) console.warn(`[film-render] Failed to create signed URL for right Kling path: ${rightPath}`);
+        }
+
+        // ── Left page ──────────────────────────────────────────────────────
+        if (secondPage) {
+          const leftSlot = secondPage.slot1 ?? secondPage.slot2 ?? null;
+          let leftImageUrl: string | null = null;
+          if (leftSlot) {
+            try {
+              leftImageUrl = FULL_IMAGE_BAKE_LAYOUTS.has(secondPage.layoutType)
+                ? await buildPreviewBakedKlingImage(leftSlot, "[film-render/left]", adminClient, storageBucket)
+                : await prepareCroppedImageForKling(leftSlot, "[film-render/left]", adminClient, storageBucket);
+            } catch (cropErr) {
+              console.warn(
+                `[film-render] Left page crop-for-Kling failed — falling back to raw illustration URL:`,
+                cropErr instanceof Error ? cropErr.message : String(cropErr)
+              );
+              leftImageUrl = leftSlot.url;
+            }
+          }
+          let leftPath = (sceneRow.left_page_video_path as string | null) ?? null;
+          if (leftPath) {
+            console.log(`[film-render] Left page Kling video cached → ${leftPath}`);
+          } else if (leftImageUrl) {
+            console.log(`[film-render] Generating Kling video for left page (pageId=${leftPageId})`);
+            leftPath = await generatePageVideo({
+              imageUrl:      leftImageUrl,
+              side:          "left",
+              orderId,
+              filmProjectId,
+              sceneId,
+            });
+            if (leftPath) {
+              await adminClient
+                .from("film_scenes")
+                .update({ left_page_video_path: leftPath, updated_at: new Date().toISOString() })
+                .eq("id", sceneId);
+            }
+          } else {
+            console.log(`[film-render] Left page has no resolved image — skipping Kling, using static fallback`);
+          }
+          resolvedLeftKlingPath = leftPath;
+          if (leftPath) {
+            const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 3600);
+            leftKlingUrl = data?.signedUrl ?? null;
+            if (!leftKlingUrl) console.warn(`[film-render] Failed to create signed URL for left Kling path: ${leftPath}`);
+          }
         }
       }
     } else {
@@ -905,12 +1033,13 @@ export async function renderScene(
     {
       const { data: freshRow } = await adminClient
         .from("film_scenes")
-        .select("right_page_video_path, left_page_video_path")
+        .select("right_page_video_path, left_page_video_path, spread_video_path")
         .eq("id", sceneId)
         .single();
 
-      const freshRightPath = (freshRow?.right_page_video_path as string | null) ?? null;
-      const freshLeftPath  = (freshRow?.left_page_video_path  as string | null) ?? null;
+      const freshRightPath  = (freshRow?.right_page_video_path  as string | null) ?? null;
+      const freshLeftPath   = (freshRow?.left_page_video_path   as string | null) ?? null;
+      const freshSpreadPath = (freshRow?.spread_video_path       as string | null) ?? null;
 
       if (freshRightPath && freshRightPath !== resolvedRightKlingPath) {
         resolvedRightKlingPath = freshRightPath;
@@ -919,6 +1048,10 @@ export async function renderScene(
       if (freshLeftPath && freshLeftPath !== resolvedLeftKlingPath) {
         resolvedLeftKlingPath = freshLeftPath;
         leftKlingUrl = null; // force signed URL refresh below
+      }
+      if (freshSpreadPath && freshSpreadPath !== resolvedSpreadKlingPath) {
+        resolvedSpreadKlingPath = freshSpreadPath;
+        spreadKlingUrl = null; // force signed URL refresh below
       }
 
       // Ensure valid signed URLs for all resolved paths (retry on initial failure)
@@ -931,6 +1064,11 @@ export async function renderScene(
         const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedLeftKlingPath, 3600);
         leftKlingUrl = data?.signedUrl ?? null;
         if (!leftKlingUrl) console.warn(`[film-render] Pre-render: signed URL failed for left path: ${resolvedLeftKlingPath}`);
+      }
+      if (resolvedSpreadKlingPath && !spreadKlingUrl) {
+        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedSpreadKlingPath, 3600);
+        spreadKlingUrl = data?.signedUrl ?? null;
+        if (!spreadKlingUrl) console.warn(`[film-render] Pre-render: signed URL failed for spread path: ${resolvedSpreadKlingPath}`);
       }
     }
 
@@ -962,8 +1100,9 @@ export async function renderScene(
       transitionIn: sceneRow.transition_in as string | null,
       transitionOut: sceneRow.transition_out as string | null,
       pageIds,
-      klingRightPath: resolvedRightKlingPath,
-      klingLeftPath:  resolvedLeftKlingPath,
+      klingRightPath:  isUnifiedSpread ? null : resolvedRightKlingPath,
+      klingLeftPath:   isUnifiedSpread ? null : resolvedLeftKlingPath,
+      klingSpreadPath: isUnifiedSpread ? resolvedSpreadKlingPath : null,
     });
 
     // Compute duration
@@ -981,12 +1120,17 @@ export async function renderScene(
       textAlign: primaryPage.textAlign,
       textX: primaryPage.textX,
       textY: primaryPage.textY,
-      // Kling video for the right (primary) page — null → static resolved image
+      // Kling video for the right (primary) page — null → static resolved image.
+      // For unified spread scenes rightKlingUrl is always null (spread video used instead).
       klingVideoUrl: rightKlingUrl,
-      // Spread: merge left-page Kling URL into secondPage data
+      // Spread: merge left-page Kling URL into secondPage data.
+      // For unified spread scenes leftKlingUrl is always null.
       secondPage: secondPage
         ? { ...secondPage, klingVideoUrl: leftKlingUrl }
         : null,
+      // Unified spread: one Kling video that spans both pages.
+      // When set, SceneComposition renders it as a full-width background behind both pages.
+      spreadVideoUrl: isUnifiedSpread ? spreadKlingUrl : null,
       motionPreset:
         (sceneRow.motion_preset as string) === "ken_burns"
           ? "ken_burns"
@@ -1014,8 +1158,14 @@ export async function renderScene(
         const fs = s.frameStyle ?? "-";
         return `${label}: crop=(${cx.toFixed(2)},${cy.toFixed(2)}) scale=${sc.toFixed(2)} frame=${fs}`;
       };
-      const rightMode = rightKlingUrl ? "kling-video-in-frame" : "static-image-in-frame";
-      const leftMode  = isSpread ? (leftKlingUrl ? "kling-video-in-frame" : "static-image-in-frame") : "n/a";
+      const rightMode = isUnifiedSpread
+        ? (spreadKlingUrl ? "unified-spread-kling" : "unified-spread-static")
+        : (rightKlingUrl  ? "kling-video-in-frame" : "static-image-in-frame");
+      const leftMode  = isUnifiedSpread
+        ? "unified-spread-shared"
+        : isSpread
+          ? (leftKlingUrl ? "kling-video-in-frame" : "static-image-in-frame")
+          : "n/a";
       console.log(
         `[film-render] FINAL INPUTS sceneId=${sceneId}`,
         `| right=${rightMode}`,

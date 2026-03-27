@@ -18,6 +18,7 @@ import {
   Volume2,
   AlertTriangle,
   Loader2,
+  Layers,
 } from "lucide-react";
 import type {
   FilmProject,
@@ -185,6 +186,24 @@ export function FilmPanel({
         );
       }
       setSelectedSceneIds(new Set());
+      router.refresh();
+    });
+  }
+
+  async function handleToggleUnifiedSpread(sceneId: string, currentValue: boolean) {
+    await runAction(`unified-spread-${sceneId}`, async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/scenes/${sceneId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_unified_spread: !currentValue }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה בשינוי מצב פריסה מאוחדת");
+      }
       router.refresh();
     });
   }
@@ -766,8 +785,12 @@ export function FilmPanel({
                   onToggleSelect={() => toggleSceneSelection(scene.id)}
                   onRender={() => handleRenderScene(scene.id)}
                   onGenerateAudio={() => handleGenerateSceneAudio(scene.id)}
+                  onToggleUnifiedSpread={() =>
+                    handleToggleUnifiedSpread(scene.id, scene.is_unified_spread ?? false)
+                  }
                   isRendering={loadingAction === `render-${scene.id}`}
                   isGeneratingAudio={loadingAction === `audio-${scene.id}`}
+                  isTogglingUnifiedSpread={loadingAction === `unified-spread-${scene.id}`}
                   canGenerateAudio={voiceChosen}
                   disabled={isLoading}
                 />
@@ -893,8 +916,10 @@ function SceneRow({
   onToggleSelect,
   onRender,
   onGenerateAudio,
+  onToggleUnifiedSpread,
   isRendering,
   isGeneratingAudio,
+  isTogglingUnifiedSpread,
   canGenerateAudio,
   disabled,
 }: {
@@ -910,8 +935,12 @@ function SceneRow({
   onToggleSelect: () => void;
   onRender: () => void;
   onGenerateAudio: () => void;
+  /** Toggle is_unified_spread for this scene. */
+  onToggleUnifiedSpread: () => void;
   isRendering: boolean;
   isGeneratingAudio: boolean;
+  /** True while the unified-spread toggle API call is in flight. */
+  isTogglingUnifiedSpread: boolean;
   canGenerateAudio: boolean;
   disabled: boolean;
 }) {
@@ -1091,6 +1120,33 @@ function SceneRow({
               <Play className="w-3.5 h-3.5" />
             )}
           </button>
+
+          {/* Unified spread toggle — only for 2-page spread scenes */}
+          {(scene.page_ids_json?.length ?? 0) >= 2 ? (
+            <button
+              type="button"
+              onClick={onToggleUnifiedSpread}
+              disabled={disabled || isTogglingUnifiedSpread}
+              className={`h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border disabled:opacity-35 disabled:cursor-not-allowed transition-colors ${
+                scene.is_unified_spread
+                  ? "text-purple-600 border-purple-300 bg-purple-50"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title={
+                scene.is_unified_spread
+                  ? "בטל פריסה מאוחדת"
+                  : "הפעל פריסה מאוחדת"
+              }
+            >
+              {isTogglingUnifiedSpread ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Layers className="w-3.5 h-3.5" />
+              )}
+            </button>
+          ) : (
+            <span className="w-7" />
+          )}
 
           {videoUrl ? (
             <a

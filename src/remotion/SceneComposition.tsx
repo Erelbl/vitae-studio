@@ -114,6 +114,15 @@ export interface SceneCompositionProps {
    * is baked directly into the rendered scene MP4 (no separate mux step needed).
    */
   narrationUrl?: string | null;
+  /**
+   * Signed HTTPS URL to a unified spread Kling video that covers both pages.
+   * When non-null, the spread video is rendered as a full-width background layer
+   * behind both page containers. ImageFill on each page returns null so the
+   * transparent page containers reveal the spread video beneath them.
+   * Only meaningful for spread scenes (secondPage != null).
+   * Null (default) → normal per-page image/video rendering.
+   */
+  spreadVideoUrl?: string | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -258,6 +267,18 @@ const PageTimingCtx = React.createContext<PageTimingOverride | null>(null);
  * Null (default) → existing Remotion CSS-motion fallback.
  */
 const PageKlingCtx = React.createContext<string | null>(null);
+
+/**
+ * Unified spread mode context.
+ *
+ * When true, the spread is rendered with a single continuous video that spans
+ * both pages. ImageFill returns null in this mode — the spread video is rendered
+ * as a separate full-width layer behind both page containers, letting the text
+ * overlays (gradient + AnimatedP) render on top of the transparent page containers.
+ *
+ * False (default) → normal per-page image/video rendering.
+ */
+const SpreadVideoCtx = React.createContext<boolean>(false);
 
 /** Count real words (non-whitespace tokens) in a text string. */
 function countWords(text: string | null): number {
@@ -496,6 +517,12 @@ function ImageFill({
   const { durationInFrames, fps } = useVideoConfig();
   const timingOverride = React.useContext(PageTimingCtx);
   const klingVideoUrl = React.useContext(PageKlingCtx);
+  const isUnifiedSpread = React.useContext(SpreadVideoCtx);
+
+  // ── Unified spread: the visual background is handled by the spread video layer ─
+  // Return null so the page container is transparent, letting the full-width spread
+  // video show through from behind. Text overlays still render above.
+  if (isUnifiedSpread) return null;
 
   // ── Sequential activation delay ──────────────────────────────────────────
   const delayFrame = Math.round(durationInFrames * (timingOverride?.imageRevealDelayFrac ?? 0));
@@ -1629,6 +1656,7 @@ export function SceneComposition({
   personName,
   klingVideoUrl,
   narrationUrl,
+  spreadVideoUrl,
 }: SceneCompositionProps) {
   useAlbumFont();
 
@@ -1821,6 +1849,33 @@ export function SceneComposition({
             transform: slideTransform,
           }}
         >
+          {/*
+           * ── Unified spread video layer ─────────────────────────────────────
+           * When spreadVideoUrl is set, render ONE Kling video spanning both pages.
+           * It sits at z-index 0, behind both page containers (which have no
+           * explicit background), so text overlays inside the containers render on top.
+           * Page containers are transparent — their ImageFill returns null when
+           * SpreadVideoCtx is true, letting this layer show through.
+           */}
+          {spreadVideoUrl && (
+            <div
+              style={{
+                position: "absolute",
+                left: leftMargin,
+                top: topMargin,
+                width: pageSize * 2,
+                height: pageSize,
+                overflow: "hidden",
+                zIndex: 0,
+              }}
+            >
+              <OffthreadVideo
+                src={spreadVideoUrl}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            </div>
+          )}
+
           {/* Left page (second page — higher page number in RTL spread) */}
           <div
             style={{
@@ -1832,16 +1887,23 @@ export function SceneComposition({
               overflow: "hidden",
             }}
           >
-            <PageKlingCtx.Provider value={secondPage.klingVideoUrl ?? null}>
-              <PageTimingCtx.Provider value={leftTiming}>
-                <PageContent
-                  {...secondPage}
-                  kbScale={kbScale}
-                  narrationDurationMs={narrationDurationMs}
-                  textParallaxPx={textParallaxPx}
-                />
-              </PageTimingCtx.Provider>
-            </PageKlingCtx.Provider>
+            {/*
+             * SpreadVideoCtx.Provider: when the spread video is active, ImageFill
+             * inside PageContent returns null so the page is transparent and the
+             * spread video layer behind shows through. Text overlays render normally.
+             */}
+            <SpreadVideoCtx.Provider value={Boolean(spreadVideoUrl)}>
+              <PageKlingCtx.Provider value={spreadVideoUrl ? null : (secondPage.klingVideoUrl ?? null)}>
+                <PageTimingCtx.Provider value={leftTiming}>
+                  <PageContent
+                    {...secondPage}
+                    kbScale={kbScale}
+                    narrationDurationMs={narrationDurationMs}
+                    textParallaxPx={textParallaxPx}
+                  />
+                </PageTimingCtx.Provider>
+              </PageKlingCtx.Provider>
+            </SpreadVideoCtx.Provider>
           </div>
 
           {/* Right page (primary page — lower page number, read first in Hebrew) */}
@@ -1855,24 +1917,26 @@ export function SceneComposition({
               overflow: "hidden",
             }}
           >
-            <PageKlingCtx.Provider value={klingVideoUrl ?? null}>
-              <PageTimingCtx.Provider value={rightTiming}>
-                <PageContent
-                  slot1={slot1}
-                  slot2={slot2}
-                  layoutType={layoutType}
-                  textContent={textContent}
-                  textSize={textSize}
-                  fontSizePx={fontSizePx}
-                  textAlign={textAlign}
-                  textX={textX}
-                  textY={textY}
-                  kbScale={kbScale}
-                  narrationDurationMs={narrationDurationMs}
-                  textParallaxPx={textParallaxPx}
-                />
-              </PageTimingCtx.Provider>
-            </PageKlingCtx.Provider>
+            <SpreadVideoCtx.Provider value={Boolean(spreadVideoUrl)}>
+              <PageKlingCtx.Provider value={spreadVideoUrl ? null : (klingVideoUrl ?? null)}>
+                <PageTimingCtx.Provider value={rightTiming}>
+                  <PageContent
+                    slot1={slot1}
+                    slot2={slot2}
+                    layoutType={layoutType}
+                    textContent={textContent}
+                    textSize={textSize}
+                    fontSizePx={fontSizePx}
+                    textAlign={textAlign}
+                    textX={textX}
+                    textY={textY}
+                    kbScale={kbScale}
+                    narrationDurationMs={narrationDurationMs}
+                    textParallaxPx={textParallaxPx}
+                  />
+                </PageTimingCtx.Provider>
+              </PageKlingCtx.Provider>
+            </SpreadVideoCtx.Provider>
           </div>
 
           {/* Spine shadow between pages — mimics open-book binding */}

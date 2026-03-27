@@ -22,8 +22,11 @@ import { uploadFilmAsset }                from "@/services/film/storage/film-sto
 export interface GeneratePageVideoInput {
   /** Signed HTTPS URL to the page illustration — used for classification and passed to Kling. */
   imageUrl:      string;
-  /** "right" or "left" — used for logging and storage path. */
-  side:          "right" | "left";
+  /**
+   * "right" or "left" for normal per-page videos; "spread" for a unified spread video
+   * that spans both pages. The storage path is `{side}-page.mp4` (i.e. spread-page.mp4).
+   */
+  side:          "right" | "left" | "spread";
   orderId:       string;
   filmProjectId: string;
   sceneId:       string;

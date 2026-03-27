@@ -123,6 +123,19 @@ export interface FilmScene {
    * Never modifies album text shown to the customer.
    */
   scene_overrides_json: TtsOverride[] | null;
+  /**
+   * When true, the scene uses ONE unified Kling video spanning both pages instead of
+   * separate right-page / left-page videos. The spread video is a single continuous
+   * visual background across the full open-book spread. Only meaningful for 2-page
+   * spread scenes (page_ids_json.length >= 2). Manually toggled per scene by the admin.
+   */
+  is_unified_spread: boolean;
+  /**
+   * Storage path inside the films/ bucket for the unified spread Kling video.
+   * Non-null only when is_unified_spread is true and the video has been generated.
+   * Cleared when is_unified_spread is toggled off (or when forcing regeneration).
+   */
+  spread_video_path: string | null;
   created_at: string;
   updated_at: string;
 }
