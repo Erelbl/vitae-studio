@@ -401,6 +401,25 @@ export async function assembleFilm(
 
     console.log(`[film-assemble] Remotion render complete → ${outputPath}`);
 
+    // ── Local backup copy (before upload) ────────────────────────────────
+    // Saves a permanent local copy so the film is not lost if Supabase upload
+    // fails (e.g. storage size limits). Runs before upload; failure is non-fatal.
+    const LOCAL_BACKUP_DIR = "C:\\Users\\blere\\Documents\\VitaeFilms";
+    const localBackupPath = path.join(
+      LOCAL_BACKUP_DIR,
+      `${orderId}__${filmProjectId}__final.mp4`
+    );
+    try {
+      await fs.mkdir(LOCAL_BACKUP_DIR, { recursive: true });
+      await fs.copyFile(outputPath, localBackupPath);
+      console.log(`[film-assemble] Local backup saved → ${localBackupPath}`);
+    } catch (backupErr) {
+      console.error(
+        `[film-assemble] WARNING: Local backup failed (upload will still proceed): ` +
+          `${backupErr instanceof Error ? backupErr.message : String(backupErr)}`
+      );
+    }
+
     // ── Thumbnail (ffmpeg extract from rendered output) ───────────────────
 
     const finalThumbLocal = path.join(tmpDir, "thumbnail.jpg");
