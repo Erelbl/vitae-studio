@@ -44,6 +44,26 @@ export interface RenderSceneResult {
   renderHash: string;
 }
 
+// ── Render progress helper ────────────────────────────────────────────────────
+
+async function setRenderProgress(
+  client: ReturnType<typeof createAdminClient>,
+  sceneId: string,
+  pct: number,
+  stage: string,
+  message: string,
+): Promise<void> {
+  await client
+    .from("film_scenes")
+    .update({
+      render_progress_pct: pct,
+      render_stage: stage,
+      render_stage_message: message,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sceneId);
+}
+
 // ── Pre-built bundle path ─────────────────────────────────────────────────────
 
 /** Default bundle output directory — must match `--out-dir` in package.json bundle:remotion. */
@@ -858,6 +878,7 @@ export async function renderScene(
     const isUnifiedSpread = Boolean(sceneRow.is_unified_spread) && isSpread;
 
     if (process.env.KIE_API_KEY) {
+      await setRenderProgress(adminClient, sceneId, 5, "generating_video", "יוצר וידאו Kling...");
       if (isUnifiedSpread) {
         // ── Unified spread: ONE video spanning both pages ──────────────────
         // The spread video is generated from a composite image that reproduces
@@ -1177,6 +1198,8 @@ export async function renderScene(
       );
     }
 
+    await setRenderProgress(adminClient, sceneId, 40, "rendering_scene", "מרנדר סצנה...");
+
     // Resolve pre-built bundle path
     const serveUrl = getBundlePath();
 
@@ -1223,6 +1246,8 @@ export async function renderScene(
         inputProps: compositionProps,
       });
 
+      await setRenderProgress(adminClient, sceneId, 85, "rendering_thumbnail", "מרנדר תמונה ממוזערת...");
+
       // Render thumbnail from the late stable part of the scene:
       // - target 80% (past text reveal at 65% and left-page activation for spreads)
       // - clamp before fade-out (last FADE_FRAMES frames)
@@ -1263,6 +1288,10 @@ export async function renderScene(
           render_hash: renderHash,
           duration_ms: actualDurationMs,
           error_message: null,
+          render_stage: "done",
+          render_progress_pct: 100,
+          render_stage_message: null,
+          last_render_error: null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", sceneId);
@@ -1332,6 +1361,10 @@ export async function renderScene(
       .update({
         status: "error",
         error_message: message,
+        render_stage: "failed",
+        render_progress_pct: 0,
+        render_stage_message: null,
+        last_render_error: message,
         updated_at: new Date().toISOString(),
       })
       .eq("id", sceneId);

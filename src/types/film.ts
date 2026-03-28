@@ -136,6 +136,14 @@ export interface FilmScene {
    * Cleared when is_unified_spread is toggled off (or when forcing regeneration).
    */
   spread_video_path: string | null;
+  /** Machine-readable render stage. Null when idle. */
+  render_stage: string | null;
+  /** 0–100 progress within the current render. */
+  render_progress_pct: number;
+  /** Hebrew label for the current render stage, shown in the admin UI. Null when idle. */
+  render_stage_message: string | null;
+  /** Last render error message. Persists past status changes; cleared on success. */
+  last_render_error: string | null;
   created_at: string;
   updated_at: string;
 }

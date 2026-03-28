@@ -232,6 +232,9 @@ async function processScene(scene: {
     .update({
       status: "rendering",
       error_message: null,
+      render_stage: "rendering_scene",
+      render_progress_pct: 0,
+      render_stage_message: "ממתין לעיבוד...",
       updated_at: new Date().toISOString(),
     })
     .eq("id", sceneId);

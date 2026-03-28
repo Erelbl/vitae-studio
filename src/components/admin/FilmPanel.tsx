@@ -1056,10 +1056,27 @@ function SceneRow({
           )}
         </div>
 
-        {/* Status */}
-        <span className={`shrink-0 w-20 text-end font-medium text-[11px] ${statusColor}`}>
-          {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
-        </span>
+        {/* Status + render progress */}
+        <div className="shrink-0 w-20 text-end">
+          <span className={`font-medium text-[11px] ${statusColor}`}>
+            {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
+          </span>
+          {scene.status === "rendering" && (
+            <>
+              <div className="mt-0.5 w-full bg-muted/50 rounded-full h-1 overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all duration-700"
+                  style={{ width: `${scene.render_progress_pct ?? 0}%` }}
+                />
+              </div>
+              {scene.render_stage_message && (
+                <p className="text-[9px] text-muted-foreground leading-tight mt-0.5 truncate">
+                  {scene.render_stage_message}
+                </p>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Audio + Queue + Video buttons */}
         <div className="shrink-0 flex items-center gap-1.5">

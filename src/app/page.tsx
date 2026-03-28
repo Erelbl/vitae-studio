@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -17,7 +17,6 @@ import { FinalCta } from "@/components/home/FinalCta";
 import { ContactSection } from "@/components/home/ContactSection";
 import { FilmPreviewSection } from "@/components/home/FilmPreviewSection";
 import { AprilPromoPopup } from "@/components/home/AprilPromoPopup";
-import { VolumeX } from "lucide-react";
 import { FOOTER } from "@/content/landing-content";
 
 const DRAFT_STORAGE_KEY = "vitae_draft";
@@ -32,29 +31,6 @@ export default function LandingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<DraftPointer | null>(null);
-  const [audioBlocked, setAudioBlocked] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Background audio — attempt autoplay; surface a mute button if blocked
-  useEffect(() => {
-    const audio = new Audio("/landing-audio/landing-bg.mp3");
-    audio.volume = 0.3;
-    audio.loop = false;
-    audioRef.current = audio;
-    audio.play()
-      .then(() => console.log("Landing audio playing"))
-      .catch((err) => {
-        console.warn("Landing audio autoplay blocked", err);
-        setAudioBlocked(true);
-      });
-    return () => { audio.pause(); };
-  }, []);
-
-  function handleUnmuteAudio() {
-    audioRef.current?.play().catch(() => {});
-    setAudioBlocked(false);
-  }
-
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
@@ -108,18 +84,6 @@ export default function LandingPage() {
     <div className="flex min-h-screen flex-col bg-background">
 
       <AprilPromoPopup onScrollToOrder={handleScrollToOrder} />
-
-      {/* Audio unblock button — only shown when autoplay was blocked */}
-      {audioBlocked && (
-        <button
-          onClick={handleUnmuteAudio}
-          aria-label="הפעל מוזיקת רקע"
-          title="הפעל מוזיקת רקע"
-          className="fixed bottom-5 right-5 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-border/40 bg-background/90 text-foreground/40 shadow-md backdrop-blur-sm transition-all hover:text-foreground/70 hover:shadow-lg"
-        >
-          <VolumeX className="h-4 w-4" />
-        </button>
-      )}
 
       {/* ── Sticky nav with logo ──────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b border-border/40 bg-background/90 backdrop-blur-sm">
