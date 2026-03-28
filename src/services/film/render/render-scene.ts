@@ -1268,13 +1268,27 @@ export async function renderScene(
         .eq("id", sceneId);
 
       if (dbUpdateError) {
-        console.error(
-          `[film-render] Scene ${sceneId} rendered OK but DB update failed — rendered_scene_path NOT persisted.`,
-          dbUpdateError.message
-        );
-        throw new Error(
-          `DB update failed after successful render: ${dbUpdateError.message}`
-        );
+        // A network timeout can cause dbUpdateError even when the SQL UPDATE committed.
+        // Verify by re-fetching before treating this as a true failure.
+        const { data: verifyRow } = await adminClient
+          .from("film_scenes")
+          .select("rendered_scene_path")
+          .eq("id", sceneId)
+          .single();
+        if ((verifyRow?.rendered_scene_path as string | null) === videoStoragePath) {
+          console.warn(
+            `[film-render] Scene ${sceneId}: DB update returned error but rendered_scene_path is already persisted — treating as success. Error: ${dbUpdateError.message}`
+          );
+          // Do not throw — scene is usable. Fall through to return.
+        } else {
+          console.error(
+            `[film-render] Scene ${sceneId} rendered OK but DB update failed — rendered_scene_path NOT persisted.`,
+            dbUpdateError.message
+          );
+          throw new Error(
+            `DB update failed after successful render: ${dbUpdateError.message}`
+          );
+        }
       }
 
       const rightSrc = rightKlingUrl ? "kling" : "static";
