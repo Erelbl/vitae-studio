@@ -413,7 +413,8 @@ export function FilmPanel({
     if (!hasActive) return;
     const id = setInterval(() => router.refresh(), 3000);
     return () => clearInterval(id);
-  }, [scenes, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenes]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
 
@@ -1107,7 +1108,7 @@ function SceneRow({
           <span className={`font-medium text-[11px] ${statusColor}`}>
             {SCENE_STATUS_LABELS[scene.status] ?? scene.status}
           </span>
-          {scene.status === "rendering" && (
+          {(scene.status === "queued" || scene.status === "rendering") && (
             <>
               {/* Progress track — slightly taller than before for visibility */}
               <div className="mt-1 w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">

@@ -109,12 +109,16 @@ export async function POST(
       continue;
     }
 
-    // Mark as queued
+    // Mark as queued. Clear stale progress fields so the UI doesn't show a
+    // previous run's progress after re-queuing.
     await adminClient
       .from("film_scenes")
       .update({
         status: "queued",
         error_message: null,
+        render_stage: null,
+        render_progress_pct: 0,
+        render_stage_message: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", scene.id as string);

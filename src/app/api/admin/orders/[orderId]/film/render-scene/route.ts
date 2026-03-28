@@ -104,7 +104,8 @@ export async function POST(
     );
   }
 
-  // Mark scene as queued with the requested job type
+  // Mark scene as queued with the requested job type.
+  // Clear stale progress fields so the UI doesn't show a previous run's progress.
   const { error: updateError } = await adminClient
     .from("film_scenes")
     .update({
@@ -112,6 +113,9 @@ export async function POST(
       render_job_type: jobType,
       render_video_target: videoTarget,
       error_message: null,
+      render_stage: null,
+      render_progress_pct: 0,
+      render_stage_message: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", sceneId);
