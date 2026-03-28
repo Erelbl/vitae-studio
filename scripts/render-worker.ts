@@ -266,10 +266,19 @@ async function processScene(scene: {
     if (t === "spread")                clearFields.spread_video_path      = null;
     if (Object.keys(clearFields).length > 0) {
       log(`Clearing Kling path(s) for scene ${sceneId} (target: ${t}) — full scene render follows`);
-      await adminClient
+      const { error: clearError } = await adminClient
         .from("film_scenes")
         .update({ ...clearFields, updated_at: new Date().toISOString() })
         .eq("id", sceneId);
+      if (clearError) {
+        err(`Failed to clear Kling path(s) for scene ${sceneId}: ${clearError.message} — aborting render to avoid stale-cache reuse`);
+        await adminClient.from("film_scenes").update({
+          status: "error",
+          error_message: `regenerate_video_only clear failed: ${clearError.message}`,
+          updated_at: new Date().toISOString(),
+        }).eq("id", sceneId);
+        return false;
+      }
     }
   }
 

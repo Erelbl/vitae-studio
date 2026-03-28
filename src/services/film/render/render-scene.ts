@@ -1175,6 +1175,7 @@ export async function renderScene(
         isSpread ? `| ${fmtSlot(secondPage!.slot1, "left-slot1")}` : "",
         `| hash=${renderHash}`
       );
+
     }
 
     // Resolve pre-built bundle path

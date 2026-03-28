@@ -1806,8 +1806,13 @@ export function SceneComposition({
     // the left text begins — so the illustration is already "drawing" when the
     // narrator switches pages. This creates a hard right-then-left boundary:
     // left page image never starts while right page narration is still running.
+    //
+    // Minimum: leftImagePrerollFrames (= LEFT_IMAGE_PREROLL_SEC) ensures the left
+    // page never activates at frame 0 even when the right page has no text
+    // (rightWords = 0 → leftTextStart is tiny → raw offset goes negative, old
+    // Math.max(0,...) clamped to 0 causing both pages to activate simultaneously).
     const leftImagePrerollFrames = Math.round(fps * LEFT_IMAGE_PREROLL_SEC);
-    const leftImageStartFrame    = Math.max(0, leftTextStart - leftImagePrerollFrames);
+    const leftImageStartFrame    = Math.max(leftImagePrerollFrames, leftTextStart - leftImagePrerollFrames);
     const leftImageDelayFrac     = leftImageStartFrame / durationInFrames;
 
     // ── Geometry + fade-in debug log (frame 0 only) ─────────────────────────
