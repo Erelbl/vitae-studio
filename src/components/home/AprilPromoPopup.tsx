@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -47,6 +47,10 @@ export function AprilPromoPopup({ onScrollToOrder }: Props) {
 
   if (!visible || !timeLeft) return null;
 
+  const cardStyle: React.CSSProperties = {
+    animation: "popupSpring 380ms cubic-bezier(0.22, 1, 0.36, 1) both",
+  };
+
   function handleCta() {
     setVisible(false);
     onScrollToOrder();
@@ -61,6 +65,14 @@ export function AprilPromoPopup({ onScrollToOrder }: Props) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <style>{`
+        @keyframes popupSpring {
+          0%   { opacity: 0; transform: scale(0.88); }
+          65%  { opacity: 1; transform: scale(1.04); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
+
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -68,7 +80,7 @@ export function AprilPromoPopup({ onScrollToOrder }: Props) {
       />
 
       {/* Card */}
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#8F9F7A]/20 bg-[#FAF8F2] shadow-2xl">
+      <div style={cardStyle} className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#8F9F7A]/20 bg-[#FAF8F2] shadow-2xl">
         {/* Top accent strip */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#8F9F7A]/60 via-[#8F9F7A] to-[#8F9F7A]/60" />
 
@@ -81,13 +93,6 @@ export function AprilPromoPopup({ onScrollToOrder }: Props) {
           >
             <X className="h-4 w-4" />
           </button>
-
-          {/* Badge */}
-          <div className="mb-4 flex justify-center">
-            <span className="rounded-full border border-[#8F9F7A]/30 bg-[#8F9F7A]/10 px-4 py-1 text-[11px] font-semibold uppercase tracking-widest text-[#6b7a5a]">
-              מבצע מוגבל בזמן
-            </span>
-          </div>
 
           {/* Title */}
           <h2 className="mb-3 text-center text-[1.6rem] font-bold leading-snug text-foreground">
