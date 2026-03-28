@@ -33,10 +33,10 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const b = body as Record<string, unknown>;
-
   const sceneId =
-    typeof b?.sceneId === "string" ? (b.sceneId as string) : null;
+    typeof (body as Record<string, unknown>)?.sceneId === "string"
+      ? ((body as Record<string, unknown>).sceneId as string)
+      : null;
 
   if (!sceneId) {
     return NextResponse.json(
@@ -44,23 +44,6 @@ export async function POST(
       { status: 400 }
     );
   }
-
-  // Optional job type — defaults to full_render if not provided
-  const VALID_JOB_TYPES = ["full_render", "regenerate_video_only"] as const;
-  const VALID_TARGETS   = ["right", "left", "both", "spread"] as const;
-
-  const jobType: string =
-    typeof b?.jobType === "string" &&
-    VALID_JOB_TYPES.includes(b.jobType as (typeof VALID_JOB_TYPES)[number])
-      ? (b.jobType as string)
-      : "full_render";
-
-  const videoTarget: string | null =
-    jobType === "regenerate_video_only" &&
-    typeof b?.videoTarget === "string" &&
-    VALID_TARGETS.includes(b.videoTarget as (typeof VALID_TARGETS)[number])
-      ? (b.videoTarget as string)
-      : null;
 
   // Resolve film project for this order
   const adminClient = createAdminClient();
@@ -104,18 +87,12 @@ export async function POST(
     );
   }
 
-  // Mark scene as queued with the requested job type.
-  // Clear stale progress fields so the UI doesn't show a previous run's progress.
+  // Mark scene as queued
   const { error: updateError } = await adminClient
     .from("film_scenes")
     .update({
       status: "queued",
-      render_job_type: jobType,
-      render_video_target: videoTarget,
       error_message: null,
-      render_stage: null,
-      render_progress_pct: 0,
-      render_stage_message: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", sceneId);

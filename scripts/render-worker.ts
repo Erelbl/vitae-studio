@@ -183,16 +183,10 @@ async function requeueKlingStaleScenesOnce(): Promise<void> {
     `(hash changed) — they will be re-rendered with Kling automatically.`
   );
 
-  // Reset render_job_type to "full_render" so a stale "regenerate_video_only"
-  // job type from a previous targeted regeneration never re-applies to these
-  // automatically re-queued scenes. Without this, the wrong Kling path(s) would
-  // be cleared when the worker picks up these scenes.
   await adminClient
     .from("film_scenes")
     .update({
       status: "queued",
-      render_job_type: "full_render",
-      render_video_target: null,
       error_message: "Re-queued: Kling page videos were added/changed since last render",
       updated_at: new Date().toISOString(),
     })
@@ -201,18 +195,10 @@ async function requeueKlingStaleScenesOnce(): Promise<void> {
 
 async function fetchQueuedScenes(
   specificIds?: string[]
-): Promise<Array<{
-  id: string;
-  film_project_id: string;
-  order_id: string;
-  render_job_type: string;
-  render_video_target: string | null;
-}>> {
+): Promise<Array<{ id: string; film_project_id: string; order_id: string }>> {
   let query = adminClient
     .from("film_scenes")
-    .select(
-      "id, film_project_id, render_job_type, render_video_target, film_projects!inner(order_id)"
-    )
+    .select("id, film_project_id, film_projects!inner(order_id)")
     .eq("status", "queued")
     .order("scene_order");
 
@@ -227,24 +213,17 @@ async function fetchQueuedScenes(
     return [];
   }
 
-  const rows = (data ?? []).map((row) => ({
+  return (data ?? []).map((row) => ({
     id: row.id as string,
     film_project_id: row.film_project_id as string,
     order_id: (row.film_projects as unknown as { order_id: string }).order_id,
-    render_job_type: (row.render_job_type as string | null) ?? "full_render",
-    render_video_target: (row.render_video_target as string | null) ?? null,
   }));
-
-  log(`fetchQueuedScenes: found ${rows.length} scene(s) with status="queued"`);
-  return rows;
 }
 
 async function processScene(scene: {
   id: string;
   film_project_id: string;
   order_id: string;
-  render_job_type: string;
-  render_video_target: string | null;
 }): Promise<boolean> {
   const { id: sceneId, film_project_id: filmProjectId, order_id: orderId } = scene;
 
@@ -253,58 +232,15 @@ async function processScene(scene: {
     .update({
       status: "rendering",
       error_message: null,
-      render_stage: "rendering_scene",
-      render_progress_pct: 0,
-      render_stage_message: "ממתין לעיבוד...",
       updated_at: new Date().toISOString(),
     })
     .eq("id", sceneId);
 
-  // For regenerate_video_only: clear only the requested Kling source asset(s) so
-  // renderScene treats them as not-yet-generated and re-runs Kling for those targets.
-  // renderScene reuses cached paths when present — clearing is the only signal to
-  // regenerate. Non-targeted paths are left intact and will be included in the
-  // full final scene render that always follows this step.
-  if (scene.render_job_type === "regenerate_video_only" && scene.render_video_target) {
-    const clearFields: Record<string, null> = {};
-    const t = scene.render_video_target;
-    if (t === "right" || t === "both") clearFields.right_page_video_path = null;
-    if (t === "left"  || t === "both") clearFields.left_page_video_path  = null;
-    if (t === "spread")                clearFields.spread_video_path      = null;
-    if (Object.keys(clearFields).length > 0) {
-      log(`Clearing Kling path(s) for scene ${sceneId} (target: ${t}) — full scene render follows`);
-      await adminClient
-        .from("film_scenes")
-        .update({ ...clearFields, updated_at: new Date().toISOString() })
-        .eq("id", sceneId);
-    }
-  }
-
-  const jobLabel =
-    scene.render_job_type === "regenerate_video_only"
-      ? ` [regen-video:${scene.render_video_target ?? "?"}]`
-      : "";
-  log(`Rendering scene ${sceneId}${jobLabel}...`);
+  log(`Rendering scene ${sceneId}...`);
 
   try {
     const result = await renderScene({ sceneId, orderId, filmProjectId });
     log(`Scene ${sceneId} rendered → ${result.renderedPath}`);
-
-    // After any regenerate_video_only job, reset the job-type fields to "full_render"
-    // so that if this scene is automatically re-queued later (e.g. by
-    // requeueKlingStaleScenesOnce), the stale targeted job type cannot propagate and
-    // incorrectly clear the wrong Kling path(s) on the next render.
-    if (scene.render_job_type === "regenerate_video_only") {
-      await adminClient
-        .from("film_scenes")
-        .update({
-          render_job_type: "full_render",
-          render_video_target: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", sceneId);
-    }
-
     return true;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

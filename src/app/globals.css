@@ -57,12 +57,6 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Render progress bar shimmer — sweeps a soft highlight across the filled bar */
-@keyframes render-shimmer {
-  0%   { transform: translateX(-200%); }
-  100% { transform: translateX(400%);  }
-}
-
 :root {
   /* Warm parchment background */
   --background: #FAF8F2;

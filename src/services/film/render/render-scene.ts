@@ -44,26 +44,6 @@ export interface RenderSceneResult {
   renderHash: string;
 }
 
-// ── Render progress helper ────────────────────────────────────────────────────
-
-async function setRenderProgress(
-  client: ReturnType<typeof createAdminClient>,
-  sceneId: string,
-  pct: number,
-  stage: string,
-  message: string,
-): Promise<void> {
-  await client
-    .from("film_scenes")
-    .update({
-      render_progress_pct: pct,
-      render_stage: stage,
-      render_stage_message: message,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sceneId);
-}
-
 // ── Pre-built bundle path ─────────────────────────────────────────────────────
 
 /** Default bundle output directory — must match `--out-dir` in package.json bundle:remotion. */
@@ -693,7 +673,7 @@ async function fetchScenePageData(
   ): Promise<string | null> {
     const { data } = await adminClient.storage
       .from("illustrations")
-      .createSignedUrl(illustrationPath, 21600);
+      .createSignedUrl(illustrationPath, 3600);
     return data?.signedUrl ?? null;
   }
 
@@ -878,7 +858,6 @@ export async function renderScene(
     const isUnifiedSpread = Boolean(sceneRow.is_unified_spread) && isSpread;
 
     if (process.env.KIE_API_KEY) {
-      await setRenderProgress(adminClient, sceneId, 5, "generating_video", "יוצר וידאו Kling...");
       if (isUnifiedSpread) {
         // ── Unified spread: ONE video spanning both pages ──────────────────
         // The spread video is generated from a composite image that reproduces
@@ -920,7 +899,7 @@ export async function renderScene(
         }
         resolvedSpreadKlingPath = spreadPath;
         if (spreadPath) {
-          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(spreadPath, 21600);
+          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(spreadPath, 3600);
           spreadKlingUrl = data?.signedUrl ?? null;
           if (!spreadKlingUrl) console.warn(`[film-render] Failed to create signed URL for spread path: ${spreadPath}`);
         }
@@ -973,7 +952,7 @@ export async function renderScene(
         }
         resolvedRightKlingPath = rightPath;
         if (rightPath) {
-          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 21600);
+          const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(rightPath, 3600);
           rightKlingUrl = data?.signedUrl ?? null;
           if (!rightKlingUrl) console.warn(`[film-render] Failed to create signed URL for right Kling path: ${rightPath}`);
         }
@@ -1018,7 +997,7 @@ export async function renderScene(
           }
           resolvedLeftKlingPath = leftPath;
           if (leftPath) {
-            const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 21600);
+            const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(leftPath, 3600);
             leftKlingUrl = data?.signedUrl ?? null;
             if (!leftKlingUrl) console.warn(`[film-render] Failed to create signed URL for left Kling path: ${leftPath}`);
           }
@@ -1078,17 +1057,17 @@ export async function renderScene(
 
       // Ensure valid signed URLs for all resolved paths (retry on initial failure)
       if (resolvedRightKlingPath && !rightKlingUrl) {
-        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedRightKlingPath, 21600);
+        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedRightKlingPath, 3600);
         rightKlingUrl = data?.signedUrl ?? null;
         if (!rightKlingUrl) console.warn(`[film-render] Pre-render: signed URL failed for right path: ${resolvedRightKlingPath}`);
       }
       if (resolvedLeftKlingPath && !leftKlingUrl) {
-        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedLeftKlingPath, 21600);
+        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedLeftKlingPath, 3600);
         leftKlingUrl = data?.signedUrl ?? null;
         if (!leftKlingUrl) console.warn(`[film-render] Pre-render: signed URL failed for left path: ${resolvedLeftKlingPath}`);
       }
       if (resolvedSpreadKlingPath && !spreadKlingUrl) {
-        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedSpreadKlingPath, 21600);
+        const { data } = await adminClient.storage.from(storageBucket).createSignedUrl(resolvedSpreadKlingPath, 3600);
         spreadKlingUrl = data?.signedUrl ?? null;
         if (!spreadKlingUrl) console.warn(`[film-render] Pre-render: signed URL failed for spread path: ${resolvedSpreadKlingPath}`);
       }
@@ -1100,7 +1079,7 @@ export async function renderScene(
     const audioPath = (sceneRow.audio_path as string | null) ?? null;
     let narrationUrl: string | null = null;
     if (audioPath) {
-      const { data: audioData } = await adminClient.storage.from(storageBucket).createSignedUrl(audioPath, 21600);
+      const { data: audioData } = await adminClient.storage.from(storageBucket).createSignedUrl(audioPath, 3600);
       narrationUrl = audioData?.signedUrl ?? null;
       if (!narrationUrl) {
         console.warn(`[film-render] Failed to create signed URL for narration audio: ${audioPath}`);
@@ -1198,8 +1177,6 @@ export async function renderScene(
       );
     }
 
-    await setRenderProgress(adminClient, sceneId, 40, "rendering_scene", "מרנדר סצנה...");
-
     // Resolve pre-built bundle path
     const serveUrl = getBundlePath();
 
@@ -1233,19 +1210,10 @@ export async function renderScene(
       `vitae-thumb-${sceneId}-${Date.now()}.jpg`
     );
 
-    // Use software rendering in Railway/container environments to avoid GPU SIGKILL.
-    // swangle = ANGLE software rasterizer, no GPU required.
-    const isContainerEnv =
-      process.env.RAILWAY_ENVIRONMENT !== undefined ||
-      process.env.RAILWAY_ENVIRONMENT_NAME !== undefined;
-    const chromiumOptions = isContainerEnv
-      ? { gl: "swangle" as const, enableMultiProcessOnLinux: false }
-      : undefined;
-
     try {
       // Render video (narration audio baked in via Remotion <Audio> when narrationUrl is set)
       console.log(
-        `[film-render] Rendering scene ${sceneId} (${durationInFrames} frames @ ${fps}fps, layout: ${primaryPage.layoutType}, ${isSpread ? "spread" : "single-page"}, container=${isContainerEnv})`
+        `[film-render] Rendering scene ${sceneId} (${durationInFrames} frames @ ${fps}fps, layout: ${primaryPage.layoutType}, ${isSpread ? "spread" : "single-page"})`
       );
       await renderMedia({
         composition: compositionWithDuration,
@@ -1253,11 +1221,7 @@ export async function renderScene(
         codec: "h264",
         outputLocation: tmpVideo,
         inputProps: compositionProps,
-        concurrency: isContainerEnv ? 1 : undefined,
-        ...(chromiumOptions && { chromiumOptions }),
       });
-
-      await setRenderProgress(adminClient, sceneId, 85, "rendering_thumbnail", "מרנדר תמונה ממוזערת...");
 
       // Render thumbnail from the late stable part of the scene:
       // - target 80% (past text reveal at 65% and left-page activation for spreads)
@@ -1273,7 +1237,6 @@ export async function renderScene(
         imageFormat: "jpeg",
         frame: thumbFrame,
         inputProps: compositionProps,
-        ...(chromiumOptions && { chromiumOptions }),
       });
 
       // Upload both to film storage
@@ -1300,10 +1263,6 @@ export async function renderScene(
           render_hash: renderHash,
           duration_ms: actualDurationMs,
           error_message: null,
-          render_stage: "done",
-          render_progress_pct: 100,
-          render_stage_message: null,
-          last_render_error: null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", sceneId);
@@ -1373,10 +1332,6 @@ export async function renderScene(
       .update({
         status: "error",
         error_message: message,
-        render_stage: "failed",
-        render_progress_pct: 0,
-        render_stage_message: null,
-        last_render_error: message,
         updated_at: new Date().toISOString(),
       })
       .eq("id", sceneId);
