@@ -31,6 +31,7 @@ const BASE =
   "The image should feel gently brought to life, not fully re-animated. " +
   "No cinematic transitions, no reveal effects, and no stylized scene changes. " +
   "The scene must remain visually stable from start to end. " +
+  "Do not generate any text, letters, words, captions, subtitles, handwriting, logos, watermarks, signs, symbols, or typographic marks anywhere in the image. " +
   "No fade in, no fade out, no dissolve, no added text, and no overlays.";
 
 /**
