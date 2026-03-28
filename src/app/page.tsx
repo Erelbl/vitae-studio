@@ -16,6 +16,7 @@ import { FounderSection } from "@/components/home/FounderSection";
 import { FinalCta } from "@/components/home/FinalCta";
 import { ContactSection } from "@/components/home/ContactSection";
 import { FilmPreviewSection } from "@/components/home/FilmPreviewSection";
+import { AprilPromoPopup } from "@/components/home/AprilPromoPopup";
 import { FOOTER } from "@/content/landing-content";
 
 const DRAFT_STORAGE_KEY = "vitae_draft";
@@ -30,6 +31,15 @@ export default function LandingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<DraftPointer | null>(null);
+
+  // Background audio — attempt autoplay once; ignore if browser blocks it
+  useEffect(() => {
+    const audio = new Audio("/landing-audio/landing-bg.mp3");
+    audio.volume = 0.3;
+    audio.loop = false;
+    audio.play().catch(() => { /* autoplay blocked — fail silently */ });
+    return () => { audio.pause(); };
+  }, []);
 
   useEffect(() => {
     try {
@@ -76,8 +86,14 @@ export default function LandingPage() {
     }
   }
 
+  function handleScrollToOrder() {
+    document.getElementById("final-cta")?.scrollIntoView({ behavior: "smooth" });
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
+
+      <AprilPromoPopup onScrollToOrder={handleScrollToOrder} />
 
       {/* ── Sticky nav with logo ──────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b border-border/40 bg-background/90 backdrop-blur-sm">

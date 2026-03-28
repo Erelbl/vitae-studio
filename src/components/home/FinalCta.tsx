@@ -10,7 +10,7 @@ interface Props {
 
 export function FinalCta({ onStartOrder, loading }: Props) {
   return (
-    <section className="bg-primary px-4 py-24 sm:py-32">
+    <section id="final-cta" className="bg-primary px-4 py-24 sm:py-32">
       <div className="mx-auto max-w-2xl text-center">
 
         <h2 className="mb-5 text-3xl font-bold text-white sm:text-4xl">
