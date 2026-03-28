@@ -132,6 +132,8 @@ export async function POST(
       .from("film_scenes")
       .update({
         status: "queued",
+        render_job_type: "full_render",
+        render_video_target: null,
         error_message: null,
         updated_at: new Date().toISOString(),
       })
