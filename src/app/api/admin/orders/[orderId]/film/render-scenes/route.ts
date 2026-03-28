@@ -109,12 +109,17 @@ export async function POST(
       continue;
     }
 
-    // Mark as queued. Clear stale progress fields so the UI doesn't show a
-    // previous run's progress after re-queuing.
-    await adminClient
+    // Mark as queued. Explicitly reset render_job_type to "full_render" and
+    // render_video_target to null so the worker never inherits a stale
+    // "regenerate_video_only" job type from a previous per-scene queue action.
+    // Also clear stale progress fields so the UI doesn't show a previous run's
+    // progress after re-queuing.
+    const { error: updateError } = await adminClient
       .from("film_scenes")
       .update({
         status: "queued",
+        render_job_type: "full_render",
+        render_video_target: null,
         error_message: null,
         render_stage: null,
         render_progress_pct: 0,
@@ -122,6 +127,13 @@ export async function POST(
         updated_at: new Date().toISOString(),
       })
       .eq("id", scene.id as string);
+
+    if (updateError) {
+      return NextResponse.json(
+        { error: `Failed to queue scene ${scene.id as string}: ${updateError.message}` },
+        { status: 500 }
+      );
+    }
 
     queued++;
   }

@@ -221,13 +221,16 @@ async function fetchQueuedScenes(
     return [];
   }
 
-  return (data ?? []).map((row) => ({
+  const rows = (data ?? []).map((row) => ({
     id: row.id as string,
     film_project_id: row.film_project_id as string,
     order_id: (row.film_projects as unknown as { order_id: string }).order_id,
     render_job_type: (row.render_job_type as string | null) ?? "full_render",
     render_video_target: (row.render_video_target as string | null) ?? null,
   }));
+
+  log(`fetchQueuedScenes: found ${rows.length} scene(s) with status="queued"`);
+  return rows;
 }
 
 async function processScene(scene: {
