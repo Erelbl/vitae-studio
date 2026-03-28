@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Loader2,
   Layers,
+  Clapperboard,
 } from "lucide-react";
 import type {
   FilmProject,
@@ -221,6 +222,28 @@ export function FilmPanel({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "שגיאה ברינדור הסצנה");
+      }
+      router.refresh();
+    });
+  }
+
+  async function handleRegenerateVideo(sceneId: string, target: string) {
+    await runAction(`regen-video-${sceneId}`, async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/render-scene`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sceneId,
+            jobType: "regenerate_video_only",
+            videoTarget: target,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ביצירת וידאו מחדש");
       }
       router.refresh();
     });
@@ -764,7 +787,7 @@ export function FilmPanel({
               <span className="flex-1">טקסט</span>
               <span className="shrink-0 w-16 text-end">שמע / משך</span>
               <span className="shrink-0 w-20 text-end">סטטוס</span>
-              <span className="shrink-0 w-[148px]" />
+              <span className="shrink-0 w-[175px]" />
             </div>
 
             {/* Scene rows */}
@@ -783,11 +806,13 @@ export function FilmPanel({
                   isSelected={selectedSceneIds.has(scene.id)}
                   onToggleSelect={() => toggleSceneSelection(scene.id)}
                   onRender={() => handleRenderScene(scene.id)}
+                  onRegenerateVideo={(target) => handleRegenerateVideo(scene.id, target)}
                   onGenerateAudio={() => handleGenerateSceneAudio(scene.id)}
                   onToggleUnifiedSpread={() =>
                     handleToggleUnifiedSpread(scene.id, scene.is_unified_spread ?? false)
                   }
                   isRendering={loadingAction === `render-${scene.id}`}
+                  isRegeneratingVideo={loadingAction === `regen-video-${scene.id}`}
                   isGeneratingAudio={loadingAction === `audio-${scene.id}`}
                   isTogglingUnifiedSpread={loadingAction === `unified-spread-${scene.id}`}
                   canGenerateAudio={voiceChosen}
@@ -914,9 +939,11 @@ function SceneRow({
   isSelected,
   onToggleSelect,
   onRender,
+  onRegenerateVideo,
   onGenerateAudio,
   onToggleUnifiedSpread,
   isRendering,
+  isRegeneratingVideo,
   isGeneratingAudio,
   isTogglingUnifiedSpread,
   canGenerateAudio,
@@ -933,10 +960,14 @@ function SceneRow({
   isSelected: boolean;
   onToggleSelect: () => void;
   onRender: () => void;
+  /** Queue a regenerate_video_only job for the given Kling target. */
+  onRegenerateVideo: (target: string) => void;
   onGenerateAudio: () => void;
   /** Toggle is_unified_spread for this scene. */
   onToggleUnifiedSpread: () => void;
   isRendering: boolean;
+  /** True while a regenerate-video job is being queued. */
+  isRegeneratingVideo: boolean;
   isGeneratingAudio: boolean;
   /** True while the unified-spread toggle API call is in flight. */
   isTogglingUnifiedSpread: boolean;
@@ -944,6 +975,7 @@ function SceneRow({
   disabled: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [regenOpen, setRegenOpen] = useState(false);
 
   const textPreview = scene.narration_text
     ? scene.narration_text.length > 80
@@ -1119,6 +1151,88 @@ function SceneRow({
               <Play className="w-3.5 h-3.5" />
             )}
           </button>
+
+          {/* Regenerate Kling video — re-queues with regenerate_video_only job type.
+              Spread scenes (non-unified): dropdown for right / left / both.
+              Unified spread scenes:       single click → spread target.
+              Single-page scenes:          single click → right target. */}
+          {(() => {
+            const isSpread = (scene.page_ids_json?.length ?? 0) >= 2;
+            const isUnified = isSpread && Boolean(scene.is_unified_spread);
+            const btnDisabled =
+              disabled ||
+              isRegeneratingVideo ||
+              scene.status === "queued" ||
+              scene.status === "rendering";
+            const btnClass =
+              "h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border disabled:opacity-35 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground";
+            const icon = isRegeneratingVideo ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Clapperboard className="w-3.5 h-3.5" />
+            );
+
+            if (isSpread && !isUnified) {
+              // Non-unified spread: plain React-state popover (right / left / both).
+              return (
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    disabled={btnDisabled}
+                    className={btnClass}
+                    title="צור וידאו Kling מחדש"
+                    onClick={() => setRegenOpen((v) => !v)}
+                  >
+                    {icon}
+                  </button>
+                  {regenOpen && !btnDisabled && (
+                    <>
+                      {/* Invisible backdrop — click outside closes the menu */}
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setRegenOpen(false)}
+                      />
+                      <div className="absolute top-full mt-1 end-0 z-50 min-w-28 rounded-md border border-border/60 bg-popover p-1 shadow-md space-y-0.5">
+                        {(
+                          [
+                            { target: "right", label: "וידאו ימין" },
+                            { target: "left",  label: "וידאו שמאל" },
+                            { target: "both",  label: "שני הוידאו" },
+                          ] as const
+                        ).map(({ target, label }) => (
+                          <button
+                            key={target}
+                            type="button"
+                            className="w-full text-start text-xs px-2 py-1 rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              onRegenerateVideo(target);
+                              setRegenOpen(false);
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            }
+
+            // Single page or unified spread: direct click, no dropdown
+            return (
+              <button
+                type="button"
+                disabled={btnDisabled}
+                onClick={() => onRegenerateVideo(isUnified ? "spread" : "right")}
+                className={btnClass}
+                title={isUnified ? "צור וידאו פריסה מחדש" : "צור וידאו מחדש"}
+              >
+                {icon}
+              </button>
+            );
+          })()}
 
           {/* Unified spread toggle — only for 2-page spread scenes */}
           {(scene.page_ids_json?.length ?? 0) >= 2 ? (
