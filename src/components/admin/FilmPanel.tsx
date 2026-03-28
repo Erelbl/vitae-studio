@@ -1223,15 +1223,13 @@ function SceneRow({
               // Non-unified spread: dropdown with right / left / both
               return (
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      disabled={btnDisabled}
-                      className={btnClass}
-                      title="צור וידאו Kling מחדש"
-                    >
-                      {icon}
-                    </button>
+                  <DropdownMenuTrigger
+                    type="button"
+                    disabled={btnDisabled}
+                    className={btnClass}
+                    title="צור וידאו Kling מחדש"
+                  >
+                    {icon}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="text-xs min-w-28">
                     <DropdownMenuItem
