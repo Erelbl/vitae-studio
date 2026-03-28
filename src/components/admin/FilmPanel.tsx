@@ -21,12 +21,6 @@ import {
   Layers,
   Clapperboard,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import type {
   FilmProject,
   FilmProjectStatus,
@@ -995,6 +989,7 @@ function SceneRow({
   disabled: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [regenOpen, setRegenOpen] = useState(false);
 
   const textPreview = scene.narration_text
     ? scene.narration_text.length > 80
@@ -1220,38 +1215,53 @@ function SceneRow({
             );
 
             if (isSpread && !isUnified) {
-              // Non-unified spread: dropdown with right / left / both
+              // Non-unified spread: plain React-state popover (right / left / both).
+              // Avoids Base UI's global event listeners which conflicted with onRender.
               return (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
+                <div className="relative shrink-0">
+                  <button
                     type="button"
                     disabled={btnDisabled}
                     className={btnClass}
                     title="צור וידאו Kling מחדש"
+                    onClick={() => setRegenOpen((v) => !v)}
                   >
                     {icon}
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="text-xs min-w-28">
-                    <DropdownMenuItem
-                      className="text-xs cursor-pointer"
-                      onSelect={() => onRegenerateVideo("right")}
-                    >
-                      וידאו ימין
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-xs cursor-pointer"
-                      onSelect={() => onRegenerateVideo("left")}
-                    >
-                      וידאו שמאל
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-xs cursor-pointer"
-                      onSelect={() => onRegenerateVideo("both")}
-                    >
-                      שני הוידאו
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  </button>
+                  {regenOpen && !btnDisabled && (
+                    <>
+                      {/* Invisible backdrop — click outside closes the menu */}
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setRegenOpen(false)}
+                      />
+                      <div className="absolute top-full mt-1 end-0 z-50 min-w-28 rounded-md border border-border/60 bg-popover p-1 shadow-md space-y-0.5">
+                        {(
+                          [
+                            { target: "right", label: "וידאו ימין" },
+                            { target: "left",  label: "וידאו שמאל" },
+                            { target: "both",  label: "שני הוידאו" },
+                          ] as const
+                        ).map(({ target, label }) => (
+                          <button
+                            key={target}
+                            type="button"
+                            className="w-full text-start text-xs px-2 py-1 rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                            onMouseDown={(e) => {
+                              // onMouseDown fires before the blur that would close the
+                              // menu via the backdrop, so the action always registers.
+                              e.preventDefault();
+                              onRegenerateVideo(target);
+                              setRegenOpen(false);
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               );
             }
 
