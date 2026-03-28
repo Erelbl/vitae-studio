@@ -1,0 +1,23 @@
+# Build artifacts — regenerated inside the Docker build
+.next/
+.remotion-bundle/
+
+# Runtime secrets — injected via Railway environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies — installed fresh inside the Docker build
+node_modules/
+
+# Git history
+.git/
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS metadata
+.DS_Store
+Thumbs.db

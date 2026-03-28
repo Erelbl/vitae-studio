@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,14 @@ import {
   AlertTriangle,
   Loader2,
   Layers,
+  Clapperboard,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type {
   FilmProject,
   FilmProjectStatus,
@@ -226,6 +233,28 @@ export function FilmPanel({
     });
   }
 
+  async function handleRegenerateVideo(sceneId: string, target: string) {
+    await runAction(`regen-video-${sceneId}`, async () => {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/film/render-scene`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sceneId,
+            jobType: "regenerate_video_only",
+            videoTarget: target,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ביצירת וידאו מחדש");
+      }
+      router.refresh();
+    });
+  }
+
   async function handleRenderSelected() {
     const ids = [...selectedSceneIds];
     await runAction("render-selected", async () => {
@@ -377,6 +406,20 @@ export function FilmPanel({
   }
 
   const isLoading = loadingAction !== null;
+
+  // ── Live render progress polling ───────────────────────────────────────────
+  // While any scene is queued or rendering, refresh server data every 3 s so
+  // the progress bar and stage label update without a manual page reload.
+  // The effect re-evaluates after each refresh: once all active renders finish
+  // the interval is cleared automatically.
+  useEffect(() => {
+    const hasActive = scenes.some(
+      (s) => s.status === "queued" || s.status === "rendering"
+    );
+    if (!hasActive) return;
+    const id = setInterval(() => router.refresh(), 3000);
+    return () => clearInterval(id);
+  }, [scenes, router]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
 
@@ -764,7 +807,7 @@ export function FilmPanel({
               <span className="flex-1">טקסט</span>
               <span className="shrink-0 w-16 text-end">שמע / משך</span>
               <span className="shrink-0 w-20 text-end">סטטוס</span>
-              <span className="shrink-0 w-[148px]" />
+              <span className="shrink-0 w-[175px]" />
             </div>
 
             {/* Scene rows */}
@@ -783,11 +826,13 @@ export function FilmPanel({
                   isSelected={selectedSceneIds.has(scene.id)}
                   onToggleSelect={() => toggleSceneSelection(scene.id)}
                   onRender={() => handleRenderScene(scene.id)}
+                  onRegenerateVideo={(target) => handleRegenerateVideo(scene.id, target)}
                   onGenerateAudio={() => handleGenerateSceneAudio(scene.id)}
                   onToggleUnifiedSpread={() =>
                     handleToggleUnifiedSpread(scene.id, scene.is_unified_spread ?? false)
                   }
                   isRendering={loadingAction === `render-${scene.id}`}
+                  isRegeneratingVideo={loadingAction === `regen-video-${scene.id}`}
                   isGeneratingAudio={loadingAction === `audio-${scene.id}`}
                   isTogglingUnifiedSpread={loadingAction === `unified-spread-${scene.id}`}
                   canGenerateAudio={voiceChosen}
@@ -914,9 +959,11 @@ function SceneRow({
   isSelected,
   onToggleSelect,
   onRender,
+  onRegenerateVideo,
   onGenerateAudio,
   onToggleUnifiedSpread,
   isRendering,
+  isRegeneratingVideo,
   isGeneratingAudio,
   isTogglingUnifiedSpread,
   canGenerateAudio,
@@ -933,10 +980,14 @@ function SceneRow({
   isSelected: boolean;
   onToggleSelect: () => void;
   onRender: () => void;
+  /** Queue a regenerate_video_only job for the given Kling target. */
+  onRegenerateVideo: (target: string) => void;
   onGenerateAudio: () => void;
   /** Toggle is_unified_spread for this scene. */
   onToggleUnifiedSpread: () => void;
   isRendering: boolean;
+  /** True while a regenerate-video job is being queued. */
+  isRegeneratingVideo: boolean;
   isGeneratingAudio: boolean;
   /** True while the unified-spread toggle API call is in flight. */
   isTogglingUnifiedSpread: boolean;
@@ -1063,14 +1114,25 @@ function SceneRow({
           </span>
           {scene.status === "rendering" && (
             <>
-              <div className="mt-0.5 w-full bg-muted/50 rounded-full h-1 overflow-hidden">
+              {/* Progress track — slightly taller than before for visibility */}
+              <div className="mt-1 w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-700"
+                  className="relative h-full bg-blue-500 rounded-full overflow-hidden transition-[width] duration-700"
                   style={{ width: `${scene.render_progress_pct ?? 0}%` }}
-                />
+                >
+                  {/* Shimmer highlight — sweeps across the filled bar */}
+                  <div
+                    className="absolute inset-y-0 w-1/2"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent)",
+                      animation: "render-shimmer 1.8s ease-in-out infinite",
+                    }}
+                  />
+                </div>
               </div>
               {scene.render_stage_message && (
-                <p className="text-[9px] text-muted-foreground leading-tight mt-0.5 truncate">
+                <p className="text-[9px] text-blue-500/70 leading-tight mt-0.5 truncate">
                   {scene.render_stage_message}
                 </p>
               )}
@@ -1136,6 +1198,78 @@ function SceneRow({
               <Play className="w-3.5 h-3.5" />
             )}
           </button>
+
+          {/* Regenerate video — re-queues with regenerate_video_only job type.
+              Spread scenes (non-unified): dropdown for right/left/both.
+              Unified spread scenes:       single click → spread target.
+              Single-page scenes:          single click → right target. */}
+          {(() => {
+            const isSpread = (scene.page_ids_json?.length ?? 0) >= 2;
+            const isUnified = isSpread && Boolean(scene.is_unified_spread);
+            const btnDisabled =
+              disabled ||
+              isRegeneratingVideo ||
+              scene.status === "queued" ||
+              scene.status === "rendering";
+            const btnClass =
+              "h-7 w-7 flex items-center justify-center rounded-md border border-border/50 hover:bg-muted/70 hover:border-border disabled:opacity-35 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground";
+            const icon = isRegeneratingVideo ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Clapperboard className="w-3.5 h-3.5" />
+            );
+
+            if (isSpread && !isUnified) {
+              // Non-unified spread: dropdown with right / left / both
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={btnDisabled}
+                      className={btnClass}
+                      title="צור וידאו Kling מחדש"
+                    >
+                      {icon}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="text-xs min-w-28">
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onSelect={() => onRegenerateVideo("right")}
+                    >
+                      וידאו ימין
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onSelect={() => onRegenerateVideo("left")}
+                    >
+                      וידאו שמאל
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onSelect={() => onRegenerateVideo("both")}
+                    >
+                      שני הוידאו
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }
+
+            // Single page or unified spread: direct click, no dropdown
+            return (
+              <button
+                type="button"
+                disabled={btnDisabled}
+                onClick={() => onRegenerateVideo(isUnified ? "spread" : "right")}
+                className={btnClass}
+                title={isUnified ? "צור וידאו פריסה מחדש" : "צור וידאו מחדש"}
+              >
+                {icon}
+              </button>
+            );
+          })()}
 
           {/* Unified spread toggle — only for 2-page spread scenes */}
           {(scene.page_ids_json?.length ?? 0) >= 2 ? (

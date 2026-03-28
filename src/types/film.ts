@@ -136,6 +136,17 @@ export interface FilmScene {
    * Cleared when is_unified_spread is toggled off (or when forcing regeneration).
    */
   spread_video_path: string | null;
+  /**
+   * Job type set by the UI when queuing. Controls what the worker does.
+   * 'full_render' (default) — full pipeline. 'regenerate_video_only' — clears
+   * the requested Kling path(s) and re-renders the scene.
+   */
+  render_job_type: string;
+  /**
+   * Which Kling video asset to regenerate. Only meaningful for 'regenerate_video_only'.
+   * Values: 'right' | 'left' | 'both' | 'spread'
+   */
+  render_video_target: string | null;
   /** Machine-readable render stage. Null when idle. */
   render_stage: string | null;
   /** 0–100 progress within the current render. */
