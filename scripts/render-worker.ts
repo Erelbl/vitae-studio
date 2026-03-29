@@ -552,6 +552,7 @@ async function runWatch(intervalSec: number): Promise<never> {
 
 async function main() {
   log("Starting film render worker.");
+  log(`App base URL: ${(process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "")} (proxy for assembly clip URLs)`);
 
   // Reset any scenes stuck in "rendering" from a previous crashed run
   await resetStaleRenderingScenes();
@@ -608,6 +609,22 @@ async function main() {
     process.exit(failed > 0 || assemblyFailed > 0 ? 1 : 0);
   }
 }
+
+// ── Process-level crash guards ────────────────────────────────────────────────
+// Remotion's renderer (Chrome + ffmpeg) can emit unhandled write-EOF errors when
+// network fetch failures break the internal pipe between Chrome and the Node.js
+// OffthreadVideoServer. Without these guards, the worker process dies and the
+// assembly job is lost with no DB update. With them, the error is logged and the
+// crash is surfaced via assembleFilm's own catch block (which writes status=error).
+
+process.on("uncaughtException", (e) => {
+  err(`Uncaught exception (worker kept alive): ${e instanceof Error ? e.message : String(e)}`);
+  if (e instanceof Error && e.stack) err(e.stack);
+});
+
+process.on("unhandledRejection", (reason) => {
+  err(`Unhandled rejection (worker kept alive): ${reason instanceof Error ? reason.message : String(reason)}`);
+});
 
 main().catch((e) => {
   err(`Fatal: ${e instanceof Error ? e.message : String(e)}`);
