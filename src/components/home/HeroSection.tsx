@@ -1,8 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { HERO, GALLERY } from "@/content/landing-content";
-import { GalleryCarousel } from "@/components/home/GalleryCarousel";
+import { HERO } from "@/content/landing-content";
 
 interface Props {
   onStartOrder: () => void;
@@ -63,17 +62,22 @@ export function HeroSection({ onStartOrder, loading }: Props) {
         </p>
       </div>
 
-      {/* Full-width gallery carousel — replaces static hero image */}
+      {/* Featured film preview video */}
       <div
-        className="relative z-10 mx-auto max-w-6xl animate-fade-up px-0 pb-20 sm:pb-28"
+        className="relative z-10 mx-auto max-w-5xl animate-fade-up px-4 pb-20 sm:pb-28"
         style={{ animationDelay: "200ms", animationFillMode: "both" }}
       >
-        <GalleryCarousel
-          images={GALLERY.images}
-          defaultIndex={Math.floor(GALLERY.images.length / 2)}
-          showDots
-          showCaption
-        />
+        <div className="overflow-hidden rounded-2xl shadow-2xl ring-1 ring-border">
+          <video
+            controls
+            playsInline
+            preload="metadata"
+            poster="/images/landing-film-thumbnail.jpg"
+            className="block w-full aspect-video bg-black"
+          >
+            <source src="/videos/landing-film-preview.mp4" type="video/mp4" />
+          </video>
+        </div>
       </div>
     </section>
   );
