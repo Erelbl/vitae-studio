@@ -407,9 +407,9 @@ export async function assembleFilm(
       codec: "h264",
       outputLocation: outputPath,
       inputProps: compositionProps,
-      // CRF 28 gives ~50-65% smaller output than the default CRF 18 while
-      // maintaining good visual quality for 960×540 preview delivery.
-      crf: 28,
+      // CRF 24 balances quality vs size: noticeably better than CRF 28
+      // (which was over-compressed) while still ~40-50% smaller than CRF 18.
+      crf: 24,
     });
 
     console.log(`[film-assemble] Remotion render complete → ${outputPath}`);
