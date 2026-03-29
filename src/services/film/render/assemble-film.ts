@@ -14,8 +14,9 @@
  * STRATEGY: Remotion FinalFilmComposition.
  *
  * Remotion handles timeline sequencing natively via <Sequence> + <OffthreadVideo>.
- * No offset calculations, no filter chains. Sources are Supabase signed URLs wrapped
- * through /api/proxy — Chrome (Remotion's renderer) loads them via the proxy endpoint.
+ * No offset calculations, no filter chains. Sources are raw signed HTTPS URLs from
+ * Supabase Storage. Remotion's OffthreadVideoServer fetches them via its own internal
+ * /proxy endpoint — do NOT pre-wrap with /api/proxy (causes double-proxying).
  * Narration audio is handled via Remotion's <Audio> component alongside
  * <OffthreadVideo>, so no ffmpeg mux step is needed.
  *
@@ -93,18 +94,6 @@ const SIGNED_URL_EXPIRY_SEC = 3 * 60 * 60;
 const PREVIEW_EXPORT_MODE = true;
 const PREVIEW_WIDTH = 960;
 const PREVIEW_HEIGHT = 540;
-
-// ── Proxy URL helper ─────────────────────────────────────────────────────────
-
-/**
- * Wraps a Supabase signed URL through the local proxy endpoint.
- * Remotion's Chrome renderer loads this via HTTP instead of hitting Supabase directly.
- * Base URL: APP_BASE_URL env var, fallback to http://localhost:3000.
- */
-function proxyUrl(src: string): string {
-  const base = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  return `${base}/api/proxy?src=${encodeURIComponent(src)}`;
-}
 
 // ── Remotion bundle path ─────────────────────────────────────────────────────
 
@@ -192,7 +181,7 @@ async function checkFfmpeg(): Promise<void> {
 
 /**
  * Generate a signed HTTPS URL for a storage object.
- * Callers wrap the result with proxyUrl() before passing to Remotion.
+ * Pass the returned URL directly as a Remotion clip src — do not pre-wrap.
  */
 async function getSignedUrl(storagePath: string, bucket: string): Promise<string> {
   const adminClient = createAdminClient();
@@ -231,9 +220,6 @@ export async function assembleFilm(
 ): Promise<AssembleFilmResult> {
   const { orderId, filmProjectId } = input;
   const adminClient = createAdminClient();
-
-  const proxyBase = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  console.log(`[render-worker] Using proxy base: ${proxyBase}/api/proxy`);
 
   await checkFfmpeg();
 
@@ -304,19 +290,21 @@ export async function assembleFilm(
         `for project ${filmProjectId}`
     );
     console.log(
-      `[film-assemble] Strategy: Remotion FinalFilmComposition (proxy URLs via /api/proxy)`
+      `[film-assemble] Strategy: Remotion FinalFilmComposition (Remotion internal /proxy)`
     );
     console.log(
-      `[film-assemble] Source: rendered_scene_path MP4s — signed Supabase URL wrapped in proxy`
+      `[film-assemble] Source: rendered_scene_path MP4s via signed Supabase URLs`
     );
     console.log(
       `[film-assemble] ═══════════════════════════════════════════════════════`
     );
 
-    // ── Build clip entries (proxy-wrapped URLs) ───────────────────────────
+    // ── Build clip entries (raw signed HTTPS URLs) ────────────────────────
     //
-    // Each scene video URL is signed then wrapped through /api/proxy so
-    // Remotion's Chrome renderer loads it via a stable local endpoint.
+    // Pass the raw Supabase signed URL directly to Remotion. Remotion's
+    // OffthreadVideoServer wraps it internally as /proxy?src=<url> — one hop
+    // from Remotion's Node.js process straight to Supabase. Pre-wrapping with
+    // our own /api/proxy causes double-proxying (Remotion wraps the wrapper).
     // No local download or ffmpeg mux needed — narration audio is already
     // baked into each scene MP4 by the scene renderer (via Remotion <Audio>).
 
@@ -336,8 +324,8 @@ export async function assembleFilm(
         );
       }
 
-      // Sign video URL — Remotion's OffthreadVideo loads this via the proxy
-      const videoSignedUrl = proxyUrl(await getSignedUrl(videoStoragePath, storageBucket));
+      // Sign video URL — Remotion's OffthreadVideoServer fetches it directly from Supabase
+      const videoSignedUrl = await getSignedUrl(videoStoragePath, storageBucket);
 
       // Narration audio is already baked into the rendered scene MP4 via
       // Remotion's <Audio> component during scene rendering. Do NOT pass
@@ -355,7 +343,7 @@ export async function assembleFilm(
         `[film-assemble] [${i + 1}/${assemblyScenes.length}] ✓ clip ready: ` +
           `key=${spreadKey} duration=${(durationMs / 1000).toFixed(2)}s ` +
           `(${durationInFrames} frames) audio=baked-in ` +
-          `video=proxy narration=${audioStoragePath ? "yes" : "none"}`
+          `video=signed-supabase narration=${audioStoragePath ? "yes" : "none"}`
       );
 
       clips.push({
