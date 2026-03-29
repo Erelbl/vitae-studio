@@ -55,28 +55,43 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Security validation ────────────────────────────────────────────────────
-  const normalizedPath = path.normalize(filePath);
-  const tmpBase = path.normalize(os.tmpdir());
-  const parentDir = path.basename(path.dirname(normalizedPath));
+  //
+  // Use path.resolve() for canonical absolute path — handles mixed separators
+  // (forward/back slash) and resolves any relative components. This is important
+  // on Windows where os.tmpdir() and the caller may use different separator styles.
+  const resolvedPath = path.resolve(filePath);
+  const tmpBase = path.resolve(os.tmpdir());
+  const parentDir = path.basename(path.dirname(resolvedPath));
+
+  console.log(
+    `[local-video] request: raw="${filePath}" resolved="${resolvedPath}" ` +
+    `tmpBase="${tmpBase}" parentDir="${parentDir}" ext="${path.extname(resolvedPath)}"`
+  );
 
   if (
-    !normalizedPath.startsWith(tmpBase) ||
+    !resolvedPath.startsWith(tmpBase) ||
     !parentDir.startsWith("vitae-assemble-") ||
-    path.extname(normalizedPath).toLowerCase() !== ".mp4"
+    path.extname(resolvedPath).toLowerCase() !== ".mp4"
   ) {
+    console.warn(
+      `[local-video] FORBIDDEN — startsTmpBase=${resolvedPath.startsWith(tmpBase)} ` +
+      `startsAssemble=${parentDir.startsWith("vitae-assemble-")} ` +
+      `ext=${path.extname(resolvedPath)}`
+    );
     return new Response("Forbidden", { status: 403 });
   }
 
   // ── Stat the file ──────────────────────────────────────────────────────────
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(normalizedPath);
+    stat = fs.statSync(resolvedPath);
   } catch {
+    console.error(`[local-video] NOT FOUND: "${resolvedPath}"`);
     return new Response("File not found", { status: 404 });
   }
 
   const fileSize = stat.size;
-  const fileName = path.basename(normalizedPath);
+  const fileName = path.basename(resolvedPath);
   const rangeHeader = request.headers.get("range");
 
   // ── Range request (ffmpeg seeks into the file) ─────────────────────────────
@@ -89,7 +104,7 @@ export async function GET(request: NextRequest) {
     console.log(`[local-video] range ${start}-${end} of ${fileName} (${fileSize} bytes)`);
 
     return new Response(
-      nodeStreamToWeb(fs.createReadStream(normalizedPath, { start, end })),
+      nodeStreamToWeb(fs.createReadStream(resolvedPath, { start, end })),
       {
         status: 206,
         headers: {
@@ -106,7 +121,7 @@ export async function GET(request: NextRequest) {
   console.log(`[local-video] serving ${fileName} (${fileSize} bytes)`);
 
   return new Response(
-    nodeStreamToWeb(fs.createReadStream(normalizedPath)),
+    nodeStreamToWeb(fs.createReadStream(resolvedPath)),
     {
       status: 200,
       headers: {
