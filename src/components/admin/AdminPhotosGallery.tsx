@@ -119,6 +119,7 @@ export function AdminPhotosGallery({
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // Poll while any photo is generating
   const anyGenerating = photos.some((p) => p.illustration_status === "generating");
@@ -157,6 +158,30 @@ export function AdminPhotosGallery({
       )
       .map((p) => p.id);
     setSelected(new Set(retryable));
+  }
+
+  async function handleDeletePhoto(photoId: string, filename: string) {
+    if (!confirm(`למחוק את התמונה "${filename}"?\nפעולה זו בלתי הפיכה.`)) return;
+    setDeleting(photoId);
+    try {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/photos/${photoId}`,
+        { method: "DELETE" }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(body.error ?? "שגיאה במחיקת התמונה");
+        return;
+      }
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(photoId);
+        return next;
+      });
+      router.refresh();
+    } finally {
+      setDeleting(null);
+    }
   }
 
   async function handleGenerate() {
@@ -414,6 +439,19 @@ export function AdminPhotosGallery({
                   הורד איור
                 </a>
               )}
+
+              {/* Delete original photo */}
+              <button
+                type="button"
+                disabled={deleting === photo.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeletePhoto(photo.id, photo.original_filename);
+                }}
+                className="block w-full text-center text-xs text-destructive hover:text-destructive/80 hover:underline py-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting === photo.id ? "מוחק..." : "מחק"}
+              </button>
             </div>
           );
         })}
