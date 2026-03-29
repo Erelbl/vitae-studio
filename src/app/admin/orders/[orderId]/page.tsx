@@ -126,14 +126,14 @@ export default async function AdminOrderDetailPage({
     .eq("is_uploaded", true)
     .order("display_order");
 
-  // Resolve signed URLs with thumb transforms for gallery display (300px, q70)
+  // Resolve signed URLs without transforms for admin gallery display — avoids Supabase image transformation usage
   const photosForGallery: PhotoForGallery[] = photos
     ? await Promise.all(
         photos.map(async (photo) => {
           const [originalUrl, illustrationUrl] = await Promise.all([
-            createSignedImageUrl(adminClient, "originals", photo.original_storage_path as string, 3600, "thumb"),
+            createSignedImageUrl(adminClient, "originals", photo.original_storage_path as string, 3600, "original"),
             photo.illustration_storage_path
-              ? createSignedImageUrl(adminClient, "illustrations", photo.illustration_storage_path as string, 3600, "thumb")
+              ? createSignedImageUrl(adminClient, "illustrations", photo.illustration_storage_path as string, 3600, "original")
               : Promise.resolve(null),
           ]);
 
