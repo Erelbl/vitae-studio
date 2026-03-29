@@ -20,9 +20,32 @@ import { NextRequest } from "next/server";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { Readable } from "stream";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Wrap a Node.js ReadStream in a Web ReadableStream.
+ * Avoids Readable.toWeb() which is experimental and can silently fail
+ * during Next.js App Router module evaluation, causing the route to 404.
+ */
+function nodeStreamToWeb(
+  nodeStream: fs.ReadStream
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      nodeStream.on("data", (chunk) => {
+        controller.enqueue(
+          typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Uint8Array)
+        );
+      });
+      nodeStream.on("end", () => controller.close());
+      nodeStream.on("error", (err) => controller.error(err));
+    },
+    cancel() {
+      nodeStream.destroy();
+    },
+  });
+}
 
 export async function GET(request: NextRequest) {
   const filePath = request.nextUrl.searchParams.get("path");
@@ -53,6 +76,7 @@ export async function GET(request: NextRequest) {
   }
 
   const fileSize = stat.size;
+  const fileName = path.basename(normalizedPath);
   const rangeHeader = request.headers.get("range");
 
   // ── Range request (ffmpeg seeks into the file) ─────────────────────────────
@@ -62,9 +86,10 @@ export async function GET(request: NextRequest) {
     const end   = match?.[2] ? parseInt(match[2], 10) : fileSize - 1;
     const chunkSize = end - start + 1;
 
-    const nodeStream = fs.createReadStream(normalizedPath, { start, end });
+    console.log(`[local-video] range ${start}-${end} of ${fileName} (${fileSize} bytes)`);
+
     return new Response(
-      Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>,
+      nodeStreamToWeb(fs.createReadStream(normalizedPath, { start, end })),
       {
         status: 206,
         headers: {
@@ -78,9 +103,10 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Full file (streamed, not buffered) ─────────────────────────────────────
-  const nodeStream = fs.createReadStream(normalizedPath);
+  console.log(`[local-video] serving ${fileName} (${fileSize} bytes)`);
+
   return new Response(
-    Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>,
+    nodeStreamToWeb(fs.createReadStream(normalizedPath)),
     {
       status: 200,
       headers: {
