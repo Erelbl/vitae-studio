@@ -1,7 +1,7 @@
 /**
  * Local temp-file video route — used exclusively by final film assembly.
  *
- * During assembly, scene clips are downloaded to os.tmpdir()/vitae-assemble-*/
+ * During assembly, scene clips are downloaded to os.tmpdir()/vitae-assemble-{id}/
  * before the Remotion render starts. Remotion's OffthreadVideoServer cannot load
  * file:// URLs ("Can only download URLs starting with http:// or https://"), so
  * we serve the already-local files over HTTP through this route instead.
