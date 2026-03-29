@@ -20,6 +20,7 @@ import {
   Audio,
   useCurrentFrame,
   interpolate,
+  staticFile,
 } from "remotion";
 import { PageTurnTransition } from "./PageTurnTransition";
 
@@ -38,6 +39,11 @@ export interface ClipEntry {
   audioSrc: string | null;
   /** Duration of this clip in frames (derived from film_scenes.duration_ms). */
   durationInFrames: number;
+  /**
+   * Whether this scene contains narration audio (baked into the scene MP4).
+   * Used by the background music layer to duck volume under narration.
+   */
+  hasNarration: boolean;
 }
 
 export interface FinalFilmCompositionProps {
@@ -60,18 +66,19 @@ function ClipWithTransition({
   clipIndex,
   totalClips,
   transitionDurationInFrames,
-  startFrame,
   enableTransitionSound,
 }: {
   clip: ClipEntry;
   clipIndex: number;
   totalClips: number;
   transitionDurationInFrames: number;
-  startFrame: number;
   enableTransitionSound: boolean;
 }) {
+  // useCurrentFrame() inside a <Sequence> already returns a sequence-local
+  // 0-based frame (Remotion subtracts the Sequence's `from` offset internally).
+  // Do NOT subtract startFrame here — that would double-subtract the offset and
+  // break every clip after clip 0.
   const frame = useCurrentFrame();
-  const localFrame = frame - startFrame;
   const td = transitionDurationInFrames;
   const isFirst = clipIndex === 0;
   const isLast = clipIndex === totalClips - 1;
@@ -79,7 +86,7 @@ function ClipWithTransition({
   // Entry transition (not for the first clip)
   let entryProgress = 1; // fully visible by default
   if (!isFirst && td > 0) {
-    entryProgress = interpolate(localFrame, [0, td], [0, 1], {
+    entryProgress = interpolate(frame, [0, td], [0, 1], {
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     });
@@ -89,7 +96,7 @@ function ClipWithTransition({
   let exitProgress = 0; // no exit by default
   if (!isLast && td > 0) {
     const exitStart = clip.durationInFrames - td;
-    exitProgress = interpolate(localFrame, [exitStart, clip.durationInFrames], [0, 1], {
+    exitProgress = interpolate(frame, [exitStart, clip.durationInFrames], [0, 1], {
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     });
@@ -172,6 +179,58 @@ export function computeTotalDuration(
   return Math.max(1, totalClipFrames - overlapFrames);
 }
 
+// ── Background music ─────────────────────────────────────────────────────────
+
+/**
+ * Volume during quiet / non-narrated sections.
+ * Noticeable enough to fill silence without distracting from imagery.
+ */
+const MUSIC_BASE_VOLUME = 0.15;
+
+/**
+ * Volume while narration is playing.
+ * Low enough to be inaudible under speech but maintains the ambient bed.
+ */
+const MUSIC_DUCKED_VOLUME = 0.05;
+
+/**
+ * Crossfade duration for duck transitions, in frames (~0.6 s at 30 fps).
+ * Prevents abrupt volume jumps at clip boundaries.
+ */
+const DUCK_FADE_FRAMES = 18;
+
+/**
+ * Builds a per-frame volume callback for the background music track.
+ * For each narrated clip, volume ramps down to MUSIC_DUCKED_VOLUME over
+ * DUCK_FADE_FRAMES at clip start, stays ducked, then ramps back up at clip end.
+ * Non-narrated clips (no speech) leave music at MUSIC_BASE_VOLUME.
+ */
+function buildMusicVolumeFunc(
+  clips: ClipEntry[],
+  starts: number[]
+): (frame: number) => number {
+  return (frame: number) => {
+    let vol = MUSIC_BASE_VOLUME;
+    for (let i = 0; i < clips.length; i++) {
+      if (!clips[i].hasNarration) continue;
+      const s = starts[i];
+      const e = s + clips[i].durationInFrames;
+      const f = DUCK_FADE_FRAMES;
+      if (frame < s - f || frame > e + f) continue;
+      // rampIn:  0 outside → 1 fully inside (approaching from the left)
+      // rampOut: 1 fully inside → 0 outside (departing to the right)
+      const rampIn  = Math.min(1, Math.max(0, (frame - (s - f)) / f));
+      const rampOut = Math.min(1, Math.max(0, ((e + f) - frame) / f));
+      const t = Math.min(rampIn, rampOut); // 0 at edges, 1 fully inside clip
+      const ducked = MUSIC_BASE_VOLUME + (MUSIC_DUCKED_VOLUME - MUSIC_BASE_VOLUME) * t;
+      vol = Math.min(vol, ducked); // most-ducked value wins when clips overlap
+    }
+    return vol;
+  };
+}
+
+// ── Composition ───────────────────────────────────────────────────────────────
+
 export function FinalFilmComposition({
   clips,
   transitionDurationInFrames,
@@ -183,9 +242,16 @@ export function FinalFilmComposition({
 
   const td = clips.length === 1 ? 0 : transitionDurationInFrames;
   const starts = computeClipStarts(clips, td);
+  const musicVolume = buildMusicVolumeFunc(clips, starts);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#111" }}>
+      {/* Background music — looped, low volume, ducked under narration */}
+      <Audio
+        src={staticFile("film-audio/background-music.mp3")}
+        loop
+        volume={musicVolume}
+      />
       {clips.map((clip, i) => (
         <Sequence
           key={i}
@@ -203,7 +269,6 @@ export function FinalFilmComposition({
             clipIndex={i}
             totalClips={clips.length}
             transitionDurationInFrames={td}
-            startFrame={starts[i]}
             enableTransitionSound={enableTransitionSound}
           />
         </Sequence>

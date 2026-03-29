@@ -62,11 +62,15 @@ export interface AssembleFilmResult {
  *
  * Breathing pause timing (see compute-scene-duration.ts):
  *   Scene duration = audio_ms + AUDIO_TAIL_MS(500) + BREATHING_PAUSE_MS(2000)
- *   Visible stillness = (500 + 2000) - TRANSITION_DURATION(0.8s) ≈ 1700ms
+ *   Visible stillness = 2500ms − TRANSITION_DURATION
  *
- * Flow: narration ends → ~1.7s still spread → page turn (0.8s) → next spread
+ * At 1.5 s: transition starts 1.5 s before clip end → ~1000 ms of visible still
+ * spread before the page begins turning. Feels more alive than the 0.8 s default
+ * (which left ~1700 ms of dead pause before any motion began).
+ *
+ * Flow: narration ends → ~1.0 s still spread → page turn (1.5 s) → next spread
  */
-const TRANSITION_DURATION_SEC = 0.8;
+const TRANSITION_DURATION_SEC = 1.5;
 
 /** Default FPS — matches scene rendering. */
 const FPS = 30;
@@ -297,8 +301,8 @@ export async function assembleFilm(
     // ── Build clip entries from signed HTTPS URLs ─────────────────────────
     //
     // Remotion's Chrome renderer loads video/audio directly from HTTPS URLs.
-    // No local download or ffmpeg mux step needed — Remotion's <OffthreadVideo>
-    // handles the silent scene clip and <Audio> handles narration in parallel.
+    // No local download or ffmpeg mux step needed — narration audio is already
+    // baked into each scene MP4 by the scene renderer (via Remotion <Audio>).
 
     const clips: ClipEntry[] = [];
 
@@ -319,11 +323,12 @@ export async function assembleFilm(
       // Sign video URL — Remotion's OffthreadVideo loads this via Chrome
       const videoSignedUrl = await getSignedUrl(videoStoragePath, storageBucket);
 
-      // Sign audio URL — Remotion's Audio component loads this via Chrome
-      let audioSignedUrl: string | null = null;
-      if (audioStoragePath) {
-        audioSignedUrl = await getSignedUrl(audioStoragePath, storageBucket);
-      }
+      // Narration audio is already baked into the rendered scene MP4 via
+      // Remotion's <Audio> component during scene rendering. Do NOT pass
+      // audioSrc here — doing so would cause the narration to play twice
+      // (once from the baked-in MP4 audio track, once from the extra <Audio>).
+      const audioSignedUrl: null = null;
+      const hasNarration = audioStoragePath !== null;
 
       // Duration from DB — set accurately by renderScene() as
       // Math.round((durationInFrames / fps) * 1000), matching what was rendered.
@@ -333,14 +338,15 @@ export async function assembleFilm(
       console.log(
         `[film-assemble] [${i + 1}/${assemblyScenes.length}] ✓ Signed URLs ready: ` +
           `key=${spreadKey} duration=${(durationMs / 1000).toFixed(2)}s ` +
-          `(${durationInFrames} frames) audio=${audioSignedUrl ? "yes" : "none"} ` +
-          `video=HTTPS audio=${audioSignedUrl ? "HTTPS" : "none"}`
+          `(${durationInFrames} frames) audio=baked-in ` +
+          `video=HTTPS narration_path=${audioStoragePath ? "yes" : "none"}`
       );
 
       clips.push({
         src: videoSignedUrl,
         audioSrc: audioSignedUrl,
         durationInFrames,
+        hasNarration,
       });
     }
 
@@ -397,6 +403,9 @@ export async function assembleFilm(
       codec: "h264",
       outputLocation: outputPath,
       inputProps: compositionProps,
+      // CRF 28 gives ~50-65% smaller output than the default CRF 18 while
+      // maintaining good visual quality for 960×540 preview delivery.
+      crf: 28,
     });
 
     console.log(`[film-assemble] Remotion render complete → ${outputPath}`);

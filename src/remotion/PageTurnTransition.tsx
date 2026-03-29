@@ -59,7 +59,7 @@ export interface PageTurnTransitionProps {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Perspective depth in px for the 3-D page-turn effect. */
-const PERSPECTIVE_PX = 1400;
+const PERSPECTIVE_PX = 1800;
 
 /** Composition width — used to compute accurate fold-edge position. */
 const COMP_WIDTH_PX = 1920;
@@ -72,20 +72,22 @@ const PAGE_TURN_SOUND = staticFile("sounds/page-turn.mp3");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Smooth cubic ease-in-out. */
+/** Cubic ease-in-out — smoother acceleration / deceleration than quadratic. */
 function easeInOut(t: number): number {
   const c = Math.max(0, Math.min(1, t));
-  return c < 0.5 ? 2 * c * c : -1 + (4 - 2 * c) * c;
+  return c < 0.5 ? 4 * c * c * c : 1 - Math.pow(-2 * c + 2, 3) / 2;
 }
 
 /**
- * Projected X position of the fold edge (in 0–100 % of composition width),
- * accounting for the CSS perspective projection.
+ * Projected screen distance of the FREE edge from the ANCHOR edge, as a
+ * percentage of composition width, accounting for CSS perspective foreshortening.
  *
- * For RTL: the page rotates rotateY(-α) around its left edge with
- * perspectiveOrigin at 0% 50%.  The right edge projects to:
- *   screenX = W·cos(α)·P / (P + W·sin(α))
- * where P = perspective depth, W = element width.
+ *   screenDist = W·cos(α)·P / (P + W·sin(α))
+ *
+ * where P = perspective depth, W = element width, α = |rotateYDeg|.
+ *
+ * For LTR (left anchor): the right free edge is at screenDist from the left → foldEdgeX = result.
+ * For RTL (right anchor): the left free edge is at W − screenDist from the left → foldEdgeX = 100 − result.
  *
  * Returns a percentage (0–100).
  */
@@ -123,13 +125,17 @@ export function PageTurnTransition({
 
   const eased = easeInOut(progress);
 
-  // RTL: anchor = left edge, right edge sweeps back → rotateY negative.
-  // LTR: anchor = right edge, left edge sweeps back → rotateY positive.
-  const rotateYDeg = bookDir === "rtl" ? eased * -90 : eased * 90;
+  // RTL (Hebrew album): spine on the RIGHT. The free LEFT edge lifts and
+  // sweeps rightward, anchored at the right/spine edge. rotateY(+90°) with
+  // transformOrigin "right center" makes the left edge go into the screen while
+  // the right edge stays fixed — revealing the incoming spread from the left.
+  //
+  // LTR: spine on left; free right edge sweeps leftward, anchor = left edge.
+  const rotateYDeg = bookDir === "rtl" ? eased * 90 : eased * -90;
 
-  const transformOrigin = bookDir === "rtl" ? "left center" : "right center";
+  const transformOrigin = bookDir === "rtl" ? "right center" : "left center";
   // perspectiveOrigin at the anchor edge so the anchor stays stationary on screen.
-  const perspectiveOrigin = bookDir === "rtl" ? "0% 50%" : "100% 50%";
+  const perspectiveOrigin = bookDir === "rtl" ? "100% 50%" : "0% 50%";
 
   // ── Fold-edge shadow ────────────────────────────────────────────────────────
   // A narrow gradient stripe that tracks the fold line across the frame.
@@ -138,36 +144,38 @@ export function PageTurnTransition({
   // and the newly revealed incoming scene.
 
   const shadowIntensity = 4 * progress * (1 - progress); // 0→1→0
-  const shadowPeak = shadowIntensity * 0.52;
+  const shadowPeak = shadowIntensity * 0.65;
 
-  const foldX = foldEdgePercent(rotateYDeg); // percentage from left
+  // foldEdgePercent gives the projected position of the FREE edge from the
+  // anchor edge's side. For RTL (right anchor), the free edge is the LEFT
+  // edge; its screen X = 100% − foldEdgePercent (moves 0%→100% as page turns).
+  // For LTR (left anchor), the free edge is the RIGHT edge at foldEdgePercent
+  // (moves 100%→0% as page turns).
+  const rawFoldX = foldEdgePercent(rotateYDeg);
+  const foldEdgeX = bookDir === "rtl" ? 100 - rawFoldX : rawFoldX;
 
   // Helper to clamp values for the gradient
   const c = (v: number) => Math.max(0, Math.min(100, v)).toFixed(2);
 
-  const foldShadow =
-    bookDir === "rtl"
-      ? `linear-gradient(to right,
-            transparent ${c(foldX - 7)}%,
-            rgba(0,0,0,${(shadowPeak * 0.5).toFixed(3)}) ${c(foldX - 1)}%,
-            rgba(0,0,0,${shadowPeak.toFixed(3)}) ${c(foldX)}%,
-            rgba(0,0,0,${(shadowPeak * 0.22).toFixed(3)}) ${c(foldX + 2)}%,
-            transparent ${c(foldX + 8)}%)`
-      : `linear-gradient(to left,
-            transparent ${c(100 - foldX - 7)}%,
-            rgba(0,0,0,${(shadowPeak * 0.5).toFixed(3)}) ${c(100 - foldX - 1)}%,
-            rgba(0,0,0,${shadowPeak.toFixed(3)}) ${c(100 - foldX)}%,
-            rgba(0,0,0,${(shadowPeak * 0.22).toFixed(3)}) ${c(100 - foldX + 2)}%,
-            transparent ${c(100 - foldX + 8)}%)`;
+  // Shadow straddles the fold edge with a heavier fall-off toward the
+  // incoming (revealed) side.
+  const foldShadow = `linear-gradient(to right,
+      transparent ${c(foldEdgeX - 10)}%,
+      rgba(0,0,0,${(shadowPeak * 0.5).toFixed(3)}) ${c(foldEdgeX - 2)}%,
+      rgba(0,0,0,${shadowPeak.toFixed(3)}) ${c(foldEdgeX)}%,
+      rgba(0,0,0,${(shadowPeak * 0.22).toFixed(3)}) ${c(foldEdgeX + 2)}%,
+      transparent ${c(foldEdgeX + 9)}%)`;
 
   // ── Spine shadow ────────────────────────────────────────────────────────────
   // A very soft gradient at the anchor edge that diminishes as the page turns.
   // Simulates the shadow cast by the departing page near the binding.
   const spineOpacity = (1 - eased) * 0.22;
+  // RTL: spine at RIGHT edge — gradient flows from right (0%) toward left.
+  // LTR: spine at LEFT edge — gradient flows from left (0%) toward right.
   const spineShadow =
     bookDir === "rtl"
-      ? `linear-gradient(to right, rgba(0,0,0,${spineOpacity.toFixed(3)}) 0%, transparent 6%)`
-      : `linear-gradient(to left,  rgba(0,0,0,${spineOpacity.toFixed(3)}) 0%, transparent 6%)`;
+      ? `linear-gradient(to left,  rgba(0,0,0,${spineOpacity.toFixed(3)}) 0%, transparent 6%)`
+      : `linear-gradient(to right, rgba(0,0,0,${spineOpacity.toFixed(3)}) 0%, transparent 6%)`;
 
   return (
     <AbsoluteFill style={{ zIndex: 2 }}>
