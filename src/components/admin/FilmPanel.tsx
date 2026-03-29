@@ -113,6 +113,7 @@ export function FilmPanel({
   const [selectedSceneIds, setSelectedSceneIds] = useState<Set<string>>(
     new Set()
   );
+  const [assembleRenderMode, setAssembleRenderMode] = useState<"preview" | "final">("preview");
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -325,7 +326,11 @@ export function FilmPanel({
     await runAction("assemble", async () => {
       const res = await fetch(
         `/api/admin/orders/${orderId}/film/assemble`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ renderMode: assembleRenderMode }),
+        }
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -650,6 +655,27 @@ export function FilmPanel({
                 {loadingAction === "export-all" ? "מייצא..." : "⬇ ייצא הכל (ZIP)"}
               </Button>
             )}
+            {/* Render mode selector */}
+            <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
+              <button
+                type="button"
+                className={`px-2 py-1 transition-colors ${assembleRenderMode === "preview" ? "bg-muted font-medium" : "hover:bg-muted/50"}`}
+                onClick={() => setAssembleRenderMode("preview")}
+                disabled={isLoading || status === "rendering"}
+                title="תצוגה מקדימה — 960×540, מהיר"
+              >
+                תצוגה מקדימה
+              </button>
+              <button
+                type="button"
+                className={`px-2 py-1 border-s border-border transition-colors ${assembleRenderMode === "final" ? "bg-muted font-medium" : "hover:bg-muted/50"}`}
+                onClick={() => setAssembleRenderMode("final")}
+                disabled={isLoading || status === "rendering"}
+                title="סופי — 1920×1080, איכות גבוהה"
+              >
+                סופי
+              </button>
+            </div>
             <Button
               variant={assemblyReadyCount === scenes.length && scenes.length > 0 ? "default" : "outline"}
               size="sm"

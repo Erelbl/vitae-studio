@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { toRenderMode } from "@/services/film/render/render-mode";
 
 /**
  * POST /api/admin/orders/[orderId]/film/assemble
@@ -34,6 +35,10 @@ export async function POST(
 
   const { orderId } = await params;
   const adminClient = createAdminClient();
+
+  // Read optional render mode from request body
+  const body = await _req.json().catch(() => ({}));
+  const renderMode = toRenderMode((body as Record<string, unknown>).renderMode);
 
   // Fetch film project
   const { data: filmProject, error: fpError } = await adminClient
@@ -149,11 +154,12 @@ export async function POST(
     }
   }
 
-  // Queue assembly by setting project status to "rendering"
+  // Queue assembly by setting project status to "rendering" and persisting the render mode
   const { error: updateError } = await adminClient
     .from("film_projects")
     .update({
       status: "rendering",
+      render_mode: renderMode,
       error_message: null,
       updated_at: new Date().toISOString(),
     })

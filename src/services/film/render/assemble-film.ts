@@ -44,12 +44,18 @@ import { uploadFilmAsset } from "@/services/film/storage/film-storage";
 import { filmEnv } from "@/lib/film-env-node";
 import { computeTotalDuration } from "@/remotion/FinalFilmComposition";
 import type { ClipEntry } from "@/remotion/FinalFilmComposition";
+import {
+  FILM_RENDER_MODES,
+  DEFAULT_RENDER_MODE,
+  type FilmRenderMode,
+} from "@/services/film/render/render-mode";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface AssembleFilmInput {
   orderId: string;
   filmProjectId: string;
+  renderMode?: FilmRenderMode;
 }
 
 export interface AssembleFilmResult {
@@ -86,16 +92,6 @@ const FFMPEG_TIMEOUT_MS = 2 * 60 * 1000;
  * 40 scenes × ~2 min/scene = ~80 min; use 3 hours to be safe.
  */
 const SIGNED_URL_EXPIRY_SEC = 3 * 60 * 60;
-
-// ── Preview export mode ──────────────────────────────────────────────────────
-//
-// Supabase free plan storage cap blocks large final film uploads.
-// When true, Remotion renders at lower resolution.
-// TO RESTORE PRODUCTION QUALITY: set to false.
-//
-const PREVIEW_EXPORT_MODE = true;
-const PREVIEW_WIDTH = 960;
-const PREVIEW_HEIGHT = 540;
 
 // ── App base URL ─────────────────────────────────────────────────────────────
 //
@@ -255,9 +251,13 @@ async function getClipDuration(filePath: string): Promise<number> {
 export async function assembleFilm(
   input: AssembleFilmInput
 ): Promise<AssembleFilmResult> {
-  const { orderId, filmProjectId } = input;
+  const { orderId, filmProjectId, renderMode = DEFAULT_RENDER_MODE } = input;
+  const modeConfig = FILM_RENDER_MODES[renderMode];
   const adminClient = createAdminClient();
   const appBaseUrl = getAppBaseUrl();
+  console.log(
+    `[film-assemble] Render mode: ${modeConfig.mode} (${modeConfig.width}x${modeConfig.height}, CRF ${modeConfig.crf})`
+  );
   console.log(`[film-assemble] App base URL: ${appBaseUrl} (local clips served via /api/local-video)`);
 
   await checkFfmpeg();
@@ -414,14 +414,7 @@ export async function assembleFilm(
         `total ${totalDurationInFrames} frames (${(totalDurationInFrames / FPS).toFixed(1)}s) ───`
     );
 
-    const width = PREVIEW_EXPORT_MODE ? PREVIEW_WIDTH : filmEnv.defaultWidth;
-    const height = PREVIEW_EXPORT_MODE ? PREVIEW_HEIGHT : filmEnv.defaultHeight;
-
-    if (PREVIEW_EXPORT_MODE) {
-      console.log(
-        `[film-assemble] Preview export mode — rendering at ${width}x${height}`
-      );
-    }
+    const { width, height, crf } = modeConfig;
 
     const serveUrl = getBundlePath();
     const compositionProps = {
@@ -456,9 +449,7 @@ export async function assembleFilm(
       codec: "h264",
       outputLocation: outputPath,
       inputProps: compositionProps,
-      // CRF 24 balances quality vs size: noticeably better than CRF 28
-      // (which was over-compressed) while still ~40-50% smaller than CRF 18.
-      crf: 24,
+      crf,
     });
 
     console.log(`[film-assemble] Remotion render complete → ${outputPath}`);

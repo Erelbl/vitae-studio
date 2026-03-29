@@ -44,6 +44,7 @@ loadEnv({ path: ".env" });
 import { createClient } from "@supabase/supabase-js";
 import { renderScene } from "@/services/film/render/render-scene";
 import { assembleFilm } from "@/services/film/render/assemble-film";
+import { toRenderMode } from "@/services/film/render/render-mode";
 import { buildRenderHash } from "@/services/film/utils/build-render-hash";
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -363,18 +364,18 @@ async function runOnce(
  * are in "rendered" status.
  */
 async function fetchAssemblyReadyProjects(): Promise<
-  Array<{ id: string; order_id: string }>
+  Array<{ id: string; order_id: string; render_mode: string | null }>
 > {
   // Find projects with status "rendering" (set by the assemble API route)
   const { data: projects, error } = await adminClient
     .from("film_projects")
-    .select("id, order_id")
+    .select("id, order_id, render_mode")
     .eq("status", "rendering");
 
   if (error || !projects || projects.length === 0) return [];
 
   // For each candidate, verify all scenes are rendered
-  const ready: Array<{ id: string; order_id: string }> = [];
+  const ready: Array<{ id: string; order_id: string; render_mode: string | null }> = [];
 
   // cover and back_cover are excluded from the film pipeline and from assembly.
   const FILM_EXCLUDED_SPREAD_KEYS = new Set(["cover", "back_cover"]);
@@ -397,6 +398,7 @@ async function fetchAssemblyReadyProjects(): Promise<
       ready.push({
         id: proj.id as string,
         order_id: proj.order_id as string,
+        render_mode: (proj.render_mode as string | null) ?? null,
       });
     }
   }
@@ -430,6 +432,7 @@ async function runAssembly(
       const result = await assembleFilm({
         orderId: proj.order_id,
         filmProjectId: proj.id,
+        renderMode: toRenderMode(proj.render_mode),
       });
       log(
         `Film assembled → ${result.finalVideoPath} (${Math.round(result.finalDurationSeconds)}s)`
