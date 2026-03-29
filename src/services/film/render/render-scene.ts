@@ -44,6 +44,23 @@ export interface RenderSceneResult {
   renderHash: string;
 }
 
+// ── Proxy URL helper ──────────────────────────────────────────────────────────
+
+/**
+ * Wraps a Supabase signed URL through the local proxy endpoint.
+ * Remotion's Chrome renderer loads this via HTTP instead of hitting Supabase directly.
+ * Base URL: APP_BASE_URL env var, fallback to http://localhost:3000.
+ */
+function proxyUrl(src: string): string {
+  const base = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  return `${base}/api/proxy?src=${encodeURIComponent(src)}`;
+}
+
+function proxySlot(slot: SlotImageData | null): SlotImageData | null {
+  if (!slot) return null;
+  return { ...slot, url: proxyUrl(slot.url) };
+}
+
 // ── Pre-built bundle path ─────────────────────────────────────────────────────
 
 /** Default bundle output directory — must match `--out-dir` in package.json bundle:remotion. */
@@ -797,6 +814,9 @@ export async function renderScene(
   const width = input.width ?? filmEnv.defaultWidth;
   const height = input.height ?? filmEnv.defaultHeight;
 
+  const proxyBase = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  console.log(`[render-worker] Using proxy base: ${proxyBase}/api/proxy`);
+
   const adminClient = createAdminClient();
 
   // Fetch scene
@@ -1111,9 +1131,11 @@ export async function renderScene(
     const durationInFrames = Math.max(1, Math.round((durationMs / 1000) * fps));
 
     // Composition props — layout-faithful, matching SceneCompositionProps
+    // All media URLs are wrapped through the proxy so Chrome (Remotion) loads them
+    // via a stable local endpoint regardless of Supabase CORS or network conditions.
     const compositionProps = {
-      slot1: primaryPage.slot1,
-      slot2: primaryPage.slot2,
+      slot1: proxySlot(primaryPage.slot1),
+      slot2: proxySlot(primaryPage.slot2),
       layoutType: primaryPage.layoutType,
       textContent: primaryPage.textContent,
       textSize: primaryPage.textSize,
@@ -1123,15 +1145,20 @@ export async function renderScene(
       textY: primaryPage.textY,
       // Kling video for the right (primary) page — null → static resolved image.
       // For unified spread scenes rightKlingUrl is always null (spread video used instead).
-      klingVideoUrl: rightKlingUrl,
+      klingVideoUrl: rightKlingUrl ? proxyUrl(rightKlingUrl) : null,
       // Spread: merge left-page Kling URL into secondPage data.
       // For unified spread scenes leftKlingUrl is always null.
       secondPage: secondPage
-        ? { ...secondPage, klingVideoUrl: leftKlingUrl }
+        ? {
+            ...secondPage,
+            slot1: proxySlot(secondPage.slot1),
+            slot2: proxySlot(secondPage.slot2),
+            klingVideoUrl: leftKlingUrl ? proxyUrl(leftKlingUrl) : null,
+          }
         : null,
       // Unified spread: one Kling video that spans both pages.
       // When set, SceneComposition renders it as a full-width background behind both pages.
-      spreadVideoUrl: isUnifiedSpread ? spreadKlingUrl : null,
+      spreadVideoUrl: isUnifiedSpread && spreadKlingUrl ? proxyUrl(spreadKlingUrl) : null,
       motionPreset:
         (sceneRow.motion_preset as string) === "ken_burns"
           ? "ken_burns"
@@ -1143,7 +1170,7 @@ export async function renderScene(
       narrationDurationMs:
         (sceneRow.audio_duration_ms as number | null) ?? null,
       // Signed URL to narration MP3 — baked into the scene video via Remotion <Audio>.
-      narrationUrl,
+      narrationUrl: narrationUrl ? proxyUrl(narrationUrl) : null,
       // Special page type — triggers cover/dedication/back_cover layouts.
       // Null for standard content spreads.
       pageType,
