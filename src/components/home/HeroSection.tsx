@@ -67,13 +67,13 @@ export function HeroSection({ onStartOrder, loading }: Props) {
         className="relative z-10 mx-auto max-w-5xl animate-fade-up px-4 pb-20 sm:pb-28"
         style={{ animationDelay: "200ms", animationFillMode: "both" }}
       >
-        <div className="relative overflow-hidden rounded-2xl shadow-2xl ring-1 ring-border aspect-video bg-black">
+        <div className="overflow-hidden rounded-2xl shadow-2xl ring-1 ring-border">
           <video
             controls
             playsInline
             preload="metadata"
             poster="/images/landing-film-thumbnail.jpg"
-            className="absolute inset-0 h-full w-full object-cover"
+            className="block w-full"
           >
             <source src="/videos/landing-film-preview.mp4" type="video/mp4" />
           </video>
