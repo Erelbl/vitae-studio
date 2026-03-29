@@ -9,15 +9,14 @@
  * page data, still images, or thumbnails. Each scene clip already contains
  * the full Remotion animation (image reveal, text reveal, Ken Burns,
  * narration-synced timing). The assembly's job is strictly:
- *   sign URLs → sequence with Remotion → upload
+ *   sign URLs → download clips locally → sequence with Remotion → upload
  *
  * STRATEGY: Remotion FinalFilmComposition.
  *
  * Remotion handles timeline sequencing natively via <Sequence> + <OffthreadVideo>.
- * No offset calculations, no filter chains. Scene clip URLs are Supabase signed URLs
- * wrapped through /api/proxy (APP_BASE_URL, default http://localhost:3000). Routing
- * through /api/proxy avoids Remotion's internal OffthreadVideoServer hitting Supabase
- * directly, which is prone to ERR_NETWORK_CHANGED / ECONNRESET in render environments.
+ * No offset calculations, no filter chains. Scene clips are downloaded to local temp
+ * files before the Remotion render starts — OffthreadVideo receives file:// URLs,
+ * eliminating all localhost proxy dependencies (no /api/proxy, no localhost:3001).
  * Narration audio is handled via Remotion's <Audio> component alongside
  * <OffthreadVideo>, so no ffmpeg mux step is needed.
  *
@@ -37,6 +36,9 @@ import * as os from "os";
 import * as path from "path";
 import * as fsSync from "fs";
 import { spawn } from "child_process";
+import { Readable } from "stream";
+import { pipeline } from "stream/promises";
+import { pathToFileURL } from "url";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { uploadFilmAsset } from "@/services/film/storage/film-storage";
@@ -96,23 +98,32 @@ const PREVIEW_EXPORT_MODE = true;
 const PREVIEW_WIDTH = 960;
 const PREVIEW_HEIGHT = 540;
 
-// ── App base URL / proxy helper ───────────────────────────────────────────────
+// ── Local clip download helper ────────────────────────────────────────────────
 //
-// Scene clip URLs are signed Supabase HTTPS URLs. Before passing them to
-// Remotion's FinalFilmComposition, wrap them through /api/proxy so that
-// Remotion's OffthreadVideoServer fetches from our local Next.js server instead
-// of hitting Supabase directly (direct fetches are brittle in render environments:
-// ERR_NETWORK_CHANGED, ECONNRESET, and write-EOF crashes in Chrome renderer).
+// Each scene clip is downloaded from Supabase to a local temp file before the
+// Remotion render starts. FinalFilmComposition receives file:// URLs pointing to
+// these local files. This eliminates all proxy-on-proxy chains:
+//   Before: Chrome → localhost:3001/proxy → localhost:3000/api/proxy → Supabase
+//   After:  Chrome → localhost:3001/proxy → local filesystem (no network hop)
 //
-// Set APP_BASE_URL in .env.local to override (e.g. on Railway / Vercel).
-// Default: http://localhost:3000  (Next.js dev/prod server running alongside worker).
+// The OffthreadVideoServer reads local file:// URLs via ffmpeg, which handles
+// them natively without any additional network layer.
 
-function getAppBaseUrl(): string {
-  return (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-}
-
-function proxyUrl(signedUrl: string): string {
-  return `${getAppBaseUrl()}/api/proxy?src=${encodeURIComponent(signedUrl)}`;
+async function downloadClip(signedUrl: string, destPath: string): Promise<void> {
+  const res = await fetch(signedUrl);
+  if (!res.ok) {
+    throw new Error(
+      `[film-assemble] Clip download failed (HTTP ${res.status}) for ${path.basename(destPath)}`
+    );
+  }
+  if (!res.body) {
+    throw new Error(`[film-assemble] Empty response body downloading ${path.basename(destPath)}`);
+  }
+  const writer = fsSync.createWriteStream(destPath);
+  await pipeline(
+    Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
+    writer
+  );
 }
 
 // ── Remotion bundle path ─────────────────────────────────────────────────────
@@ -201,7 +212,7 @@ async function checkFfmpeg(): Promise<void> {
 
 /**
  * Generate a signed HTTPS URL for a storage object.
- * Callers must wrap the result with proxyUrl() before passing to Remotion.
+ * Callers download the file at the returned URL to a local temp path before rendering.
  */
 async function getSignedUrl(storagePath: string, bucket: string): Promise<string> {
   const adminClient = createAdminClient();
@@ -240,8 +251,6 @@ export async function assembleFilm(
 ): Promise<AssembleFilmResult> {
   const { orderId, filmProjectId } = input;
   const adminClient = createAdminClient();
-  const appBaseUrl = getAppBaseUrl();
-  console.log(`[film-assemble] Using app base URL: ${appBaseUrl} (clip URLs → ${appBaseUrl}/api/proxy)`);
 
   await checkFfmpeg();
 
@@ -312,25 +321,31 @@ export async function assembleFilm(
         `for project ${filmProjectId}`
     );
     console.log(
-      `[film-assemble] Strategy: Remotion FinalFilmComposition (/api/proxy → Supabase)`
+      `[film-assemble] Strategy: Remotion FinalFilmComposition (local file:// clips)`
     );
     console.log(
-      `[film-assemble] Source: rendered_scene_path MP4s proxied via ${appBaseUrl}/api/proxy`
+      `[film-assemble] Source: rendered_scene_path MP4s — downloaded to temp dir before render`
     );
     console.log(
       `[film-assemble] ═══════════════════════════════════════════════════════`
     );
 
-    // ── Build clip entries (proxied URLs) ────────────────────────────────
+    // ── Download all scene clips to local temp files ──────────────────────
     //
-    // Each scene video URL is signed, then wrapped through /api/proxy.
-    // Remotion's OffthreadVideoServer will call our proxy, which calls Supabase.
-    // This adds one extra hop but isolates network errors to the proxy layer —
-    // preventing them from propagating as write-EOF crashes inside Chrome renderer.
-    // No local download or ffmpeg mux needed — narration audio is already
-    // baked into each scene MP4 by the scene renderer (via Remotion <Audio>).
+    // Clips are downloaded from Supabase to tmpDir/clip_NNN.mp4 before the
+    // Remotion render starts. FinalFilmComposition receives file:// URLs so
+    // that Remotion's OffthreadVideoServer reads directly from the local
+    // filesystem — no network calls during the render itself.
+    //
+    // Narration audio is already baked into each scene MP4 by the scene
+    // renderer (via Remotion <Audio>). Do NOT pass audioSrc in ClipEntry —
+    // doing so would cause the narration to play twice.
 
     const clips: ClipEntry[] = [];
+
+    console.log(
+      `[film-assemble] Downloading ${assemblyScenes.length} scene clip(s) to temp dir…`
+    );
 
     for (let i = 0; i < assemblyScenes.length; i++) {
       const scene = assemblyScenes[i];
@@ -339,40 +354,44 @@ export async function assembleFilm(
       const audioStoragePath = scene.audio_path as string | null;
       const spreadKey = (scene.page_spread_key as string | null) ?? `scene_${i}`;
 
-      // Validate storage path before signing
       if (!videoStoragePath) {
         throw new Error(
           `[film-assemble] Scene ${i + 1} (${sceneId}) has no rendered_scene_path`
         );
       }
 
-      // Sign then proxy — Remotion's OffthreadVideoServer calls /api/proxy → Supabase
-      const videoSignedUrl = proxyUrl(await getSignedUrl(videoStoragePath, storageBucket));
+      // 1. Sign
+      const signedUrl = await getSignedUrl(videoStoragePath, storageBucket);
+      console.log(
+        `[film-assemble] [${i + 1}/${assemblyScenes.length}] Signed URL ready: key=${spreadKey}`
+      );
 
-      // Narration audio is already baked into the rendered scene MP4 via
-      // Remotion's <Audio> component during scene rendering. Do NOT pass
-      // audioSrc here — doing so would cause the narration to play twice
-      // (once from the baked-in MP4 audio track, once from the extra <Audio>).
-      const audioSignedUrl: null = null;
-      const hasNarration = audioStoragePath !== null;
+      // 2. Download to local temp file
+      const localClipPath = path.join(
+        tmpDir,
+        `clip_${String(i).padStart(3, "0")}.mp4`
+      );
+      await downloadClip(signedUrl, localClipPath);
+      console.log(
+        `[film-assemble] [${i + 1}/${assemblyScenes.length}] Downloaded → ${localClipPath}`
+      );
 
-      // Duration from DB — set accurately by renderScene() as
-      // Math.round((durationInFrames / fps) * 1000), matching what was rendered.
+      // 3. Convert to file:// URL — Remotion's OffthreadVideoServer reads this
+      //    via ffmpeg on the local filesystem. No proxy layer involved.
+      const clipFileUrl = pathToFileURL(localClipPath).href;
+      console.log(
+        `[film-assemble] [${i + 1}/${assemblyScenes.length}] Using local clip: ${clipFileUrl}`
+      );
+
+      // Duration from DB — set accurately by renderScene()
       const durationMs = (scene.duration_ms as number | null) ?? 5000;
       const durationInFrames = Math.max(1, Math.round((durationMs / 1000) * FPS));
 
-      console.log(
-        `[film-assemble] [${i + 1}/${assemblyScenes.length}] ✓ clip ready: ` +
-          `key=${spreadKey} duration=${(durationMs / 1000).toFixed(2)}s ` +
-          `(${durationInFrames} frames) audio=baked-in ` +
-          `video=/api/proxy narration=${audioStoragePath ? "yes" : "none"}`
-      );
-
       clips.push({
-        src: videoSignedUrl,
-        audioSrc: audioSignedUrl,
+        src: clipFileUrl,
+        audioSrc: null,
         durationInFrames,
-        hasNarration,
+        hasNarration: audioStoragePath !== null,
       });
     }
 
