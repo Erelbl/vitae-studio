@@ -18,6 +18,7 @@ import { ContactSection } from "@/components/home/ContactSection";
 import { FilmPreviewSection } from "@/components/home/FilmPreviewSection";
 import { AprilPromoPopup } from "@/components/home/AprilPromoPopup";
 import { FOOTER } from "@/content/landing-content";
+import { trackEvent } from "@/lib/analytics";
 
 const DRAFT_STORAGE_KEY = "vitae_draft";
 
@@ -59,6 +60,7 @@ export default function LandingPage() {
   }
 
   async function handleStartOrder() {
+    trackEvent("cta_click", { source: "landing" });
     setLoading(true);
     try {
       const res = await fetch("/api/orders", {
@@ -69,6 +71,7 @@ export default function LandingPage() {
 
       if (res.ok) {
         const { id, access_token } = await res.json();
+        trackEvent("start_order");
         router.push(`/order/${id}/album-type?token=${access_token}`);
       }
     } finally {

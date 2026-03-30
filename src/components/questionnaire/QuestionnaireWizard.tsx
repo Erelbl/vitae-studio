@@ -7,6 +7,7 @@ import { WizardProgress } from "./WizardProgress";
 import { QuestionnaireStep } from "./QuestionnaireStep";
 import { getQuestionnaireConfig, buildAllSchemas } from "@/questionnaires";
 import type { AlbumType } from "@/questionnaires/types";
+import { trackEvent } from "@/lib/analytics";
 
 interface Props {
   orderId: string;
@@ -34,6 +35,10 @@ export function QuestionnaireWizard({
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [allData, setAllData] = useState<Record<string, unknown>>(initialData);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fire once on mount — signals user has entered the questionnaire
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { trackEvent("questionnaire_started"); }, []);
 
   // Store draft pointer in localStorage for resume from same browser
   useEffect(() => {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { trackEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
@@ -76,6 +77,10 @@ export function PaymentReturnClient({
       cancelled = true;
     };
   }, [viewState, pollStatus]);
+
+  useEffect(() => {
+    if (viewState === "success") trackEvent("order_completed");
+  }, [viewState]);
 
   if (viewState === "checking") {
     return (
