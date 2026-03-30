@@ -9,7 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -38,7 +37,7 @@ interface TrafficSource {
 
 function Skeleton({ className }: { className?: string }) {
   return (
-    <div className={`animate-pulse rounded bg-muted/60 ${className ?? ""}`} />
+    <div className={`animate-pulse rounded-md bg-muted/50 ${className ?? ""}`} />
   );
 }
 
@@ -48,37 +47,63 @@ function KpiCard({
   label,
   value,
   loading,
-  highlight,
+  accent,
+  sub,
 }: {
   label: string;
   value: string | number;
   loading: boolean;
-  highlight?: boolean;
+  /** "primary" = subtle primary tint, "conversion" = dedicated conversion style */
+  accent?: "primary" | "conversion";
+  /** optional helper text below the label */
+  sub?: string;
 }) {
+  const isConversion = accent === "conversion";
+  const isPrimary = accent === "primary";
+
+  const containerCls = [
+    "rounded-xl border bg-background p-5 shadow-sm transition-shadow hover:shadow-md",
+    isConversion && "border-primary/25 bg-primary/5",
+    isPrimary && "border-border/80",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (loading) {
+    return (
+      <div className={containerCls}>
+        <Skeleton className="mb-3 h-9 w-14" />
+        <Skeleton className="h-3 w-20" />
+        {sub && <Skeleton className="mt-1.5 h-2.5 w-28" />}
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={`rounded-xl border bg-background p-5 shadow-sm ${
-        highlight ? "border-primary/30 bg-primary/4" : ""
-      }`}
-    >
-      {loading ? (
-        <>
-          <Skeleton className="mb-3 h-8 w-16" />
-          <Skeleton className="h-3 w-24" />
-        </>
-      ) : (
-        <>
-          <p
-            className={`text-3xl font-bold tracking-tight ${
-              highlight ? "text-primary" : "text-foreground"
-            }`}
-          >
-            {value}
-          </p>
-          <p className="mt-1.5 text-xs font-medium text-muted-foreground">
-            {label}
-          </p>
-        </>
+    <div className={containerCls}>
+      {isPrimary && (
+        <div className="mb-3 h-0.5 w-6 rounded-full bg-primary/40" />
+      )}
+      <p
+        className={[
+          "text-[2rem] font-bold leading-none tracking-tight",
+          isConversion ? "text-primary" : "text-foreground",
+        ].join(" ")}
+      >
+        {value}
+      </p>
+      <p
+        className={[
+          "mt-2 text-xs font-medium",
+          isConversion ? "text-primary/80" : "text-muted-foreground",
+        ].join(" ")}
+      >
+        {label}
+      </p>
+      {sub && (
+        <p className="mt-1 text-[10px] leading-snug text-muted-foreground/60">
+          {sub}
+        </p>
       )}
     </div>
   );
@@ -97,13 +122,20 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border bg-background px-3 py-2 shadow-md text-xs">
-      <p className="mb-1.5 font-semibold text-foreground/80">{label}</p>
-      {payload.map((p) => (
-        <p key={p.name} style={{ color: p.color }}>
-          {p.name}: <span className="font-bold">{p.value}</span>
-        </p>
-      ))}
+    <div className="rounded-lg border bg-background px-3.5 py-2.5 shadow-lg text-xs">
+      <p className="mb-2 font-semibold text-foreground/70 tracking-wide">{label}</p>
+      <div className="space-y-1">
+        {payload.map((p) => (
+          <div key={p.name} className="flex items-center gap-2">
+            <span
+              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ background: p.color }}
+            />
+            <span className="text-muted-foreground">{p.name}</span>
+            <span className="ms-auto font-bold text-foreground">{p.value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -113,6 +145,18 @@ function ChartTooltip({
 function shortDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
+}
+
+// ── Polished empty state ──────────────────────────────────────────────────────
+
+function EmptyState({ message, sub }: { message: string; sub: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-1.5 py-10 text-center">
+      <div className="mb-1 h-px w-8 rounded-full bg-border" />
+      <p className="text-sm font-medium text-foreground/40">{message}</p>
+      <p className="text-xs text-muted-foreground/50">{sub}</p>
+    </div>
+  );
 }
 
 // ── Main section ──────────────────────────────────────────────────────────────
@@ -172,145 +216,224 @@ export function AdminAnalyticsSection() {
   const noData = !loading && !error && !metrics;
   const hasChart = chartData.length > 0;
 
+  const maxSessions = sources.reduce((m, s) => Math.max(m, s.sessions), 1);
+
   return (
-    <section className="space-y-5">
-      {/* Header */}
-      <div className="flex items-baseline justify-between">
+    <section className="space-y-7">
+      {/* ── Header ── */}
+      <div className="flex items-end justify-between border-b border-border/50 pb-4">
         <div>
-          <h2 className="text-lg font-semibold">סטטיסטיקות אתר</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">7 הימים האחרונים</p>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
+            סטטיסטיקות אתר
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            7 הימים האחרונים · עדכון בזמן אמת
+          </p>
         </div>
       </div>
 
-      {/* Error */}
+      {/* ── Error ── */}
       {error && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive/80">
           {error}
         </div>
       )}
 
-      {/* No data */}
+      {/* ── No data ── */}
       {noData && (
-        <p className="text-sm text-muted-foreground">אין עדיין נתונים</p>
+        <p className="text-sm text-muted-foreground/70">
+          אין עדיין נתונים זמינים
+        </p>
       )}
 
-      {/* KPI grid */}
+      {/* ── KPI grid — funnel order ── */}
       {!error && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <KpiCard label="מבקרים" value={metrics?.activeUsers ?? 0} loading={loading} />
-          <KpiCard label="סשנים" value={metrics?.sessions ?? 0} loading={loading} />
-          <KpiCard label="לחיצות CTA" value={metrics?.ctaClicks ?? 0} loading={loading} />
-          <KpiCard label="התחלות הזמנה" value={metrics?.startOrders ?? 0} loading={loading} />
-          <KpiCard label="השלמות" value={metrics?.orderCompleted ?? 0} loading={loading} />
-          <KpiCard label="אחוז המרה" value={loading ? 0 : conversionRate} loading={loading} highlight />
+          <KpiCard
+            label="מבקרים"
+            value={metrics?.activeUsers ?? 0}
+            loading={loading}
+            accent="primary"
+          />
+          <KpiCard
+            label="סשנים"
+            value={metrics?.sessions ?? 0}
+            loading={loading}
+          />
+          <KpiCard
+            label="לחיצות CTA"
+            value={metrics?.ctaClicks ?? 0}
+            loading={loading}
+          />
+          <KpiCard
+            label="התחלות הזמנה"
+            value={metrics?.startOrders ?? 0}
+            loading={loading}
+            accent="primary"
+          />
+          <KpiCard
+            label="השלמות"
+            value={metrics?.orderCompleted ?? 0}
+            loading={loading}
+          />
+          <KpiCard
+            label="המרה"
+            value={loading ? "—" : conversionRate}
+            loading={loading}
+            accent="conversion"
+            sub="מבקרים ← התחלות הזמנה"
+          />
         </div>
       )}
 
-      {/* Chart + sources row */}
+      {/* ── Chart + sources ── */}
       {!error && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
           {/* Line chart */}
-          <div className="lg:col-span-2 rounded-xl border bg-background p-5 shadow-sm">
-            <p className="mb-4 text-sm font-semibold text-foreground/80">
-              מגמה יומית
-            </p>
+          <div className="lg:col-span-2 rounded-xl border bg-background p-6 shadow-sm">
+            <div className="mb-5">
+              <p className="text-sm font-semibold text-foreground">מגמה יומית</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                מבקרים, התחלות הזמנה והשלמות לפי יום
+              </p>
+            </div>
+
             {loading ? (
-              <Skeleton className="h-52 w-full" />
+              <Skeleton className="h-52 w-full rounded-lg" />
             ) : !hasChart ? (
-              <div className="flex h-52 items-center justify-center text-sm text-muted-foreground">
-                אין עדיין נתונים יומיים
-              </div>
+              <EmptyState
+                message="אין מספיק נתונים עדיין"
+                sub="הנתונים יופיעו לאחר פעילות ראשונית באתר"
+              />
             ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart
-                  data={chartData}
-                  margin={{ top: 4, right: 12, left: -20, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                    tickLine={false}
-                    axisLine={false}
-                    allowDecimals={false}
-                  />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend
-                    wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-                    iconType="circle"
-                    iconSize={8}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="activeUsers"
-                    name="מבקרים"
-                    stroke="#8F9F7A"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="startOrders"
-                    name="התחלות הזמנה"
-                    stroke="#6b7cbc"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="orderCompleted"
-                    name="השלמות"
-                    stroke="#e07b5a"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <>
+                {/* Legend — manual, above chart */}
+                <div className="mb-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                  {[
+                    { color: "#8F9F7A", label: "מבקרים" },
+                    { color: "#6b7cbc", label: "התחלות הזמנה" },
+                    { color: "#e07b5a", label: "השלמות" },
+                  ].map((l) => (
+                    <span key={l.label} className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ background: l.color }}
+                      />
+                      {l.label}
+                    </span>
+                  ))}
+                </div>
+                <ResponsiveContainer width="100%" height={188}>
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 2, right: 8, left: -24, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="hsl(var(--border))"
+                      opacity={0.6}
+                    />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                      tickLine={false}
+                      axisLine={false}
+                      allowDecimals={false}
+                      width={28}
+                    />
+                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--border))", strokeWidth: 1 }} />
+                    <Line
+                      type="monotone"
+                      dataKey="activeUsers"
+                      name="מבקרים"
+                      stroke="#8F9F7A"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3.5, strokeWidth: 0 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="startOrders"
+                      name="התחלות הזמנה"
+                      stroke="#6b7cbc"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3.5, strokeWidth: 0 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="orderCompleted"
+                      name="השלמות"
+                      stroke="#e07b5a"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3.5, strokeWidth: 0 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </>
             )}
           </div>
 
           {/* Traffic sources */}
-          <div className="rounded-xl border bg-background p-5 shadow-sm">
-            <p className="mb-4 text-sm font-semibold text-foreground/80">
-              מקורות תנועה
-            </p>
+          <div className="rounded-xl border bg-background p-6 shadow-sm">
+            <div className="mb-5">
+              <p className="text-sm font-semibold text-foreground">מקורות תנועה</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                סשנים לפי מקור
+              </p>
+            </div>
+
             {loading ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {[...Array(5)].map((_, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3">
-                    <Skeleton className="h-3 w-24" />
-                    <Skeleton className="h-3 w-8" />
+                  <div key={i} className="space-y-1.5">
+                    <div className="flex justify-between">
+                      <Skeleton className="h-3 w-20" />
+                      <Skeleton className="h-3 w-6" />
+                    </div>
+                    <Skeleton className="h-1 w-full rounded-full" />
                   </div>
                 ))}
               </div>
             ) : sources.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין נתונים</p>
+              <EmptyState
+                message="אין מספיק נתונים עדיין"
+                sub="מקורות התנועה יופיעו לאחר פעילות ראשונית"
+              />
             ) : (
-              <ul className="space-y-2.5">
-                {sources.map((s) => (
-                  <li
-                    key={s.source}
-                    className="flex items-center justify-between gap-2 text-sm"
-                  >
-                    <span className="truncate text-foreground/80 font-medium">
-                      {s.source}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {s.sessions}
-                    </span>
-                  </li>
-                ))}
+              <ul className="space-y-3.5">
+                {sources.map((s) => {
+                  const pct = Math.round((s.sessions / maxSessions) * 100);
+                  return (
+                    <li key={s.source}>
+                      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-medium text-foreground/80">
+                          {s.source}
+                        </span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {s.sessions}
+                        </span>
+                      </div>
+                      <div className="h-1 w-full overflow-hidden rounded-full bg-muted/60">
+                        <div
+                          className="h-full rounded-full bg-primary/50 transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
+
         </div>
       )}
     </section>
