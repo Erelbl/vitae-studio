@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
 import { getDisplayStatus, getPipelineStage, PIPELINE_STAGES } from "@/lib/display-status";
 import type { PipelineStage } from "@/lib/display-status";
+import { AdminAnalyticsSection } from "@/components/admin/AdminAnalyticsSection";
 
 function StatusBadge({ order }: { order: Record<string, unknown> }) {
   const ds = getDisplayStatus(order as {
@@ -203,6 +204,9 @@ export default async function AdminDashboardPage() {
           </>
         )}
       </div>
+
+      {/* Site Analytics */}
+      <AdminAnalyticsSection />
     </div>
   );
 }
