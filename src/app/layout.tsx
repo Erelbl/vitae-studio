@@ -18,32 +18,40 @@ const OG_IMAGE = `${SITE_URL}/icon-512.png`; // replace with a dedicated 1200×6
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "Vitae Studio - סיפור חיים בחרוזים",
-  description: "אלבום סיפור חיים מאויר בחרוזים - מתנה אישית ומרגשת",
+  title: "אלבום אישי בהתאמה אישית | מתנה מרגשת עם סיפור וסרט",
+  description:
+    "צרו אלבום אישי עם איורים, סיפור וקריינות — מתנה ייחודית ומרגשת לכל אירוע.",
+
+  // Canonical URL
+  alternates: {
+    canonical: SITE_URL,
+  },
 
   // Open Graph — controls how the link looks when shared on WhatsApp, Facebook, etc.
   openGraph: {
     type: "website",
     url: SITE_URL,
     siteName: "Vitae Studio",
-    title: "Vitae Studio - סיפור חיים בחרוזים",
-    description: "הופכים סיפור חיים לאלבום מאויר בחרוזים — מתנה שנשמרת לדורות",
+    title: "אלבום אישי בהתאמה אישית | מתנה מרגשת עם סיפור וסרט",
+    description:
+      "צרו אלבום אישי עם איורים, סיפור וקריינות — מתנה ייחודית ומרגשת לכל אירוע.",
     locale: "he_IL",
     images: [
       {
         url: OG_IMAGE,
         width: 512,
         height: 512,
-        alt: "Vitae Studio לוגו",
+        alt: "Vitae Studio — אלבום אישי מאויר עם סיפור וסרט",
       },
     ],
   },
 
   // Twitter / X card
   twitter: {
-    card: "summary",
-    title: "Vitae Studio - סיפור חיים בחרוזים",
-    description: "הופכים סיפור חיים לאלבום מאויר בחרוזים — מתנה שנשמרת לדורות",
+    card: "summary_large_image",
+    title: "אלבום אישי בהתאמה אישית | מתנה מרגשת עם סיפור וסרט",
+    description:
+      "צרו אלבום אישי עם איורים, סיפור וקריינות — מתנה ייחודית ומרגשת לכל אירוע.",
     images: [OG_IMAGE],
   },
 
@@ -60,6 +68,26 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl">
       <body className={`${assistant.variable} font-sans antialiased`}>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify([
+              {
+                "@context": "https://schema.org",
+                "@type": "Organization",
+                name: "Vitae Studio",
+                url: SITE_URL,
+                logo: `${SITE_URL}/assets/logo.png`,
+              },
+              {
+                "@context": "https://schema.org",
+                "@type": "WebSite",
+                name: "Vitae Studio",
+                url: SITE_URL,
+              },
+            ]),
+          }}
+        />
         {children}
         <Toaster />
         <Analytics />

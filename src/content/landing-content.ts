@@ -144,21 +144,21 @@ export const IMAGE_COMPARISON = {
   // Images from /public/examples/ — replace with real examples when ready
   pairs: [
     {
-      beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית" },
-      afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים" },
+      beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית של לקוח לפני עיצוב האיור" },
+      afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים מותאם אישית שנוצר על ידי Vitae Studio" },
     },
     {
-      beforeImage: { src: "/examples/original2.jpg", alt: "תמונה מקורית" },
-      afterImage: { src: "/examples/illustrated2.jpg", alt: "איור בצבעי מים" },
+      beforeImage: { src: "/examples/original2.jpg", alt: "תמונה מקורית של לקוח לפני עיצוב האיור" },
+      afterImage: { src: "/examples/illustrated2.jpg", alt: "איור בצבעי מים מותאם אישית שנוצר על ידי Vitae Studio" },
     },
     {
-      beforeImage: { src: "/examples/original3.jpg", alt: "תמונה מקורית" },
-      afterImage: { src: "/examples/illustrated3.jpg", alt: "איור בצבעי מים" },
+      beforeImage: { src: "/examples/original3.jpg", alt: "תמונה מקורית של לקוח לפני עיצוב האיור" },
+      afterImage: { src: "/examples/illustrated3.jpg", alt: "איור בצבעי מים מותאם אישית שנוצר על ידי Vitae Studio" },
     },
   ],
   // Legacy single-pair access (kept for backward compat)
-  beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית" },
-  afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים" },
+  beforeImage: { src: "/examples/original.jpg", alt: "תמונה מקורית של לקוח לפני עיצוב האיור" },
+  afterImage: { src: "/examples/illustrated.jpg", alt: "איור בצבעי מים מותאם אישית שנוצר על ידי Vitae Studio" },
 };
 
 export const PACKAGES_SECTION = {
