@@ -67,7 +67,6 @@ export function PreStartDialog({ open, onOpenChange, onSubmit, loading }: Props)
               id="buyer-name"
               type="text"
               autoComplete="name"
-              placeholder="ישראל ישראלי"
               value={buyerName}
               onChange={(e) => {
                 setBuyerName(e.target.value);
@@ -89,7 +88,6 @@ export function PreStartDialog({ open, onOpenChange, onSubmit, loading }: Props)
               id="buyer-email"
               type="email"
               autoComplete="email"
-              placeholder="israel@example.com"
               value={buyerEmail}
               dir="ltr"
               onChange={(e) => {
