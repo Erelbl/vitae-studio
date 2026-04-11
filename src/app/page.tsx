@@ -17,6 +17,7 @@ import { FinalCta } from "@/components/home/FinalCta";
 import { ContactSection } from "@/components/home/ContactSection";
 import { FilmPreviewSection } from "@/components/home/FilmPreviewSection";
 import { AprilPromoPopup } from "@/components/home/AprilPromoPopup";
+import { PreStartDialog } from "@/components/home/PreStartDialog";
 import { FOOTER } from "@/content/landing-content";
 import { trackEvent } from "@/lib/analytics";
 
@@ -31,6 +32,7 @@ interface DraftPointer {
 export default function LandingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<DraftPointer | null>(null);
   useEffect(() => {
     try {
@@ -59,19 +61,29 @@ export default function LandingPage() {
     try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ok */ }
   }
 
-  async function handleStartOrder() {
+  function handleStartOrder() {
     trackEvent("cta_click", { source: "landing" });
+    setDialogOpen(true);
+  }
+
+  async function handlePreStartSubmit(buyerName: string, buyerEmail: string) {
     setLoading(true);
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ person_name: "", person_gender: "male" }),
+        body: JSON.stringify({
+          person_name: "",
+          person_gender: "male",
+          buyer_name: buyerName,
+          buyer_email: buyerEmail,
+        }),
       });
 
       if (res.ok) {
         const { id, access_token } = await res.json();
         trackEvent("start_order");
+        setDialogOpen(false);
         router.push(`/order/${id}/album-type?token=${access_token}`);
       }
     } finally {
@@ -85,6 +97,13 @@ export default function LandingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+
+      <PreStartDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSubmit={handlePreStartSubmit}
+        loading={loading}
+      />
 
       <AprilPromoPopup onScrollToOrder={handleScrollToOrder} />
 

@@ -25,6 +25,8 @@ export async function POST(request: NextRequest) {
         person_name: parsed.data.person_name,
         person_gender: parsed.data.person_gender,
         language: parsed.data.language,
+        buyer_name: parsed.data.buyer_name,
+        buyer_email: parsed.data.buyer_email,
         status: "created",
         access_token: generateAccessToken(),
         access_token_expires_at: generateAccessTokenExpiry().toISOString(),
