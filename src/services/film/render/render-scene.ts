@@ -814,8 +814,13 @@ export async function renderScene(
   const width = input.width ?? filmEnv.defaultWidth;
   const height = input.height ?? filmEnv.defaultHeight;
 
-  const proxyBase = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  console.log(`[render-worker] Using proxy base: ${proxyBase}/api/proxy`);
+  // Scene media (slot images, Kling videos, narration) are passed as raw Supabase
+  // signed URLs directly to Remotion. Remotion proxies them through its own internal
+  // server (localhost:3001). Pre-wrapping through /api/proxy caused double-proxying:
+  //   localhost:3001/proxy?src=localhost:3000/api/proxy?src=https://...
+  // which produced ERR_EMPTY_RESPONSE. The /api/proxy route is kept available for
+  // other flows (e.g. assembly clip serving) but is NOT used for scene rendering.
+  console.log(`[film-render] Scene ${sceneId}: media URLs will be passed as raw signed URLs (no app proxy).`);
 
   const adminClient = createAdminClient();
 
@@ -1130,12 +1135,16 @@ export async function renderScene(
     const durationMs = (sceneRow.duration_ms as number | null) ?? 5000;
     const durationInFrames = Math.max(1, Math.round((durationMs / 1000) * fps));
 
-    // Composition props — layout-faithful, matching SceneCompositionProps
-    // All media URLs are wrapped through the proxy so Chrome (Remotion) loads them
-    // via a stable local endpoint regardless of Supabase CORS or network conditions.
+    // Composition props — layout-faithful, matching SceneCompositionProps.
+    //
+    // Raw Supabase signed URLs are passed directly to Remotion — NOT wrapped through
+    // the app's /api/proxy. Remotion proxies remote URLs itself via its own internal
+    // server (localhost:3001). Pre-wrapping caused double-proxying and ERR_EMPTY_RESPONSE:
+    //   BAD:  localhost:3001/proxy?src=localhost:3000/api/proxy?src=https://...
+    //   GOOD: localhost:3001/proxy?src=https://supabase...
     const compositionProps = {
-      slot1: proxySlot(primaryPage.slot1),
-      slot2: proxySlot(primaryPage.slot2),
+      slot1: primaryPage.slot1,
+      slot2: primaryPage.slot2,
       layoutType: primaryPage.layoutType,
       textContent: primaryPage.textContent,
       textSize: primaryPage.textSize,
@@ -1145,20 +1154,18 @@ export async function renderScene(
       textY: primaryPage.textY,
       // Kling video for the right (primary) page — null → static resolved image.
       // For unified spread scenes rightKlingUrl is always null (spread video used instead).
-      klingVideoUrl: rightKlingUrl ? proxyUrl(rightKlingUrl) : null,
+      klingVideoUrl: rightKlingUrl ?? null,
       // Spread: merge left-page Kling URL into secondPage data.
       // For unified spread scenes leftKlingUrl is always null.
       secondPage: secondPage
         ? {
             ...secondPage,
-            slot1: proxySlot(secondPage.slot1),
-            slot2: proxySlot(secondPage.slot2),
-            klingVideoUrl: leftKlingUrl ? proxyUrl(leftKlingUrl) : null,
+            klingVideoUrl: leftKlingUrl ?? null,
           }
         : null,
       // Unified spread: one Kling video that spans both pages.
       // When set, SceneComposition renders it as a full-width background behind both pages.
-      spreadVideoUrl: isUnifiedSpread && spreadKlingUrl ? proxyUrl(spreadKlingUrl) : null,
+      spreadVideoUrl: isUnifiedSpread ? (spreadKlingUrl ?? null) : null,
       motionPreset:
         (sceneRow.motion_preset as string) === "ken_burns"
           ? "ken_burns"
@@ -1169,8 +1176,8 @@ export async function renderScene(
         (sceneRow.transition_out as string) === "fade" ? "fade" : ("none" as const),
       narrationDurationMs:
         (sceneRow.audio_duration_ms as number | null) ?? null,
-      // Signed URL to narration MP3 — baked into the scene video via Remotion <Audio>.
-      narrationUrl: narrationUrl ? proxyUrl(narrationUrl) : null,
+      // Raw signed URL to narration MP3 — baked into the scene video via Remotion <Audio>.
+      narrationUrl: narrationUrl ?? null,
       // Special page type — triggers cover/dedication/back_cover layouts.
       // Null for standard content spreads.
       pageType,
@@ -1237,6 +1244,30 @@ export async function renderScene(
       tmpDir,
       `vitae-thumb-${sceneId}-${Date.now()}.jpg`
     );
+
+    // ── Pre-render media URL sanity check ───────────────────────────────────────
+    // Log URL prefixes to confirm NO double-proxying through localhost:3000/api/proxy.
+    // Expected: all non-null URLs start with "https://" (raw Supabase signed URLs).
+    {
+      const fmtUrl = (url: string | null | undefined, label: string): string => {
+        if (!url) return `${label}=none`;
+        const isDoubleProxy =
+          url.includes("localhost:3000/api/proxy") ||
+          url.includes("localhost:3001/proxy");
+        const preview = url.slice(0, 50);
+        return `${label}=${preview}... ${isDoubleProxy ? "[⚠ DOUBLE-PROXY DETECTED]" : "[ok-raw]"}`;
+      };
+      console.log(
+        `[film-render] Pre-render URLs for scene ${sceneId}`,
+        `(must NOT contain localhost:3000/api/proxy):`
+      );
+      console.log(`  ${fmtUrl(compositionProps.klingVideoUrl, "right-video")}`);
+      console.log(`  ${fmtUrl(compositionProps.secondPage?.klingVideoUrl, "left-video")}`);
+      console.log(`  ${fmtUrl(compositionProps.narrationUrl, "narration")}`);
+      if (compositionProps.slot1?.url) {
+        console.log(`  ${fmtUrl(compositionProps.slot1.url, "right-slot1-image")}`);
+      }
+    }
 
     try {
       // Render video (narration audio baked in via Remotion <Audio> when narrationUrl is set)
