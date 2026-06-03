@@ -1,20 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { FadeIn } from "@/components/home/FadeIn";
 import { PACKAGES_SECTION } from "@/content/landing-content";
 import {
   PACKAGES,
-  getGrowLink,
-  formatPrice,
   type PackageKey,
   type Size,
 } from "@/content/packages";
 import { PackageCard } from "@/components/shared/PackageCard";
 
-export function PackagesSection() {
+interface Props {
+  onSelectPackage: (key: PackageKey, size: Size) => void;
+}
+
+export function PackagesSection({ onSelectPackage }: Props) {
   const [albumSize, setAlbumSize] = useState<Size>("25");
   const [comboSize, setComboSize] = useState<Size>("25");
 
@@ -27,11 +27,6 @@ export function PackagesSection() {
   function setSize(key: PackageKey, size: Size) {
     if (key === "album") setAlbumSize(size);
     if (key === "combo") setComboSize(size);
-  }
-
-  function handlePay(key: PackageKey) {
-    const size = getSize(key);
-    window.location.href = getGrowLink(key, size);
   }
 
   return (
@@ -59,9 +54,9 @@ export function PackagesSection() {
                   pkg={pkg}
                   size={size}
                   onSizeChange={(s) => setSize(pkg.key, s)}
-                  ctaLabel="לתשלום"
+                  ctaLabel="להזמנה"
                   ctaVariant={pkg.featured ? "default" : "outline"}
-                  onCtaClick={() => handlePay(pkg.key)}
+                  onCtaClick={() => onSelectPackage(pkg.key, size)}
                 />
               </FadeIn>
             );

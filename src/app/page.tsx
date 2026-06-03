@@ -20,6 +20,7 @@ import { AprilPromoPopup } from "@/components/home/AprilPromoPopup";
 import { PreStartDialog } from "@/components/home/PreStartDialog";
 import { FOOTER } from "@/content/landing-content";
 import { trackEvent } from "@/lib/analytics";
+import { PACKAGE_TO_DELIVERY_MODE, type PackageKey, type Size } from "@/content/packages";
 
 const DRAFT_STORAGE_KEY = "vitae_draft";
 
@@ -34,6 +35,7 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<DraftPointer | null>(null);
+  const [pendingPackage, setPendingPackage] = useState<{ key: PackageKey; size: Size } | null>(null);
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
@@ -63,27 +65,41 @@ export default function LandingPage() {
 
   function handleStartOrder() {
     trackEvent("cta_click", { source: "landing" });
+    setPendingPackage(null);
+    setDialogOpen(true);
+  }
+
+  function handleSelectPackage(key: PackageKey, size: Size) {
+    trackEvent("cta_click", { source: "package", package: key });
+    setPendingPackage({ key, size });
     setDialogOpen(true);
   }
 
   async function handlePreStartSubmit(buyerName: string, buyerEmail: string) {
     setLoading(true);
     try {
+      const body: Record<string, unknown> = {
+        person_name: "",
+        person_gender: "male",
+        buyer_name: buyerName,
+        buyer_email: buyerEmail,
+      };
+
+      if (pendingPackage) {
+        body.delivery_mode = PACKAGE_TO_DELIVERY_MODE[pendingPackage.key];
+      }
+
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          person_name: "",
-          person_gender: "male",
-          buyer_name: buyerName,
-          buyer_email: buyerEmail,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (res.ok) {
         const { id, access_token } = await res.json();
-        trackEvent("start_order");
+        trackEvent("start_order", { source: pendingPackage ? "package" : "hero" });
         setDialogOpen(false);
+        setPendingPackage(null);
         router.push(`/order/${id}/album-type?token=${access_token}`);
       }
     } finally {
@@ -172,7 +188,7 @@ export default function LandingPage() {
 
         <FilmPreviewSection />
 
-        <PackagesSection />
+        <PackagesSection onSelectPackage={handleSelectPackage} />
 
         <TestimonialsSection />
 

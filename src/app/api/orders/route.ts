@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
         status: "created",
         access_token: generateAccessToken(),
         access_token_expires_at: generateAccessTokenExpiry().toISOString(),
+        ...(parsed.data.delivery_mode && { delivery_mode: parsed.data.delivery_mode }),
       })
       .select("id, access_token")
       .single();

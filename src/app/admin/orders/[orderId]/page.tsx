@@ -6,7 +6,7 @@ import { STATUS_LABELS } from "@/lib/state-machine";
 import { getDisplayStatus } from "@/lib/display-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { OrderStatus, StorySource, ManualSpread, PreviewStatus } from "@/types/order";
+import type { OrderStatus, PaymentStatus, StorySource, ManualSpread, PreviewStatus } from "@/types/order";
 import type { QuestionnaireResponses } from "@/types/questionnaire";
 import { PublishButton } from "@/components/admin/PublishButton";
 import { GenerateStoryButton } from "@/components/admin/GenerateStoryButton";
@@ -20,6 +20,7 @@ import { AdminPhotoUpload } from "@/components/admin/AdminPhotoUpload";
 import { ManualStoryEditor } from "@/components/admin/ManualStoryEditor";
 import { AlbumLengthControl } from "@/components/admin/AlbumLengthControl";
 import { OrderProgressStepper } from "@/components/admin/OrderProgressStepper";
+import { AdminOrderStatusEditor } from "@/components/admin/AdminOrderStatusEditor";
 import { FulfillmentActionButton } from "@/components/admin/FulfillmentActionButton";
 import type { PhotoForGallery } from "@/components/admin/AdminPhotosGallery";
 import type { FilmProject, FilmScene } from "@/types/film";
@@ -422,6 +423,13 @@ export default async function AdminOrderDetailPage({
           completedAt={order.completed_at as string | null}
         />
       </section>
+
+      {/* ── Admin status override ── */}
+      <AdminOrderStatusEditor
+        orderId={orderId}
+        currentStatus={currentStatus}
+        currentPaymentStatus={(order.payment_status as PaymentStatus) ?? "pending"}
+      />
 
       {/* ── Two-column main area on desktop ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
