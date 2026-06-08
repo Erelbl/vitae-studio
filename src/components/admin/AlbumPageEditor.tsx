@@ -267,26 +267,85 @@ export function AlbumPageEditor({
     const MIN_ALBUM_PAGES = 20;
     const isContentPage = (p: EditorPage) =>
       p.page_type === "illustration_and_text" || p.page_type === "text_only";
+    const isTextEmpty = (p: EditorPage) =>
+      !p.text_content || p.text_content.trim().length === 0;
+    const hasSlotImage = (p: EditorPage) =>
+      p.images.some((img) => img.photo_id != null || img.manual_image_path != null);
     // Mirrors the server's emptiness check field-for-field (route.ts
     // remove-empty-last-spread): text_content, legacy illustration fields,
     // and page_images photo_id / manual_image_path — NOT the resolved
     // image_url, which can be null even when a path is set (e.g. signing
     // failure) and would otherwise let the client diverge from the server.
     const isPageEmpty = (p: EditorPage) =>
-      (!p.text_content || p.text_content.trim().length === 0) &&
-      !p.illustration_storage_path &&
-      !p.photo_id &&
-      !p.images.some((img) => img.photo_id != null || img.manual_image_path != null);
+      isTextEmpty(p) && !p.illustration_storage_path && !p.photo_id && !hasSlotImage(p);
+
+    // Diagnostic snapshot — logged unconditionally below so the exact gating
+    // reason is visible whenever the button doesn't show. This is what
+    // surfaced the real bug: a historical page_number gap (see route.ts)
+    // makes p1/p2 resolve to `undefined`, which every prior "fix" attempt
+    // upstream of this lookup could never see or recover from.
+    const snapshot: Record<string, unknown> = { totalPages: pages.length };
 
     const backCover = pages.find((p) => p.page_type === "back_cover");
-    if (!backCover) return null;
+    if (!backCover) {
+      snapshot.reason = "no back_cover page found";
+      console.debug("[lastEmptySpread]", snapshot);
+      return null;
+    }
+    snapshot.backCoverPageNumber = backCover.page_number;
 
     const p1 = pages.find((p) => p.page_number === backCover.page_number - 2);
     const p2 = pages.find((p) => p.page_number === backCover.page_number - 1);
-    if (!p1 || !p2 || !isContentPage(p1) || !isContentPage(p2)) return null;
-    if (!isPageEmpty(p1) || !isPageEmpty(p2)) return null;
-    if (pages.length - 2 < MIN_ALBUM_PAGES) return null;
+    snapshot.candidateP1PageNumber = backCover.page_number - 2;
+    snapshot.candidateP2PageNumber = backCover.page_number - 1;
+    snapshot.p1Found = !!p1;
+    snapshot.p2Found = !!p2;
+    if (p1) {
+      snapshot.p1 = {
+        id: p1.id,
+        page_number: p1.page_number,
+        isContentPage: isContentPage(p1),
+        textEmpty: isTextEmpty(p1),
+        illustration_storage_path: p1.illustration_storage_path,
+        photo_id: p1.photo_id,
+        images: p1.images.map((i) => ({
+          image_url: i.image_url,
+          photo_id: i.photo_id,
+          manual_image_path: i.manual_image_path,
+        })),
+      };
+    }
+    if (p2) {
+      snapshot.p2 = {
+        id: p2.id,
+        page_number: p2.page_number,
+        isContentPage: isContentPage(p2),
+        textEmpty: isTextEmpty(p2),
+        illustration_storage_path: p2.illustration_storage_path,
+        photo_id: p2.photo_id,
+        images: p2.images.map((i) => ({
+          image_url: i.image_url,
+          photo_id: i.photo_id,
+          manual_image_path: i.manual_image_path,
+        })),
+      };
+    }
+    snapshot.minPageCountOk = pages.length - 2 >= MIN_ALBUM_PAGES;
 
+    let reason: string | null = null;
+    if (!p1 || !p2) {
+      reason = "p1 or p2 not found at expected page_number — likely a numbering gap";
+    } else if (!isContentPage(p1) || !isContentPage(p2)) {
+      reason = "p1 or p2 is not a regular content page";
+    } else if (!isPageEmpty(p1) || !isPageEmpty(p2)) {
+      reason = "p1 or p2 is not empty (has text and/or illustration)";
+    } else if (pages.length - 2 < MIN_ALBUM_PAGES) {
+      reason = `removing would drop below MIN_ALBUM_PAGES (${MIN_ALBUM_PAGES})`;
+    }
+    snapshot.reason = reason ?? "eligible — button shown";
+    console.debug("[lastEmptySpread]", snapshot);
+
+    if (reason || !p1 || !p2) return null;
     return [p1, p2] as const;
   }, [pages]);
 
