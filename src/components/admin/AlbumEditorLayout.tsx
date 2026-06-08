@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { AlbumPreview } from "@/components/album/AlbumPreview";
 import { AlbumPageEditor } from "@/components/admin/AlbumPageEditor";
 import type { EditorPage, PhotoForEditor } from "@/components/admin/AlbumPageEditor";
 import type { PreviewData, PreviewPage } from "@/types/page";
-import { exportAlbumPdf } from "@/lib/export-album-pdf";
+import { exportAlbumPdf, exportAlbumSpreadsJpgZip } from "@/lib/export-album-pdf";
 
 /**
  * Update a cover box's x/y position inside the text_content JSON.
@@ -91,6 +92,7 @@ export function AlbumEditorLayout({
   personName: string;
 }) {
   const [pdfProgress, setPdfProgress] = useState<string | null>(null);
+  const [jpgProgress, setJpgProgress] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [focusedSpreadIndex, setFocusedSpreadIndex] = useState<number | undefined>();
 
@@ -484,6 +486,22 @@ export function AlbumEditorLayout({
     setPdfProgress(null);
   }, [mergedPdfData, personName, pdfProgress]);
 
+  const handleExportJpgZip = useCallback(async () => {
+    if (jpgProgress) return; // already running
+    setJpgProgress("מכין...");
+    try {
+      await exportAlbumSpreadsJpgZip(mergedPdfData, personName, (current, total) => {
+        setJpgProgress(`${current + 1} / ${total}`);
+      });
+    } catch (err) {
+      console.error("JPG export failed:", err);
+      setJpgProgress(null);
+      toast.error("ייצוא ה-JPG נכשל");
+      return;
+    }
+    setJpgProgress(null);
+  }, [mergedPdfData, personName, jpgProgress]);
+
   // Diagnostic: preview has real pages but editor failed to load them.
   const previewHasRealPages = !previewData.isMock && previewData.pages.length > 0;
   const editorLoadFailed = previewHasRealPages && editorPages.length === 0;
@@ -582,6 +600,16 @@ export function AlbumEditorLayout({
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             {pdfProgress ? `⏳ ${pdfProgress}` : "↓ הורד אלבום (PDF)"}
+          </button>
+
+          {/* JPG spreads (ZIP) download — print-ready export */}
+          <button
+            type="button"
+            onClick={handleExportJpgZip}
+            disabled={!!jpgProgress}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {jpgProgress ? `⏳ ${jpgProgress}` : "↓ הורד כפולות כ-JPG"}
           </button>
         </div>
 

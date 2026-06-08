@@ -14,6 +14,7 @@
 
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
+import JSZip from "jszip";
 import type { PreviewData, PreviewPage, LayoutType, PageImageSlot } from "@/types/page";
 import { parseCoverText } from "@/components/album/AlbumPageView";
 
@@ -26,6 +27,12 @@ const PAGE_SIZE_PX = 1200;
 
 /** Physical album page size in mm (25 cm = 250 mm). */
 const PAGE_MM = 250;
+
+/**
+ * JPEG quality for the print-ready spread export (0–1). 0.92 sits in the
+ * 90–95 "high quality" range with a reasonable file size for a ZIP of ~20 spreads.
+ */
+const JPG_QUALITY = 0.92;
 
 /**
  * Approximate pixel width of one album page as seen in the admin editor preview.
@@ -753,6 +760,120 @@ export async function exportAlbumPdf(
     // Save
     const safeName = personName.replace(/[^\w\u0590-\u05FF ]/g, "").trim() || "album";
     doc.save(`${safeName}.pdf`);
+  } finally {
+    document.body.removeChild(host);
+  }
+}
+
+// \u2500\u2500\u2500 JPG/ZIP export (print-ready spreads) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+/** Capture a canvas as a JPEG Blob (avoids the memory overhead of a base64 data URL). */
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("Canvas export to JPEG failed"))),
+      "image/jpeg",
+      quality
+    );
+  });
+}
+
+/**
+ * Exports every album spread as a high-quality JPG, bundled into a single ZIP.
+ *
+ * Reuses the exact same DOM-snapshot pipeline as {@link exportAlbumPdf}
+ * (spread grouping, page rendering, html2canvas capture at the same scale),
+ * so the images match the PDF/preview pixel-for-pixel \u2014 only the final
+ * assembly step differs (JPEG blobs in a ZIP instead of pages in a PDF).
+ *
+ * Resolution: each spread is captured at PAGE_SIZE_PX \u00D7 2 (html2canvas scale)
+ * per page \u2014 e.g. ~2400\u00D72400 px per square page, ~4800\u00D72400 px per two-page
+ * spread (\u2248289 DPI for a 25 cm page side). This matches the proven, reliable
+ * PDF render path; pushing higher risks failures on large albums in-browser.
+ *
+ * Files are named `spread-01.jpg`, `spread-02.jpg`, \u2026 in album order.
+ */
+export async function exportAlbumSpreadsJpgZip(
+  previewData: PreviewData,
+  personName: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<void> {
+  const spreads = buildSpreads(previewData.pages);
+  const total = spreads.length;
+  const padWidth = Math.max(2, String(total).length);
+
+  // Create hidden container (same approach as exportAlbumPdf)
+  const host = document.createElement("div");
+  Object.assign(host.style, {
+    position: "fixed",
+    left: "-9999px",
+    top: "0",
+    zIndex: "-1",
+    opacity: "0",
+    pointerEvents: "none",
+  });
+  document.body.appendChild(host);
+
+  const zip = new JSZip();
+
+  try {
+    for (let i = 0; i < spreads.length; i++) {
+      onProgress?.(i, total);
+      const [rightPage, leftPage] = spreads[i];
+      const isSingleton = !leftPage;
+
+      const spreadEl = document.createElement("div");
+      Object.assign(spreadEl.style, {
+        display: "flex",
+        direction: "ltr", // physical left-to-right for spread layout
+        width: isSingleton ? `${PAGE_SIZE_PX}px` : `${PAGE_SIZE_PX * 2}px`,
+        height: `${PAGE_SIZE_PX}px`,
+        backgroundColor: "#FAF8F2",
+      });
+
+      if (isSingleton) {
+        spreadEl.appendChild(buildPageElement(rightPage, personName));
+      } else {
+        // Left page (higher number) first in LTR flex, right page (lower number) second
+        spreadEl.appendChild(buildPageElement(leftPage!, personName));
+        spreadEl.appendChild(buildPageElement(rightPage, personName));
+      }
+
+      host.appendChild(spreadEl);
+      await waitForImages(spreadEl);
+
+      const canvas = await html2canvas(spreadEl, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#FAF8F2",
+        logging: false,
+      });
+
+      const blob = await canvasToJpegBlob(canvas, JPG_QUALITY);
+      const fileName = `spread-${String(i + 1).padStart(padWidth, "0")}.jpg`;
+      zip.file(fileName, blob);
+
+      host.removeChild(spreadEl);
+    }
+
+    onProgress?.(total, total);
+
+    const zipBlob = await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 },
+    });
+
+    const safeName = personName.replace(/[^\w\u0590-\u05FF ]/g, "").trim() || "album";
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeName}-spreads-jpg.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   } finally {
     document.body.removeChild(host);
   }
