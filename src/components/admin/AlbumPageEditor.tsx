@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -252,105 +252,20 @@ export function AlbumPageEditor({
   const selectedIndex = pages.findIndex((p) => p.id === selectedPageId);
 
   /**
-   * The "remove empty last spread" action only ever targets the pair of
-   * content pages immediately before back_cover — never an arbitrary spread.
-   * It is only enabled when BOTH of those pages are completely empty (no
-   * text, no illustration via either the legacy fields or page_images) and
-   * removing them would not shrink the album below the minimum size offered
-   * by the album-length control. The server independently re-validates all
-   * of this before deleting anything.
+   * The "remove empty last spread" button is always shown to the admin —
+   * visibility is intentionally NOT gated by any client-side prediction of
+   * whether the last spread is empty/removable. A client-side gate here
+   * (e.g. a `lastEmptySpread` memo mirroring the server's checks) previously
+   * caused the button to vanish and stay gone — once it disagreed with the
+   * server about the album's state (e.g. after a historical page_number
+   * anomaly), there was no way for the admin to even trigger a request that
+   * could resolve it. The server (route.ts remove-empty-last-spread) is the
+   * sole source of truth: it independently re-validates everything (order
+   * scope, last-spread-only, pair-only, both-pages-empty, minimum page
+   * count) before deleting anything, and returns a clear Hebrew error when
+   * the action isn't currently valid — which we surface as a toast.
    */
-  const lastEmptySpread = useMemo(() => {
-    // TODO: no shared album-length constant exists yet — album-length/route.ts
-    // and AlbumLengthControl.tsx also hardcode 20/40 independently. Centralize
-    // if/when those are refactored; until then keep this mirroring them.
-    const MIN_ALBUM_PAGES = 20;
-    const isContentPage = (p: EditorPage) =>
-      p.page_type === "illustration_and_text" || p.page_type === "text_only";
-    const isTextEmpty = (p: EditorPage) =>
-      !p.text_content || p.text_content.trim().length === 0;
-    const hasSlotImage = (p: EditorPage) =>
-      p.images.some((img) => img.photo_id != null || img.manual_image_path != null);
-    // Mirrors the server's emptiness check field-for-field (route.ts
-    // remove-empty-last-spread): text_content, legacy illustration fields,
-    // and page_images photo_id / manual_image_path — NOT the resolved
-    // image_url, which can be null even when a path is set (e.g. signing
-    // failure) and would otherwise let the client diverge from the server.
-    const isPageEmpty = (p: EditorPage) =>
-      isTextEmpty(p) && !p.illustration_storage_path && !p.photo_id && !hasSlotImage(p);
-
-    // Diagnostic snapshot — logged unconditionally below so the exact gating
-    // reason is visible whenever the button doesn't show. This is what
-    // surfaced the real bug: a historical page_number gap (see route.ts)
-    // makes p1/p2 resolve to `undefined`, which every prior "fix" attempt
-    // upstream of this lookup could never see or recover from.
-    const snapshot: Record<string, unknown> = { totalPages: pages.length };
-
-    const backCover = pages.find((p) => p.page_type === "back_cover");
-    if (!backCover) {
-      snapshot.reason = "no back_cover page found";
-      console.debug("[lastEmptySpread]", snapshot);
-      return null;
-    }
-    snapshot.backCoverPageNumber = backCover.page_number;
-
-    const p1 = pages.find((p) => p.page_number === backCover.page_number - 2);
-    const p2 = pages.find((p) => p.page_number === backCover.page_number - 1);
-    snapshot.candidateP1PageNumber = backCover.page_number - 2;
-    snapshot.candidateP2PageNumber = backCover.page_number - 1;
-    snapshot.p1Found = !!p1;
-    snapshot.p2Found = !!p2;
-    if (p1) {
-      snapshot.p1 = {
-        id: p1.id,
-        page_number: p1.page_number,
-        isContentPage: isContentPage(p1),
-        textEmpty: isTextEmpty(p1),
-        illustration_storage_path: p1.illustration_storage_path,
-        photo_id: p1.photo_id,
-        images: p1.images.map((i) => ({
-          image_url: i.image_url,
-          photo_id: i.photo_id,
-          manual_image_path: i.manual_image_path,
-        })),
-      };
-    }
-    if (p2) {
-      snapshot.p2 = {
-        id: p2.id,
-        page_number: p2.page_number,
-        isContentPage: isContentPage(p2),
-        textEmpty: isTextEmpty(p2),
-        illustration_storage_path: p2.illustration_storage_path,
-        photo_id: p2.photo_id,
-        images: p2.images.map((i) => ({
-          image_url: i.image_url,
-          photo_id: i.photo_id,
-          manual_image_path: i.manual_image_path,
-        })),
-      };
-    }
-    snapshot.minPageCountOk = pages.length - 2 >= MIN_ALBUM_PAGES;
-
-    let reason: string | null = null;
-    if (!p1 || !p2) {
-      reason = "p1 or p2 not found at expected page_number — likely a numbering gap";
-    } else if (!isContentPage(p1) || !isContentPage(p2)) {
-      reason = "p1 or p2 is not a regular content page";
-    } else if (!isPageEmpty(p1) || !isPageEmpty(p2)) {
-      reason = "p1 or p2 is not empty (has text and/or illustration)";
-    } else if (pages.length - 2 < MIN_ALBUM_PAGES) {
-      reason = `removing would drop below MIN_ALBUM_PAGES (${MIN_ALBUM_PAGES})`;
-    }
-    snapshot.reason = reason ?? "eligible — button shown";
-    console.debug("[lastEmptySpread]", snapshot);
-
-    if (reason || !p1 || !p2) return null;
-    return [p1, p2] as const;
-  }, [pages]);
-
   async function handleRemoveEmptyLastSpread() {
-    if (!lastEmptySpread) return;
     if (
       !confirm(
         "להסיר את כפולת העמודים הריקה האחרונה מהאלבום? הפעולה אינה הפיכה."
@@ -369,11 +284,16 @@ export function AlbumPageEditor({
         toast.error(err.error ?? "שגיאה בהסרת הכפולה הריקה");
         return;
       }
-      if (selectedPageId === lastEmptySpread[0].id || selectedPageId === lastEmptySpread[1].id) {
-        setSelectedPageId(null);
-      }
+      // The removed pages may have included the currently-selected one —
+      // clear selection unconditionally rather than guessing which IDs
+      // were deleted (the server only returns page numbers, not ids).
+      setSelectedPageId(null);
       toast.success("כפולת העמודים הריקה הוסרה מהאלבום");
       router.refresh();
+      // Correctness over smooth UX: force a hard reload so the next click's
+      // gating decision (made entirely server-side) always sees the true
+      // post-deletion state, even if the RSC refresh were ever insufficient.
+      window.location.reload();
     } finally {
       setRemovingEmptySpread(false);
     }
@@ -491,17 +411,19 @@ export function AlbumPageEditor({
 
         {/* Insert / remove spread actions */}
         <div className="flex items-center justify-end gap-3">
-          {lastEmptySpread && (
-            <button
-              onClick={handleRemoveEmptyLastSpread}
-              disabled={removingEmptySpread}
-              className="text-xs text-destructive/70 hover:text-destructive disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {removingEmptySpread
-                ? "מסיר כפולה ריקה..."
-                : "🗑 הסר כפולה ריקה אחרונה"}
-            </button>
-          )}
+          {/* Always rendered — admin-only (AlbumPageEditor is admin-preview-only
+              UI). Visibility is intentionally not gated by any client-side
+              prediction; the server independently validates and authoritatively
+              decides whether the action succeeds (see handleRemoveEmptyLastSpread). */}
+          <button
+            onClick={handleRemoveEmptyLastSpread}
+            disabled={removingEmptySpread}
+            className="text-xs text-destructive/70 hover:text-destructive disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {removingEmptySpread
+              ? "מסיר כפולה ריקה..."
+              : "🗑 הסר כפולה ריקה אחרונה"}
+          </button>
           <button
             onClick={handleInsertSpread}
             disabled={insertingSpread}
