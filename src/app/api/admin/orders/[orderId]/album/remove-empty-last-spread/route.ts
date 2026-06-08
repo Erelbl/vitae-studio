@@ -25,7 +25,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * If any check fails, nothing is deleted and a clear error is returned.
  */
 
-const MIN_ALBUM_PAGES = 20; // mirrors the orders_target_page_count_range constraint
+// TODO: no shared album-length constant exists yet — album-length/route.ts
+// and AlbumLengthControl.tsx also hardcode 20/40 independently. Centralize
+// if/when those are refactored; until then this mirrors the
+// orders_target_page_count_range DB constraint (see migration 00036).
+const MIN_ALBUM_PAGES = 20;
 const CONTENT_PAGE_TYPES = new Set(["illustration_and_text", "text_only"]);
 
 type PageRow = {
@@ -155,6 +159,26 @@ export async function POST(
   if (deleteError) {
     return NextResponse.json(
       { error: `Failed to remove pages: ${deleteError.message}` },
+      { status: 500 }
+    );
+  }
+
+  // Re-close the gap left by the removed spread: shift back_cover down by 2
+  // so page numbering stays contiguous (mirrors insert-spread, which shifts
+  // back_cover and everything after the insertion point up by 2). Without
+  // this, a subsequent call would look for p1/p2 at the now-vacant
+  // page_numbers (back_cover.page_number - 2 / - 1), find nothing, and the
+  // admin could only ever remove a single trailing spread.
+  const { error: renumberError } = await adminClient
+    .from("pages")
+    .update({ page_number: backCover.page_number - 2 })
+    .eq("id", backCover.id);
+
+  if (renumberError) {
+    return NextResponse.json(
+      {
+        error: `Removed pages but failed to renumber back cover: ${renumberError.message}`,
+      },
       { status: 500 }
     );
   }

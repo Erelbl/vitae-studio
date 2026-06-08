@@ -234,6 +234,7 @@ export default async function AdminOrderPreviewPage({
     existing.push({
       slot: pi.slot as number,
       photo_id: photoId,
+      manual_image_path: manualPath,
       crop_x: (pi.crop_x as number) ?? 0,
       crop_y: (pi.crop_y as number) ?? 0,
       scale: (pi.scale as number) ?? 1,

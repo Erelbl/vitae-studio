@@ -46,6 +46,8 @@ export type EditorPage = {
   images: Array<{
     slot: number;
     photo_id: string | null;
+    /** Manually-uploaded image path — set when the slot bypasses photo selection. */
+    manual_image_path: string | null;
     crop_x: number;
     crop_y: number;
     scale: number;
@@ -259,14 +261,22 @@ export function AlbumPageEditor({
    * of this before deleting anything.
    */
   const lastEmptySpread = useMemo(() => {
+    // TODO: no shared album-length constant exists yet — album-length/route.ts
+    // and AlbumLengthControl.tsx also hardcode 20/40 independently. Centralize
+    // if/when those are refactored; until then keep this mirroring them.
     const MIN_ALBUM_PAGES = 20;
     const isContentPage = (p: EditorPage) =>
       p.page_type === "illustration_and_text" || p.page_type === "text_only";
+    // Mirrors the server's emptiness check field-for-field (route.ts
+    // remove-empty-last-spread): text_content, legacy illustration fields,
+    // and page_images photo_id / manual_image_path — NOT the resolved
+    // image_url, which can be null even when a path is set (e.g. signing
+    // failure) and would otherwise let the client diverge from the server.
     const isPageEmpty = (p: EditorPage) =>
       (!p.text_content || p.text_content.trim().length === 0) &&
       !p.illustration_storage_path &&
       !p.photo_id &&
-      !p.images.some((img) => img.image_url);
+      !p.images.some((img) => img.photo_id != null || img.manual_image_path != null);
 
     const backCover = pages.find((p) => p.page_type === "back_cover");
     if (!backCover) return null;
