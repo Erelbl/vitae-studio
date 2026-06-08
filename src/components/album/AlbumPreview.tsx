@@ -53,6 +53,13 @@ interface AlbumPreviewProps {
   onCropConfirm?: (top: number, right: number, bottom: number, left: number) => void;
   /** Called when admin clicks "ביטול" — revert and exit crop mode. */
   onCropCancel?: () => void;
+  /**
+   * Admin-only visual aid: overlays evenly-spaced horizontal guide lines across
+   * the spread so the admin can compare text height/alignment between the right
+   * and left pages. Purely client-side rendering — never persisted, never part
+   * of page content, and not rendered by the customer preview or PDF/JPG export.
+   */
+  showAlignmentGuide?: boolean;
 }
 
 /**
@@ -114,6 +121,7 @@ export function AlbumPreview({
   onCropUpdate,
   onCropConfirm,
   onCropCancel,
+  showAlignmentGuide = false,
 }: AlbumPreviewProps) {
   const { pages, personName } = data;
   const spreads = buildSpreads(pages);
@@ -425,6 +433,9 @@ export function AlbumPreview({
               />
             )
           )}
+
+          {/* Alignment guide overlay — admin-only visual aid, see prop docs */}
+          {showAlignmentGuide && <AlignmentGuideOverlay />}
         </div>
       </div>
 
@@ -467,6 +478,49 @@ export function AlbumPreview({
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
+    </div>
+  );
+}
+
+// ─── AlignmentGuideOverlay ────────────────────────────────────────────────────
+// Purely visual, admin-only aid for comparing text height across the right and
+// left pages of a spread. Renders evenly-spaced horizontal guide lines plus an
+// emphasized centre line. Non-interactive (pointer-events: none) so it never
+// blocks drag/crop/text-position controls, never persisted, and never rendered
+// by the customer preview or the PDF/JPG export paths (those don't use this
+// component at all).
+
+function AlignmentGuideOverlay() {
+  // 9 lines → 10 even bands (every 10% of page height); the middle line (50%)
+  // doubles as a centre/midline guide and is drawn more prominently.
+  const lines = Array.from({ length: 9 }, (_, i) => (i + 1) * 10);
+
+  return (
+    <div
+      className="absolute inset-0 pointer-events-none hidden sm:block"
+      style={{ zIndex: 30 }}
+    >
+      {lines.map((pct) => {
+        const isCenter = pct === 50;
+        return (
+          <div
+            key={pct}
+            className="absolute inset-x-0"
+            style={{
+              top: `${pct}%`,
+              borderTop: isCenter
+                ? "1.5px dashed rgba(99,179,237,0.9)"
+                : "1px solid rgba(255,255,255,0.28)",
+              boxShadow: isCenter ? "0 0 0 1px rgba(0,0,0,0.18)" : undefined,
+            }}
+          />
+        );
+      })}
+      <div className="absolute top-2 inset-x-0 flex justify-center">
+        <span className="text-[10px] text-white/90 bg-black/50 rounded px-2 py-0.5">
+          סרגל יישור — להשוואת גובה הטקסט בין העמודים (לא נשמר ולא מיוצא)
+        </span>
+      </div>
     </div>
   );
 }

@@ -96,6 +96,14 @@ export function AlbumEditorLayout({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [focusedSpreadIndex, setFocusedSpreadIndex] = useState<number | undefined>();
 
+  /**
+   * Admin-only visual aid — overlays horizontal guide lines on the large
+   * preview to help compare text alignment between the right/left pages of a
+   * spread. Local UI state only: never persisted, never affects rendering for
+   * customers, PDF, JPG export, or film. See AlignmentGuideOverlay.
+   */
+  const [showAlignmentGuide, setShowAlignmentGuide] = useState(false);
+
   /** The page currently open in the editor — needed to target the drag overlay. */
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
 
@@ -592,6 +600,19 @@ export function AlbumEditorLayout({
             </button>
           )}
 
+          {/* Toggle alignment guide overlay — visual aid only, never persisted or exported */}
+          <button
+            type="button"
+            onClick={() => setShowAlignmentGuide((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-1.5 text-xs transition-colors ${
+              showAlignmentGuide
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40"
+            }`}
+          >
+            {showAlignmentGuide ? "✓ סרגל יישור פעיל" : "הצג סרגל יישור"}
+          </button>
+
           {/* PDF download */}
           <button
             type="button"
@@ -631,6 +652,7 @@ export function AlbumEditorLayout({
           onCropUpdate={handleCropUpdate}
           onCropConfirm={handleCropConfirm}
           onCropCancel={handleCropCancel}
+          showAlignmentGuide={showAlignmentGuide}
         />
       </div>
 

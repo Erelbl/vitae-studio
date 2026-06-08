@@ -476,6 +476,7 @@ export function AlbumPageEditor({
             completedPhotos={completedPhotos}
             personName={personName}
             onSaved={() => router.refresh()}
+            onPageUpdate={onPageUpdate}
             coverDragBox={coverDragBox}
             onCoverBoxDragToggle={onCoverBoxDragToggle}
           />
@@ -1021,31 +1022,7 @@ function PageEditorPanel({
       {/* Text color picker */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">צבע טקסט</p>
-        <div className="flex gap-1.5">
-          {(["white", "black"] as TextColor[]).map((color) => {
-            const label = color === "white" ? "לבן" : "שחור";
-            return (
-              <button
-                key={color}
-                onClick={() => handleTextColorChange(color)}
-                className={`flex-1 rounded-md py-1.5 text-xs border transition-colors flex items-center justify-center gap-1.5 ${
-                  textColor === color
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <span
-                  className="inline-block w-3 h-3 rounded-full border"
-                  style={{
-                    background: color === "white" ? "#fff" : "#111",
-                    borderColor: color === "white" ? "#ccc" : "#444",
-                  }}
-                />
-                {label}
-              </button>
-            );
-          })}
-        </div>
+        <TextColorPicker value={textColor} onChange={handleTextColorChange} />
       </div>
 
       {/* Background color palette */}
@@ -1214,6 +1191,7 @@ function SpecialPagePanel({
   completedPhotos,
   personName,
   onSaved,
+  onPageUpdate,
   coverDragBox,
   onCoverBoxDragToggle,
 }: {
@@ -1222,6 +1200,11 @@ function SpecialPagePanel({
   completedPhotos: PhotoForEditor[];
   personName?: string;
   onSaved: () => void;
+  /**
+   * Called whenever a style property is committed so the large AlbumPreview
+   * can reflect the change without a server round-trip (mirrors PageEditorPanel).
+   */
+  onPageUpdate?: (pageId: string, overrides: Partial<PreviewPage>) => void;
   /** Which cover box drag is active (passed from AlbumEditorLayout via AlbumPageEditor). */
   coverDragBox?: 1 | 2 | null;
   onCoverBoxDragToggle?: (box: 1 | 2 | null) => void;
@@ -1234,6 +1217,31 @@ function SpecialPagePanel({
   const [coverBox2, setCoverBox2] = useState<CoverBoxEditorState>(initCover.box2);
   const [coverDirty, setCoverDirty] = useState(false);
   const [savingCover, setSavingCover] = useState(false);
+
+  // Cover styling — reuses the same `pages.text_color` / `pages.bg_color`
+  // columns and edit endpoint as regular content pages.
+  const [coverTextColor, setCoverTextColor] = useState<TextColor>(page.text_color ?? "white");
+  const [coverBgColor, setCoverBgColor] = useState<string | null>(page.bg_color ?? null);
+
+  async function handleCoverTextColorChange(newColor: TextColor) {
+    setCoverTextColor(newColor);
+    onPageUpdate?.(page.id, { text_color: newColor });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_color: newColor }),
+    });
+  }
+
+  async function handleCoverBgColorChange(newColor: string | null) {
+    setCoverBgColor(newColor);
+    onPageUpdate?.(page.id, { bg_color: newColor });
+    await fetch(`/api/admin/orders/${orderId}/pages/${page.id}/edit`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bg_color: newColor }),
+    });
+  }
 
   // Non-cover: single text
   const [text, setText] = useState(page.text_content ?? "");
@@ -1493,6 +1501,18 @@ function SpecialPagePanel({
             </button>
           )}
         </div>
+      )}
+
+      {/* Cover styling — same controls + storage as regular content pages
+          (pages.text_color / pages.bg_color via the shared edit endpoint). */}
+      {isCover && (
+        <>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">צבע טקסט בכריכה</p>
+            <TextColorPicker value={coverTextColor} onChange={handleCoverTextColorChange} />
+          </div>
+          <BgColorPicker value={coverBgColor} onChange={handleCoverBgColorChange} />
+        </>
       )}
 
       {/* Background image — slot 1 */}
@@ -1818,6 +1838,45 @@ function ImageSlotEditor({
         </Dialog>
       )}
 
+    </div>
+  );
+}
+
+// ─── TextColorPicker ──────────────────────────────────────────────────────────
+// Two-button black/white picker, shared by content pages and the cover.
+
+function TextColorPicker({
+  value,
+  onChange,
+}: {
+  value: TextColor;
+  onChange: (color: TextColor) => void;
+}) {
+  return (
+    <div className="flex gap-1.5">
+      {(["white", "black"] as TextColor[]).map((color) => {
+        const label = color === "white" ? "לבן" : "שחור";
+        return (
+          <button
+            key={color}
+            onClick={() => onChange(color)}
+            className={`flex-1 rounded-md py-1.5 text-xs border transition-colors flex items-center justify-center gap-1.5 ${
+              value === color
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span
+              className="inline-block w-3 h-3 rounded-full border"
+              style={{
+                background: color === "white" ? "#fff" : "#111",
+                borderColor: color === "white" ? "#ccc" : "#444",
+              }}
+            />
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

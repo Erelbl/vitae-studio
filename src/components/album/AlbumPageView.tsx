@@ -168,6 +168,39 @@ export function parseCoverText(
   return { box1: b1, box2: { ...b2, text: textContent } };
 }
 
+// ─── Cover text color resolution ──────────────────────────────────────────────
+
+/**
+ * Resolve the cover title/subtitle color + shadow.
+ * When the admin has chosen an explicit color (`pages.text_color`), it wins.
+ * Otherwise falls back to the original hasImage-based defaults — preserving
+ * existing cover typography for pages where the admin hasn't made a choice.
+ */
+function resolveCoverTextStyle(
+  textColor: TextColor | null,
+  hasImage: boolean,
+  variant: "title" | "subtitle"
+): { color: string; textShadow?: string } {
+  if (textColor === "white") {
+    return variant === "title"
+      ? { color: "white", textShadow: "0 2px 10px rgba(0,0,0,0.75), 0 1px 3px rgba(0,0,0,0.5)" }
+      : { color: "rgba(255,255,255,0.82)", textShadow: "0 1px 6px rgba(0,0,0,0.65)" };
+  }
+  if (textColor === "black") {
+    return variant === "title"
+      ? { color: "#1a1a1a", textShadow: "0 1px 3px rgba(255,255,255,0.85), 0 2px 8px rgba(255,255,255,0.5)" }
+      : { color: "rgba(26,26,26,0.72)", textShadow: "0 1px 6px rgba(255,255,255,0.55)" };
+  }
+  if (variant === "title") {
+    return hasImage
+      ? { color: "white", textShadow: "0 2px 10px rgba(0,0,0,0.75), 0 1px 3px rgba(0,0,0,0.5)" }
+      : { color: "var(--foreground)" };
+  }
+  return hasImage
+    ? { color: "rgba(255,255,255,0.82)", textShadow: "0 1px 6px rgba(0,0,0,0.65)" }
+    : { color: "var(--muted-foreground)" };
+}
+
 // ─── Cover ────────────────────────────────────────────────────────────────────
 
 function CoverPage({
@@ -182,9 +215,12 @@ function CoverPage({
   const slot1 = resolveSlot(page, 1);
   const { box1, box2 } = parseCoverText(page.text_content, personName);
   const hasImage = Boolean(slot1.url);
+  const coverTextColor = (page.text_color ?? null) as TextColor | null;
+  const titleStyle = resolveCoverTextStyle(coverTextColor, hasImage, "title");
+  const subtitleStyle = resolveCoverTextStyle(coverTextColor, hasImage, "subtitle");
 
   return (
-    <PageShell className="bg-secondary" editMode={editMode}>
+    <PageShell className="bg-secondary" editMode={editMode} bgColor={page.bg_color ?? null}>
       {slot1.url && (
         <ImageFill url={slot1.url} crop={slot1.crop} frameStyle={slot1.frameStyle} editMode={editMode} />
       )}
@@ -221,10 +257,8 @@ function CoverPage({
           style={{
             fontFamily: "YardenAlbum, serif",
             fontSize: `${box1.size}px`,
-            color: hasImage ? "white" : "var(--foreground)",
-            textShadow: hasImage
-              ? "0 2px 10px rgba(0,0,0,0.75), 0 1px 3px rgba(0,0,0,0.5)"
-              : undefined,
+            color: titleStyle.color,
+            textShadow: titleStyle.textShadow,
             lineHeight: 1.3,
             fontWeight: 600,
           }}
@@ -249,8 +283,8 @@ function CoverPage({
             style={{
               fontFamily: "YardenAlbum, serif",
               fontSize: `${box2.size}px`,
-              color: hasImage ? "rgba(255,255,255,0.82)" : "var(--muted-foreground)",
-              textShadow: hasImage ? "0 1px 6px rgba(0,0,0,0.65)" : undefined,
+              color: subtitleStyle.color,
+              textShadow: subtitleStyle.textShadow,
               letterSpacing: "0.18em",
               textTransform: "uppercase",
             }}
