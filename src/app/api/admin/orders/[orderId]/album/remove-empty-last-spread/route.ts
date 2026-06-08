@@ -163,24 +163,36 @@ export async function POST(
     );
   }
 
-  // Re-close the gap left by the removed spread: shift back_cover down by 2
-  // so page numbering stays contiguous (mirrors insert-spread, which shifts
-  // back_cover and everything after the insertion point up by 2). Without
-  // this, a subsequent call would look for p1/p2 at the now-vacant
-  // page_numbers (back_cover.page_number - 2 / - 1), find nothing, and the
-  // admin could only ever remove a single trailing spread.
-  const { error: renumberError } = await adminClient
-    .from("pages")
-    .update({ page_number: backCover.page_number - 2 })
-    .eq("id", backCover.id);
+  // Re-close the gap left by the removed spread: shift every page that came
+  // after it (in the normal album structure, just back_cover) down by 2, so
+  // page numbering stays contiguous — the exact inverse of insert-spread's
+  // shift of back_cover (and everything past the insertion point) up by 2.
+  // Without this, a subsequent call would look for p1/p2 at the now-vacant
+  // page_numbers (new back_cover.page_number - 2 / - 1), find nothing, and
+  // the admin could only ever remove a single trailing spread.
+  //
+  // Ascending order (the inverse of insert-spread's descending order) avoids
+  // transient unique-constraint conflicts on (order_id, page_number) while
+  // decrementing: each page's target slot is only vacated once the
+  // lower-numbered page that previously sat there has already moved down.
+  const pagesToShift = pages
+    .filter((p) => p.page_number > p2.page_number)
+    .sort((a, b) => a.page_number - b.page_number); // ASC
 
-  if (renumberError) {
-    return NextResponse.json(
-      {
-        error: `Removed pages but failed to renumber back cover: ${renumberError.message}`,
-      },
-      { status: 500 }
-    );
+  for (const page of pagesToShift) {
+    const { error: shiftError } = await adminClient
+      .from("pages")
+      .update({ page_number: page.page_number - 2 })
+      .eq("id", page.id);
+
+    if (shiftError) {
+      return NextResponse.json(
+        {
+          error: `Removed pages but failed to renumber page ${page.page_number}: ${shiftError.message}`,
+        },
+        { status: 500 }
+      );
+    }
   }
 
   // Keep target_page_count / total_pages consistent with the new actual length
