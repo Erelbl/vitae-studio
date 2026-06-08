@@ -62,7 +62,9 @@ export default async function AdminOrderPreviewPage({
   // text_size is loaded separately below with a graceful null fallback.
   const { data: editorPagesRaw, error: editorPagesError } = await adminClient
     .from("pages")
-    .select("id, page_number, page_type, layout_type, text_content, text_version")
+    .select(
+      "id, page_number, page_type, layout_type, text_content, text_version, illustration_storage_path, photo_id"
+    )
     .eq("order_id", orderId)
     .order("page_number");
 
@@ -256,6 +258,8 @@ export default async function AdminOrderPreviewPage({
       page_type: p.page_type as string,
       layout_type: (p.layout_type as string | null) ?? "FULL_IMAGE",
       text_content: (p.text_content as string | null) ?? null,
+      illustration_storage_path: (p.illustration_storage_path as string | null) ?? null,
+      photo_id: (p.photo_id as string | null) ?? null,
       text_version: (p.text_version as number) ?? 1,
       text_size: style?.text_size ?? null,
       font_size_px: style?.font_size_px ?? null,

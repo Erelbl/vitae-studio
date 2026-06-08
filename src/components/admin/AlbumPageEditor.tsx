@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,10 @@ export type EditorPage = {
   page_type: string;
   layout_type: string;
   text_content: string | null;
+  /** Legacy illustration assignment — null when the page has no image content. */
+  illustration_storage_path: string | null;
+  /** Legacy photo assignment column — null when the page has no image content. */
+  photo_id: string | null;
   text_version: number;
   /** Legacy text size enum — used as initial fallback for the font-size slider. */
   text_size: "sm" | "md" | "lg" | "xl" | null;
@@ -230,6 +235,7 @@ export function AlbumPageEditor({
   const router = useRouter();
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [insertingSpread, setInsertingSpread] = useState(false);
+  const [removingEmptySpread, setRemovingEmptySpread] = useState(false);
 
   // Sync selection when the preview navigates (bidirectional sync).
   // We only adopt the external page ID if it differs — avoids re-render loops.
@@ -242,6 +248,67 @@ export function AlbumPageEditor({
 
   const selectedPage = pages.find((p) => p.id === selectedPageId) ?? null;
   const selectedIndex = pages.findIndex((p) => p.id === selectedPageId);
+
+  /**
+   * The "remove empty last spread" action only ever targets the pair of
+   * content pages immediately before back_cover — never an arbitrary spread.
+   * It is only enabled when BOTH of those pages are completely empty (no
+   * text, no illustration via either the legacy fields or page_images) and
+   * removing them would not shrink the album below the minimum size offered
+   * by the album-length control. The server independently re-validates all
+   * of this before deleting anything.
+   */
+  const lastEmptySpread = useMemo(() => {
+    const MIN_ALBUM_PAGES = 20;
+    const isContentPage = (p: EditorPage) =>
+      p.page_type === "illustration_and_text" || p.page_type === "text_only";
+    const isPageEmpty = (p: EditorPage) =>
+      (!p.text_content || p.text_content.trim().length === 0) &&
+      !p.illustration_storage_path &&
+      !p.photo_id &&
+      !p.images.some((img) => img.image_url);
+
+    const backCover = pages.find((p) => p.page_type === "back_cover");
+    if (!backCover) return null;
+
+    const p1 = pages.find((p) => p.page_number === backCover.page_number - 2);
+    const p2 = pages.find((p) => p.page_number === backCover.page_number - 1);
+    if (!p1 || !p2 || !isContentPage(p1) || !isContentPage(p2)) return null;
+    if (!isPageEmpty(p1) || !isPageEmpty(p2)) return null;
+    if (pages.length - 2 < MIN_ALBUM_PAGES) return null;
+
+    return [p1, p2] as const;
+  }, [pages]);
+
+  async function handleRemoveEmptyLastSpread() {
+    if (!lastEmptySpread) return;
+    if (
+      !confirm(
+        "להסיר את כפולת העמודים הריקה האחרונה מהאלבום? הפעולה אינה הפיכה."
+      )
+    ) {
+      return;
+    }
+    setRemovingEmptySpread(true);
+    try {
+      const res = await fetch(
+        `/api/admin/orders/${orderId}/album/remove-empty-last-spread`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error ?? "שגיאה בהסרת הכפולה הריקה");
+        return;
+      }
+      if (selectedPageId === lastEmptySpread[0].id || selectedPageId === lastEmptySpread[1].id) {
+        setSelectedPageId(null);
+      }
+      toast.success("כפולת העמודים הריקה הוסרה מהאלבום");
+      router.refresh();
+    } finally {
+      setRemovingEmptySpread(false);
+    }
+  }
 
   function selectPage(page: EditorPage) {
     setSelectedPageId(page.id);
@@ -353,8 +420,19 @@ export function AlbumPageEditor({
           })}
         </div>
 
-        {/* Insert spread action */}
-        <div className="flex justify-end">
+        {/* Insert / remove spread actions */}
+        <div className="flex items-center justify-end gap-3">
+          {lastEmptySpread && (
+            <button
+              onClick={handleRemoveEmptyLastSpread}
+              disabled={removingEmptySpread}
+              className="text-xs text-destructive/70 hover:text-destructive disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {removingEmptySpread
+                ? "מסיר כפולה ריקה..."
+                : "🗑 הסר כפולה ריקה אחרונה"}
+            </button>
+          )}
           <button
             onClick={handleInsertSpread}
             disabled={insertingSpread}
