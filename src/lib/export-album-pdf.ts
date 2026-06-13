@@ -17,6 +17,11 @@ import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 import type { PreviewData, PreviewPage, LayoutType, PageImageSlot } from "@/types/page";
 import { parseCoverText } from "@/components/album/AlbumPageView";
+import {
+  isFullImagePage,
+  computeFloatingImageBox,
+  type ResolvedImageSlot,
+} from "@/lib/album-spread-image";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -81,7 +86,7 @@ function buildSpreads(pages: PreviewPage[]): Spread[] {
 function resolveSlot(
   page: PreviewPage,
   slot: 1 | 2
-): { url: string | null; cropX: number; cropY: number; scale: number; insetTop: number; insetRight: number; insetBottom: number; insetLeft: number } {
+): ResolvedImageSlot {
   const slotData = (page.images ?? []).find((i: PageImageSlot) => i.slot === slot);
   if (slotData) {
     const isLegacyZero = slotData.crop_x === 0 && slotData.crop_y === 0;
@@ -301,8 +306,23 @@ function getOverlayPosition(layout: string): "bottom" | "top" | "center" | null 
   }
 }
 
+/**
+ * Result of building a single page's DOM element.
+ *
+ * `floatingSlot1` is non-null when the page is a "full-image" page (cover,
+ * dedication, back_cover, or a FULL_IMAGE* layout) with a slot-1 image. These
+ * images are NOT drawn inside `el` (which clips with `overflow: hidden`) —
+ * instead the caller renders them via a spread-relative floating layer (see
+ * `buildFloatingImageLayer`) so they can bleed across the spine, matching
+ * AlbumPreview.
+ */
+interface PageElementResult {
+  el: HTMLElement;
+  floatingSlot1: ResolvedImageSlot | null;
+}
+
 /** Build a single page square DOM element. */
-function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
+function buildPageElement(page: PreviewPage, personName: string): PageElementResult {
   const el = document.createElement("div");
   Object.assign(el.style, {
     position: "relative",
@@ -316,18 +336,18 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
 
   const layout = (page.layout_type ?? "FULL_IMAGE") as LayoutType;
   const slot1 = resolveSlot(page, 1);
+  const floatingSlot1 = isFullImagePage(page) && slot1.url ? slot1 : null;
 
   // Cover page
   if (page.page_type === "cover") {
-    if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
-    }
     const hasImage = Boolean(slot1.url);
-    // Gradient overlay
+    // Gradient overlay — zIndex 10 so it stays above the floating cross-spread
+    // image layer (zIndex 2), matching CoverPage in AlbumPageView.
     const grad = document.createElement("div");
     Object.assign(grad.style, {
       position: "absolute",
       inset: "0",
+      zIndex: "10",
       background: hasImage
         ? "linear-gradient(to bottom, rgba(0,0,0,0.22) 0%, transparent 45%, rgba(0,0,0,0.30) 100%)"
         : "linear-gradient(135deg, rgba(143,159,122,0.10) 0%, transparent 50%, rgba(143,159,122,0.18) 100%)",
@@ -378,14 +398,11 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       el.appendChild(b2El);
     }
 
-    return el;
+    return { el, floatingSlot1 };
   }
 
   // Back cover
   if (page.page_type === "back_cover") {
-    if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
-    }
     const content = document.createElement("div");
     Object.assign(content.style, {
       position: "absolute",
@@ -424,14 +441,11 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
     brand.textContent = "Vitae Studio";
     content.appendChild(brand);
     el.appendChild(content);
-    return el;
+    return { el, floatingSlot1 };
   }
 
   // Dedication
   if (page.page_type === "dedication") {
-    if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
-    }
     const content = document.createElement("div");
     Object.assign(content.style, {
       position: "absolute",
@@ -460,15 +474,14 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       content.appendChild(p);
     }
     el.appendChild(content);
-    return el;
+    return { el, floatingSlot1 };
   }
 
   // Content pages — dispatch by layout
   const overlayPos = getOverlayPosition(layout);
 
   if (overlayPos && slot1.url) {
-    // Full-image layouts: image fills page, text overlaid
-    buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
+    // Full-image layouts: image fills page (via floating cross-spread layer), text overlaid
     if (page.text_content) {
       buildTextOverlay(page.text_content, page, overlayPos, el);
     }
@@ -630,16 +643,13 @@ function buildPageElement(page: PreviewPage, personName: string): HTMLElement {
       el.appendChild(caption);
     }
   } else {
-    // Default: FULL_IMAGE fallback
-    if (slot1.url) {
-      buildImageFill(slot1.url, slot1.cropX, slot1.cropY, slot1.scale, el, slot1.insetTop, slot1.insetRight, slot1.insetBottom, slot1.insetLeft);
-    }
+    // Default: FULL_IMAGE fallback (image rendered via floating cross-spread layer)
     if (page.text_content) {
       buildTextOverlay(page.text_content, page, "bottom", el);
     }
   }
 
-  return el;
+  return { el, floatingSlot1 };
 }
 
 // ─── Image preloading ───────────────────────────────────────────────────────
@@ -661,6 +671,85 @@ function waitForImages(container: HTMLElement): Promise<void> {
         })
     )
   ).then(() => {});
+}
+
+// ─── Floating cross-spread image layer ──────────────────────────────────────
+
+/**
+ * Build a slot-1 image positioned relative to the whole spread (not clipped
+ * to its own page), so it can bleed across the spine — matching AlbumPreview's
+ * floating image layer. See `computeFloatingImageBox` for the position math.
+ */
+function buildFloatingImageLayer(slot: ResolvedImageSlot, isRight: boolean, isSingleton: boolean): HTMLElement {
+  const { anchor, wrapper } = computeFloatingImageBox(slot, { isRight, isSingleton });
+
+  const anchorEl = document.createElement("div");
+  Object.assign(anchorEl.style, anchor);
+
+  const wrapperEl = document.createElement("div");
+  Object.assign(wrapperEl.style, wrapper);
+
+  const img = document.createElement("img");
+  img.crossOrigin = "anonymous";
+  img.src = slot.url!;
+  Object.assign(img.style, {
+    width: "100%",
+    height: "100%",
+    maxWidth: "none",
+    objectFit: "contain",
+  });
+
+  wrapperEl.appendChild(img);
+  anchorEl.appendChild(wrapperEl);
+  return anchorEl;
+}
+
+// ─── Spread builder (DOM) ────────────────────────────────────────────────────
+
+/**
+ * Builds the full spread DOM element: the two page squares side by side
+ * (or one square for cover/back_cover singletons), plus any floating
+ * cross-spread image layers for full-image pages with a slot-1 image.
+ *
+ * `overflow: hidden` on the spread container clips floating images at the
+ * spread's outer edge, while still allowing them to bleed across the
+ * spine between the two pages — matching AlbumPreview's spread grid.
+ */
+function buildSpreadElement(spread: Spread, personName: string): HTMLElement {
+  const [rightPage, leftPage] = spread;
+  const isSingleton = !leftPage;
+
+  const spreadEl = document.createElement("div");
+  Object.assign(spreadEl.style, {
+    position: "relative",
+    display: "flex",
+    direction: "ltr", // physical left-to-right for spread layout
+    width: isSingleton ? `${PAGE_SIZE_PX}px` : `${PAGE_SIZE_PX * 2}px`,
+    height: `${PAGE_SIZE_PX}px`,
+    backgroundColor: "#FAF8F2",
+    overflow: "hidden",
+  });
+
+  // In RTL spread: right page (lower number) is physically on the right.
+  // In our LTR flex container, left page (higher number) goes first.
+  const entries: { page: PreviewPage; isRight: boolean }[] = isSingleton
+    ? [{ page: rightPage, isRight: true }]
+    : [{ page: leftPage!, isRight: false }, { page: rightPage, isRight: true }];
+
+  const floating: { slot: ResolvedImageSlot; isRight: boolean }[] = [];
+  for (const { page, isRight } of entries) {
+    const { el, floatingSlot1 } = buildPageElement(page, personName);
+    spreadEl.appendChild(el);
+    if (floatingSlot1) floating.push({ slot: floatingSlot1, isRight });
+  }
+
+  // Append floating layers after page elements so they paint above page
+  // backgrounds (zIndex 2) but below text overlays (zIndex 10).
+  for (const { slot, isRight } of floating) {
+    spreadEl.appendChild(buildFloatingImageLayer(slot, isRight, isSingleton));
+  }
+
+  return spreadEl;
 }
 
 // ─── Main export function ───────────────────────────────────────────────────
@@ -691,29 +780,8 @@ export async function exportAlbumPdf(
   try {
     for (let i = 0; i < spreads.length; i++) {
       onProgress?.(i, total);
-      const [rightPage, leftPage] = spreads[i];
-      const isSingleton = !leftPage;
-
-      // Build the spread container
-      const spreadEl = document.createElement("div");
-      Object.assign(spreadEl.style, {
-        display: "flex",
-        direction: "ltr", // physical left-to-right for spread layout
-        width: isSingleton ? `${PAGE_SIZE_PX}px` : `${PAGE_SIZE_PX * 2}px`,
-        height: `${PAGE_SIZE_PX}px`,
-        backgroundColor: "#FAF8F2",
-      });
-
-      // In RTL spread: right page (lower number) is physically on the right
-      // But in our LTR flex container, right page goes second
-      if (isSingleton) {
-        spreadEl.appendChild(buildPageElement(rightPage, personName));
-      } else {
-        // Left page (higher number) first in LTR flex
-        spreadEl.appendChild(buildPageElement(leftPage!, personName));
-        // Right page (lower number) second in LTR flex
-        spreadEl.appendChild(buildPageElement(rightPage, personName));
-      }
+      const isSingleton = !spreads[i][1];
+      const spreadEl = buildSpreadElement(spreads[i], personName);
 
       host.appendChild(spreadEl);
       await waitForImages(spreadEl);
@@ -819,25 +887,7 @@ export async function exportAlbumSpreadsJpgZip(
   try {
     for (let i = 0; i < spreads.length; i++) {
       onProgress?.(i, total);
-      const [rightPage, leftPage] = spreads[i];
-      const isSingleton = !leftPage;
-
-      const spreadEl = document.createElement("div");
-      Object.assign(spreadEl.style, {
-        display: "flex",
-        direction: "ltr", // physical left-to-right for spread layout
-        width: isSingleton ? `${PAGE_SIZE_PX}px` : `${PAGE_SIZE_PX * 2}px`,
-        height: `${PAGE_SIZE_PX}px`,
-        backgroundColor: "#FAF8F2",
-      });
-
-      if (isSingleton) {
-        spreadEl.appendChild(buildPageElement(rightPage, personName));
-      } else {
-        // Left page (higher number) first in LTR flex, right page (lower number) second
-        spreadEl.appendChild(buildPageElement(leftPage!, personName));
-        spreadEl.appendChild(buildPageElement(rightPage, personName));
-      }
+      const spreadEl = buildSpreadElement(spreads[i], personName);
 
       host.appendChild(spreadEl);
       await waitForImages(spreadEl);
