@@ -34,10 +34,23 @@ const PAGE_SIZE_PX = 1200;
 const PAGE_MM = 250;
 
 /**
- * JPEG quality for the print-ready spread export (0–1). 0.92 sits in the
- * 90–95 "high quality" range with a reasonable file size for a ZIP of ~20 spreads.
+ * JPEG quality for the print-ready spread export (0–1). 0.95 is the top of
+ * the "high quality" range, accepted by print providers.
  */
-const JPG_QUALITY = 0.92;
+const JPG_QUALITY = 0.95;
+
+/**
+ * html2canvas capture scale used only for the print-ready JPG/ZIP export
+ * (the PDF export keeps its own `scale: 2`). With PAGE_SIZE_PX = 1200, a
+ * scale of 3 yields 3600px per page side / 7200×3600px per two-page spread
+ * — ≈305 DPI at the album's 30×30 cm page size (60×30 cm spread), meeting
+ * the 300 DPI print target. This does not add detail beyond the source
+ * illustrations; it only ensures the exported pixel grid matches print size.
+ */
+const JPG_EXPORT_SCALE = 3;
+
+/** DPI metadata embedded in exported JPGs so print providers read correct physical dimensions. */
+const JPG_EXPORT_DPI = 300;
 
 /**
  * Approximate pixel width of one album page as seen in the admin editor preview.
@@ -847,17 +860,46 @@ function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<B
 }
 
 /**
+ * Patches a JPEG Blob's JFIF APP0 header to declare the given DPI, so print
+ * providers read correct physical print dimensions from the file. Browsers'
+ * `canvas.toBlob("image/jpeg")` emit a JFIF segment with density units unset;
+ * this rewrites those bytes in place. If the expected JFIF header isn't
+ * found, the blob is returned unchanged.
+ */
+async function setJpegDpi(blob: Blob, dpi: number): Promise<Blob> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+
+  // SOI (FF D8) + APP0 marker (FF E0) + length (00 10) + "JFIF\0"
+  const isJfif =
+    bytes[0] === 0xff && bytes[1] === 0xd8 &&
+    bytes[2] === 0xff && bytes[3] === 0xe0 &&
+    bytes[6] === 0x4a && bytes[7] === 0x46 && bytes[8] === 0x49 && bytes[9] === 0x46 && bytes[10] === 0x00;
+
+  if (!isJfif) return blob;
+
+  bytes[13] = 0x01; // units = dots per inch
+  bytes[14] = (dpi >> 8) & 0xff;
+  bytes[15] = dpi & 0xff;
+  bytes[16] = (dpi >> 8) & 0xff;
+  bytes[17] = dpi & 0xff;
+
+  return new Blob([bytes], { type: "image/jpeg" });
+}
+
+/**
  * Exports every album spread as a high-quality JPG, bundled into a single ZIP.
  *
  * Reuses the exact same DOM-snapshot pipeline as {@link exportAlbumPdf}
- * (spread grouping, page rendering, html2canvas capture at the same scale),
- * so the images match the PDF/preview pixel-for-pixel \u2014 only the final
- * assembly step differs (JPEG blobs in a ZIP instead of pages in a PDF).
+ * (spread grouping, page rendering), so the images match the PDF/preview
+ * layout exactly \u2014 only the html2canvas capture scale and final assembly
+ * step differ (higher-resolution JPEG blobs in a ZIP instead of pages in a PDF).
  *
- * Resolution: each spread is captured at PAGE_SIZE_PX \u00D7 2 (html2canvas scale)
- * per page \u2014 e.g. ~2400\u00D72400 px per square page, ~4800\u00D72400 px per two-page
- * spread (\u2248289 DPI for a 25 cm page side). This matches the proven, reliable
- * PDF render path; pushing higher risks failures on large albums in-browser.
+ * Resolution: each spread is captured at PAGE_SIZE_PX \u00D7 JPG_EXPORT_SCALE per
+ * page \u2014 3600\u00D73600 px per square page, 7200\u00D73600 px per two-page spread
+ * (\u2248305 DPI for the album's 30 cm page size), meeting the 300 DPI print
+ * target. Each JPG is tagged with 300 DPI metadata (see {@link setJpegDpi}).
+ * This does not add detail beyond the ~1MP source illustrations \u2014 it only
+ * ensures the exported files are print-size-correct for the print provider.
  *
  * Files are named `spread-01.jpg`, `spread-02.jpg`, \u2026 in album order.
  */
@@ -893,14 +935,15 @@ export async function exportAlbumSpreadsJpgZip(
       await waitForImages(spreadEl);
 
       const canvas = await html2canvas(spreadEl, {
-        scale: 2,
+        scale: JPG_EXPORT_SCALE,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#FAF8F2",
         logging: false,
       });
 
-      const blob = await canvasToJpegBlob(canvas, JPG_QUALITY);
+      const rawBlob = await canvasToJpegBlob(canvas, JPG_QUALITY);
+      const blob = await setJpegDpi(rawBlob, JPG_EXPORT_DPI);
       const fileName = `spread-${String(i + 1).padStart(padWidth, "0")}.jpg`;
       zip.file(fileName, blob);
 
