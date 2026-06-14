@@ -1,17 +1,26 @@
 import type { DeliveryMode, AlbumSize, PricingSnapshot } from "@/types/order";
+import { getPackage } from "@/content/packages";
 
 /**
  * Canonical server-side pricing source of truth.
  * All price calculations MUST go through this function.
  * Client may display values, but server validates via this.
+ *
+ * Prices are derived from `@/content/packages` (PACKAGES), which is also
+ * the source for homepage / select-product / package card display — keeping
+ * a single source of truth for all package prices.
  */
 
+const albumPrice = getPackage("album").pricing.price;
+const videoPrice = getPackage("video").pricing.price;
+const comboPrice = getPackage("combo").pricing.price;
+
 const PRICE_TABLE: Record<string, number> = {
-  "film:": 2000,
-  "print:25x25": 2200,
-  "print:30x30": 2500,
-  "bundle:25x25": 3780,
-  "bundle:30x30": 4050,
+  "film:": videoPrice["25"],
+  "print:25x25": albumPrice["25"],
+  "print:30x30": albumPrice["30"],
+  "bundle:25x25": comboPrice["25"],
+  "bundle:30x30": comboPrice["30"],
 };
 
 export interface PricingInput {
@@ -71,10 +80,10 @@ export function requiresAlbumSize(deliveryMode: DeliveryMode): boolean {
 export function getStartingPrice(deliveryMode: DeliveryMode): number {
   switch (deliveryMode) {
     case "film":
-      return 2000;
+      return videoPrice["25"];
     case "print":
-      return 2200;
+      return Math.min(albumPrice["25"], albumPrice["30"]);
     case "bundle":
-      return 3780;
+      return Math.min(comboPrice["25"], comboPrice["30"]);
   }
 }
