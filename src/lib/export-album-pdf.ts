@@ -15,8 +15,8 @@
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
-import type { PreviewData, PreviewPage, LayoutType, PageImageSlot } from "@/types/page";
-import { parseCoverText } from "@/components/album/AlbumPageView";
+import type { PreviewData, PreviewPage, LayoutType, PageImageSlot, TextColor } from "@/types/page";
+import { parseCoverText, resolveCoverTextStyle } from "@/components/album/AlbumPageView";
 import {
   isFullImagePage,
   computeFloatingImageBox,
@@ -368,6 +368,9 @@ function buildPageElement(page: PreviewPage, personName: string): PageElementRes
     el.appendChild(grad);
 
     const { box1, box2 } = parseCoverText(page.text_content, personName);
+    const coverTextColor = (page.text_color ?? null) as TextColor | null;
+    const titleStyle = resolveCoverTextStyle(coverTextColor, hasImage, "title");
+    const subtitleStyle = resolveCoverTextStyle(coverTextColor, hasImage, "subtitle");
 
     // Box 1 — title
     const b1El = document.createElement("p");
@@ -382,8 +385,8 @@ function buildPageElement(page: PreviewPage, personName: string): PageElementRes
       fontSize: sp(box1.size),
       fontWeight: "600",
       lineHeight: "1.3",
-      color: hasImage ? "white" : "#1a1a1a",
-      textShadow: hasImage ? "0 2px 10px rgba(0,0,0,0.75)" : "none",
+      color: titleStyle.color,
+      textShadow: titleStyle.textShadow ?? "none",
       zIndex: "10",
     });
     b1El.textContent = box1.text;
@@ -403,8 +406,8 @@ function buildPageElement(page: PreviewPage, personName: string): PageElementRes
         fontSize: sp(box2.size),
         letterSpacing: "0.18em",
         textTransform: "uppercase",
-        color: hasImage ? "rgba(255,255,255,0.82)" : "rgba(143,159,122,0.7)",
-        textShadow: hasImage ? "0 1px 6px rgba(0,0,0,0.65)" : "none",
+        color: subtitleStyle.color,
+        textShadow: subtitleStyle.textShadow ?? "none",
         zIndex: "10",
       });
       b2El.textContent = box2.text;

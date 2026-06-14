@@ -176,7 +176,7 @@ export function parseCoverText(
  * Otherwise falls back to the original hasImage-based defaults — preserving
  * existing cover typography for pages where the admin hasn't made a choice.
  */
-function resolveCoverTextStyle(
+export function resolveCoverTextStyle(
   textColor: TextColor | null,
   hasImage: boolean,
   variant: "title" | "subtitle"
