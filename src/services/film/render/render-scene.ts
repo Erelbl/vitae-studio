@@ -535,12 +535,23 @@ async function buildPreviewBakedKlingImage(
 
 /**
  * Builds a unified spread image for Kling by compositing both album pages
- * side by side at the exact Remotion spread geometry (1920×1080 default).
+ * side by side at the exact Remotion spread geometry (1920×1080 default),
+ * using the floating-layer cross-spread model from the album preview.
  *
  * Layout matches SceneComposition.tsx spread rendering exactly:
  *   - Left  page (second page / higher page number) at (leftMargin, topMargin)
  *   - Right page (primary page / lower page number) at (leftMargin + pageSize, topMargin)
  *   - Dark (#1a1a1a) background fills the video canvas around the pages
+ *
+ * Each page's image is positioned using the same floating-layer math as
+ * AlbumPreview.tsx (computeFloatingImageBox in album-spread-image.ts):
+ * the image wrapper's position is computed relative to the page's half of
+ * the spread, with NO per-page clipping. This allows a cross-spread image
+ * (one image whose crop_x/crop_y/scale extend it beyond a single page)
+ * to naturally bleed across the spine — exactly matching the preview.
+ *
+ * The compositing order (left page first, then right page on top) matches
+ * the album preview's z-order.
  *
  * Uploads the composite and returns a signed URL valid for 2 hours.
  */
@@ -555,9 +566,8 @@ async function buildSpreadKlingImage(
   videoHeight: number,
 ): Promise<string> {
   const sharp = (await import("sharp")).default;
-  // Dark background matching Remotion's spread AbsoluteFill background
-  const BG_VIDEO  = { r: 26,  g: 26,  b: 26  }; // #1a1a1a
-  const BG_PAGE   = { r: 246, g: 243, b: 233 }; // BG_CARD fallback for blank page
+  const BG_VIDEO = { r: 26,  g: 26,  b: 26  }; // #1a1a1a
+  const BG_PAGE  = { r: 246, g: 243, b: 233 }; // BG_CARD fallback
 
   // Compute Remotion spread geometry — must match SceneComposition.tsx exactly
   const pageSize   = Math.min(videoHeight, Math.floor(videoWidth / 2));
@@ -569,32 +579,175 @@ async function buildSpreadKlingImage(
     ` pageSize=${pageSize} top=${topMargin} left=${leftMargin}`
   );
 
-  // Bake each page to its 1024×1024 buffer then resize to video page size
-  const blankBuf = await sharp({
+  // Start with dark video canvas + BG_CARD page backgrounds
+  const leftPageBg = await sharp({
     create: { width: pageSize, height: pageSize, channels: 3, background: BG_PAGE }
-  }).jpeg({ quality: 92 }).toBuffer();
+  }).png().toBuffer();
+  const rightPageBg = await sharp({
+    create: { width: pageSize, height: pageSize, channels: 3, background: BG_PAGE }
+  }).png().toBuffer();
 
-  const resize = async (buf: Buffer): Promise<Buffer> =>
-    sharp(buf).resize(pageSize, pageSize, { fit: "fill" }).png().toBuffer();
-
-  const rightResized = rightSlot
-    ? await resize(await buildPreviewBakedKlingImageBuffer(rightSlot, `${tag}/right`))
-    : blankBuf;
-
-  const leftResized = leftSlot
-    ? await resize(await buildPreviewBakedKlingImageBuffer(leftSlot, `${tag}/left`))
-    : blankBuf;
-
-  // Composite onto full video canvas (dark background, pages positioned as in Remotion)
-  const spreadBuf = await sharp({
+  // Base canvas: dark background + page backgrounds
+  let canvas = await sharp({
     create: { width: videoWidth, height: videoHeight, channels: 3, background: BG_VIDEO }
   })
   .composite([
-    { input: leftResized,  left: leftMargin,            top: topMargin },
-    { input: rightResized, left: leftMargin + pageSize,  top: topMargin },
+    { input: leftPageBg,  left: leftMargin,            top: topMargin },
+    { input: rightPageBg, left: leftMargin + pageSize,  top: topMargin },
   ])
-  .jpeg({ quality: 92 })
+  .png()
   .toBuffer();
+
+  // ── Floating-layer composite — matches AlbumPreview.tsx exactly ────────
+  //
+  // In the album preview, full-image pages render their slot-1 image via a
+  // floating layer anchored to the page's half of the spread, with
+  // overflow:visible. The image wrapper's position/size is:
+  //   width  = scale * anchorWidth
+  //   height = scale * anchorHeight
+  //   left   = (cropX - scale/2) * anchorWidth  (relative to anchor)
+  //   top    = (cropY - scale/2) * anchorHeight  (relative to anchor)
+  //
+  // For a cross-spread image, scale/cropX values make the wrapper extend
+  // beyond the anchor page into the neighbouring page — the overflow is
+  // what creates the spanning effect. We reproduce this by computing
+  // absolute pixel coordinates on the full video canvas.
+  //
+  // Composite order: left page first, then right page on top (matching
+  // the album preview's DOM order: rightPage is rendered after leftPage
+  // in the flatMap, so right floats above left).
+
+  const layers: { slot: SlotImageData; isRight: boolean }[] = [];
+  if (leftSlot)  layers.push({ slot: leftSlot,  isRight: false });
+  if (rightSlot) layers.push({ slot: rightSlot, isRight: true });
+
+  for (const { slot, isRight } of layers) {
+    const s = Math.max(0.1, slot.scale);
+    const isLegacyZero = slot.crop_x === 0 && slot.crop_y === 0;
+    const cropX = isLegacyZero ? 0.5 : slot.crop_x;
+    const cropY = isLegacyZero ? 0.5 : slot.crop_y;
+
+    // Anchor: the page's half of the spread area.
+    // Left page anchor starts at leftMargin; right page at leftMargin + pageSize.
+    const anchorX = isRight ? (leftMargin + pageSize) : leftMargin;
+    const anchorY = topMargin;
+    const anchorW = pageSize;
+    const anchorH = pageSize;
+
+    // Image wrapper position — relative to anchor, may overflow
+    const wrapperW = Math.round(s * anchorW);
+    const wrapperH = Math.round(s * anchorH);
+    const wrapperX = anchorX + Math.round((cropX - s / 2) * anchorW);
+    const wrapperY = anchorY + Math.round((cropY - s / 2) * anchorH);
+
+    // Inset crop (fractions of wrapper)
+    const insetT = slot.cropInsetTop    ?? 0;
+    const insetR = slot.cropInsetRight  ?? 0;
+    const insetB = slot.cropInsetBottom ?? 0;
+    const insetL = slot.cropInsetLeft   ?? 0;
+
+    // Effective rect after inset
+    const effX = wrapperX + Math.round(insetL * wrapperW);
+    const effY = wrapperY + Math.round(insetT * wrapperH);
+    const effW = Math.max(1, wrapperW - Math.round(insetL * wrapperW) - Math.round(insetR * wrapperW));
+    const effH = Math.max(1, wrapperH - Math.round(insetT * wrapperH) - Math.round(insetB * wrapperH));
+
+    // Clip to the full spread area (both pages + dark bars)
+    const visX = Math.max(0, effX);
+    const visY = Math.max(0, effY);
+    const visR = Math.min(videoWidth, effX + effW);
+    const visB = Math.min(videoHeight, effY + effH);
+    const visW = Math.max(0, visR - visX);
+    const visH = Math.max(0, visB - visY);
+
+    const side = isRight ? "right" : "left";
+    console.log(
+      `${tag}/${side} floating-layer` +
+      ` crop=(${cropX.toFixed(3)},${cropY.toFixed(3)}) scale=${s.toFixed(3)}` +
+      ` anchor=(${anchorX},${anchorY},${anchorW},${anchorH})` +
+      ` wrapper=(${wrapperX},${wrapperY},${wrapperW},${wrapperH})` +
+      ` inset=(${insetT},${insetR},${insetB},${insetL})` +
+      ` vis=(${visX},${visY},${visW},${visH})`
+    );
+
+    if (visW <= 0 || visH <= 0) {
+      console.log(`${tag}/${side} no visible area — skipping`);
+      continue;
+    }
+
+    // Download source image
+    const resp = await fetch(slot.url);
+    if (!resp.ok) {
+      console.warn(`${tag}/${side} failed to download: HTTP ${resp.status}`);
+      continue;
+    }
+    const srcBuffer = Buffer.from(await resp.arrayBuffer());
+
+    // Determine fit mode (same as buildPreviewBakedKlingImageBuffer)
+    const hasFrameMask = !!(slot.frameStyle && FRAME_MASK_PATHS[slot.frameStyle]);
+    const fitMode = hasFrameMask ? "cover" : "contain";
+
+    // Resize source into wrapper dimensions with objectFit
+    const resizedBuf = await sharp(srcBuffer)
+      .resize(Math.max(1, wrapperW), Math.max(1, wrapperH), {
+        fit: fitMode,
+        background: BG_PAGE,
+        position: "center",
+        withoutEnlargement: false,
+      })
+      .png()
+      .toBuffer();
+
+    // Apply inset crop — extract the sub-region corresponding to the effective rect
+    const insetLpx = Math.max(0, Math.round(insetL * wrapperW));
+    const insetTpx = Math.max(0, Math.round(insetT * wrapperH));
+    const insetRpx = Math.max(0, Math.round(insetR * wrapperW));
+    const insetBpx = Math.max(0, Math.round(insetB * wrapperH));
+    const croppedW = Math.max(1, wrapperW - insetLpx - insetRpx);
+    const croppedH = Math.max(1, wrapperH - insetTpx - insetBpx);
+
+    let croppedBuf = await sharp(resizedBuf)
+      .extract({ left: insetLpx, top: insetTpx, width: croppedW, height: croppedH })
+      .png()
+      .toBuffer();
+
+    // Apply frame mask if present
+    if (hasFrameMask) {
+      const maskSvg = Buffer.from(
+        `<svg width="${croppedW}" height="${croppedH}" viewBox="0 0 100 100" ` +
+        `preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
+        `<path d="${FRAME_MASK_PATHS[slot.frameStyle!]}" fill="white"/>` +
+        `</svg>`
+      );
+      croppedBuf = await sharp(croppedBuf)
+        .ensureAlpha()
+        .composite([{ input: maskSvg, blend: "dest-in" }])
+        .png()
+        .toBuffer();
+    }
+
+    // Extract the visible sub-region that lands on the video canvas
+    const srcCropX = Math.max(0, visX - effX);
+    const srcCropY = Math.max(0, visY - effY);
+    const destW = Math.min(visW, Math.max(1, croppedW - srcCropX));
+    const destH = Math.min(visH, Math.max(1, croppedH - srcCropY));
+
+    if (destW <= 0 || destH <= 0) continue;
+
+    const sliceBuf = await sharp(croppedBuf)
+      .extract({ left: srcCropX, top: srcCropY, width: destW, height: destH })
+      .png()
+      .toBuffer();
+
+    // Composite onto the canvas
+    canvas = await sharp(canvas)
+      .composite([{ input: sliceBuf, left: visX, top: visY }])
+      .png()
+      .toBuffer();
+  }
+
+  // Final JPEG encode
+  const spreadBuf = await sharp(canvas).jpeg({ quality: 92 }).toBuffer();
 
   console.log(`${tag} spread image built: ${(spreadBuf.byteLength / 1024).toFixed(0)} KB`);
 
