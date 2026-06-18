@@ -52,6 +52,8 @@ export interface ScenePageData {
   textAlign: string;
   textX: number | null;
   textY: number | null;
+  /** Text color from admin page settings. "white" | "black" | null (null = layout default). */
+  textColor?: string | null;
   /**
    * Signed HTTPS URL to a Kling-generated page video stored in the films bucket.
    * When set, ImageFill renders this video as the visual source for this page.
@@ -77,6 +79,8 @@ export interface SceneCompositionProps {
   textAlign: string;
   /** Custom text X position (0–1 fraction) — free-position admin override. */
   textX: number | null;
+  /** Text color from admin page settings. "white" | "black" | null (null = layout default). */
+  textColor: string | null;
   /** Custom text Y position (0–1 fraction) — free-position admin override. */
   textY: number | null;
   /**
@@ -173,6 +177,45 @@ const SLIDE_IN_PX = 14;       // 14px on 1080p ≈ 1.3% — imperceptible but pr
  * illustration plane and the text plane. Very subtle (6px max on 1080p).
  */
 const TEXT_PARALLAX_PX = 6;
+
+// ── Text color resolution — matches AlbumPageView.tsx ────────────────────────
+
+function resolveOverlayTextColor(textColor: string | null): string {
+  if (textColor === "black") return "#1a1a1a";
+  return "white";
+}
+
+function resolveOverlayTextShadow(textColor: string | null): string {
+  if (textColor === "black") return "0 1px 3px rgba(255,255,255,0.85), 0 2px 8px rgba(255,255,255,0.5)";
+  return "0 1px 4px rgba(0,0,0,0.6)";
+}
+
+function resolveSplitTextColor(textColor: string | null): string {
+  if (textColor === "white") return "white";
+  if (textColor === "black") return "#1a1a1a";
+  return TEXT_DARK;
+}
+
+function resolveCoverTextColor(textColor: string | null, hasImage: boolean, variant: "title" | "subtitle"): { color: string; textShadow?: string } {
+  if (textColor === "white") {
+    return variant === "title"
+      ? { color: "white", textShadow: "0 2px 10px rgba(0,0,0,0.75), 0 1px 3px rgba(0,0,0,0.5)" }
+      : { color: "rgba(255,255,255,0.82)", textShadow: "0 1px 6px rgba(0,0,0,0.65)" };
+  }
+  if (textColor === "black") {
+    return variant === "title"
+      ? { color: "#1a1a1a", textShadow: "0 1px 3px rgba(255,255,255,0.85), 0 2px 8px rgba(255,255,255,0.5)" }
+      : { color: "rgba(26,26,26,0.72)", textShadow: "0 1px 6px rgba(255,255,255,0.55)" };
+  }
+  if (variant === "title") {
+    return hasImage
+      ? { color: "white", textShadow: "0 2px 10px rgba(0,0,0,0.75), 0 1px 3px rgba(0,0,0,0.5)" }
+      : { color: TEXT_DARK };
+  }
+  return hasImage
+    ? { color: "rgba(255,255,255,0.82)", textShadow: "0 1px 6px rgba(0,0,0,0.65)" }
+    : { color: "#5A5240" };
+}
 
 // ── SVG frame mask presets — identical to AlbumPageView.tsx ──────────────────
 // These match the FRAME_MASKS in the preview exactly so Remotion renders the
@@ -709,6 +752,8 @@ interface OverlayTextProps {
   textAlign: string;
   textX: number | null;
   textY: number | null;
+  /** Text color from admin page settings. "white" | "black" | null (null = layout default). */
+  textColor: string | null;
   narrationDurationMs: number | null;
   /**
    * Parallax pixel offset — counter-drift vs Ken Burns zoom.
@@ -725,6 +770,7 @@ function PositionedOverlay({
   textAlign,
   textX,
   textY,
+  textColor,
   narrationDurationMs,
   parallaxPx = 0,
 }: {
@@ -733,6 +779,7 @@ function PositionedOverlay({
   textAlign: string;
   textX: number;
   textY: number;
+  textColor?: string | null;
   narrationDurationMs?: number | null;
   parallaxPx?: number;
 }) {
@@ -762,8 +809,8 @@ function PositionedOverlay({
             direction: "rtl",
             lineHeight: 1.6,
             whiteSpace: "pre-line",
-            textShadow: "0 2px 8px rgba(0,0,0,0.95), 0 1px 4px rgba(0,0,0,0.8)",
-            color: "white",
+            textShadow: resolveOverlayTextShadow(textColor ?? null),
+            color: resolveOverlayTextColor(textColor ?? null),
             margin: 0,
           }}
           narrationDurationMs={narrationDurationMs}
@@ -776,7 +823,7 @@ function PositionedOverlay({
 }
 
 /** Bottom gradient overlay — default for FULL_IMAGE. */
-function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs, parallaxPx }: OverlayTextProps) {
+function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY, textColor, narrationDurationMs, parallaxPx }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -788,6 +835,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
         textAlign={align}
         textX={textX}
         textY={textY}
+        textColor={textColor}
         narrationDurationMs={narrationDurationMs}
         parallaxPx={parallaxPx}
       />
@@ -822,8 +870,8 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
             direction: "rtl",
             lineHeight: 1.6,
             whiteSpace: "pre-line",
-            textShadow: "0 1px 4px rgba(0,0,0,0.6)",
-            color: "white",
+            textShadow: resolveOverlayTextShadow(textColor),
+            color: resolveOverlayTextColor(textColor),
             margin: 0,
           }}
           narrationDurationMs={narrationDurationMs}
@@ -836,7 +884,7 @@ function TextOverlayBottom({ text, textSize, fontSizePx, textAlign, textX, textY
 }
 
 /** Top gradient overlay — for FULL_IMAGE_TEXT_TOP. */
-function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs, parallaxPx }: OverlayTextProps) {
+function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, textColor, narrationDurationMs, parallaxPx }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -848,6 +896,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, n
         textAlign={align}
         textX={textX}
         textY={textY}
+        textColor={textColor}
         narrationDurationMs={narrationDurationMs}
         parallaxPx={parallaxPx}
       />
@@ -882,8 +931,8 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, n
             direction: "rtl",
             lineHeight: 1.6,
             whiteSpace: "pre-line",
-            textShadow: "0 1px 4px rgba(0,0,0,0.6)",
-            color: "white",
+            textShadow: resolveOverlayTextShadow(textColor),
+            color: resolveOverlayTextColor(textColor),
             margin: 0,
           }}
           narrationDurationMs={narrationDurationMs}
@@ -896,7 +945,7 @@ function TextOverlayTop({ text, textSize, fontSizePx, textAlign, textX, textY, n
 }
 
 /** Frosted-glass pill — for FULL_IMAGE_TEXT_CENTER. */
-function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, narrationDurationMs, parallaxPx }: OverlayTextProps) {
+function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY, textColor, narrationDurationMs, parallaxPx }: OverlayTextProps) {
   const fontSize = videoFontPx(textSize, fontSizePx);
   const align = textAlign ?? "start";
 
@@ -908,6 +957,7 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
         textAlign={align}
         textX={textX}
         textY={textY}
+        textColor={textColor}
         narrationDurationMs={narrationDurationMs}
         parallaxPx={parallaxPx}
       />
@@ -944,8 +994,8 @@ function TextOverlayCenter({ text, textSize, fontSizePx, textAlign, textX, textY
             direction: "rtl",
             lineHeight: 1.6,
             whiteSpace: "pre-line",
-            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
-            color: "white",
+            textShadow: resolveOverlayTextShadow(textColor),
+            color: resolveOverlayTextColor(textColor),
             margin: 0,
           }}
           narrationDurationMs={narrationDurationMs}
@@ -963,12 +1013,14 @@ function SplitTextBlock({
   textSize,
   fontSizePx,
   textAlign,
+  textColor,
   narrationDurationMs,
 }: {
   text: string | null;
   textSize: string | null;
   fontSizePx: number | null;
   textAlign: string;
+  textColor?: string | null;
   narrationDurationMs?: number | null;
 }) {
   if (!text) return null;
@@ -993,7 +1045,7 @@ function SplitTextBlock({
           direction: "rtl",
           lineHeight: 1.7,
           whiteSpace: "pre-line",
-          color: TEXT_DARK,
+          color: resolveSplitTextColor(textColor ?? null),
           margin: 0,
           maxWidth: "90%",
         }}
@@ -1011,12 +1063,14 @@ function TextOnlyLayout({
   textSize,
   fontSizePx,
   textAlign,
+  textColor,
   narrationDurationMs,
 }: {
   text: string | null;
   textSize: string | null;
   fontSizePx: number | null;
   textAlign: string;
+  textColor?: string | null;
   narrationDurationMs?: number | null;
 }) {
   const fontSize = fontSizePx
@@ -1042,7 +1096,7 @@ function TextOnlyLayout({
             direction: "rtl",
             lineHeight: 1.8,
             whiteSpace: "pre-line",
-            color: TEXT_DARK,
+            color: resolveSplitTextColor(textColor ?? null),
             margin: 0,
             maxWidth: "90%",
           }}
@@ -1071,6 +1125,7 @@ function CoverLayout({
   slot1,
   textContent,
   personName,
+  textColor,
   kbScale,
   narrationDurationMs,
   textParallaxPx,
@@ -1078,11 +1133,14 @@ function CoverLayout({
   slot1: SlotImageData | null;
   textContent: string | null;
   personName: string | null;
+  textColor?: string | null;
   kbScale: number;
   narrationDurationMs: number | null;
   textParallaxPx: number;
 }) {
   const hasImage = slot1 !== null;
+  const titleStyle = resolveCoverTextColor(textColor ?? null, hasImage, "title");
+  const subtitleStyle = resolveCoverTextColor(textColor ?? null, hasImage, "subtitle");
 
   return (
     <>
@@ -1150,7 +1208,8 @@ function CoverLayout({
           {personName && (
             <h1
               style={{
-                color: hasImage ? "white" : TEXT_DARK,
+                color: titleStyle.color,
+                textShadow: titleStyle.textShadow,
                 fontSize: 88,
                 fontWeight: 600,
                 lineHeight: 1.2,
@@ -1167,7 +1226,8 @@ function CoverLayout({
               style={{
                 fontFamily: ALBUM_FONT,
                 fontSize: 44,
-                color: hasImage ? "rgba(255,255,255,0.82)" : "#5A5240",
+                color: subtitleStyle.color,
+                textShadow: subtitleStyle.textShadow,
                 fontStyle: "italic",
                 lineHeight: 1.6,
                 direction: "rtl",
@@ -1200,12 +1260,14 @@ function CoverLayout({
 function DedicationLayout({
   slot1,
   textContent,
+  textColor,
   kbScale,
   narrationDurationMs,
   textParallaxPx,
 }: {
   slot1: SlotImageData | null;
   textContent: string | null;
+  textColor?: string | null;
   kbScale: number;
   narrationDurationMs: number | null;
   textParallaxPx: number;
@@ -1245,13 +1307,13 @@ function DedicationLayout({
             style={{
               fontFamily: ALBUM_FONT,
               fontSize: 45,
-              color: hasImage ? "rgba(255,255,255,0.92)" : "#5A5240",
+              color: resolveCoverTextColor(textColor ?? null, hasImage, "subtitle").color,
               fontStyle: "italic",
               lineHeight: 1.75,
               direction: "rtl",
               whiteSpace: "pre-line",
               maxWidth: "80%",
-              textShadow: hasImage ? "0 1px 3px rgba(0,0,0,0.7)" : undefined,
+              textShadow: resolveCoverTextColor(textColor ?? null, hasImage, "subtitle").textShadow,
             }}
             narrationDurationMs={narrationDurationMs}
           >
@@ -1278,12 +1340,14 @@ function DedicationLayout({
 function BackCoverLayout({
   slot1,
   textContent,
+  textColor,
   kbScale,
   narrationDurationMs,
   textParallaxPx,
 }: {
   slot1: SlotImageData | null;
   textContent: string | null;
+  textColor?: string | null;
   kbScale: number;
   narrationDurationMs: number | null;
   textParallaxPx: number;
@@ -1333,13 +1397,13 @@ function BackCoverLayout({
             style={{
               fontFamily: ALBUM_FONT,
               fontSize: 45,
-              color: hasImage ? "rgba(255,255,255,0.90)" : "#5A5240",
+              color: resolveCoverTextColor(textColor ?? null, hasImage, "subtitle").color,
               fontStyle: "italic",
               lineHeight: 1.7,
               direction: "rtl",
               whiteSpace: "pre-line",
               maxWidth: "80%",
-              textShadow: hasImage ? "0 1px 3px rgba(0,0,0,0.7)" : undefined,
+              textShadow: resolveCoverTextColor(textColor ?? null, hasImage, "subtitle").textShadow,
             }}
             narrationDurationMs={narrationDurationMs}
           >
@@ -1407,7 +1471,7 @@ interface PageContentProps extends ScenePageData {
  */
 function PageContent({
   slot1, slot2, layoutType: lt, textContent, textSize, fontSizePx,
-  textAlign: ta, textX, textY, kbScale, narrationDurationMs, textParallaxPx,
+  textAlign: ta, textX, textY, textColor, kbScale, narrationDurationMs, textParallaxPx,
   pageType, personName,
 }: PageContentProps) {
   // ── Special page types — dedicated layouts ─────────────────────────────
@@ -1417,6 +1481,7 @@ function PageContent({
         slot1={slot1}
         textContent={textContent}
         personName={personName ?? null}
+        textColor={textColor}
         kbScale={kbScale}
         narrationDurationMs={narrationDurationMs}
         textParallaxPx={textParallaxPx}
@@ -1429,6 +1494,7 @@ function PageContent({
       <DedicationLayout
         slot1={slot1}
         textContent={textContent}
+        textColor={textColor}
         kbScale={kbScale}
         narrationDurationMs={narrationDurationMs}
         textParallaxPx={textParallaxPx}
@@ -1441,6 +1507,7 @@ function PageContent({
       <BackCoverLayout
         slot1={slot1}
         textContent={textContent}
+        textColor={textColor}
         kbScale={kbScale}
         narrationDurationMs={narrationDurationMs}
         textParallaxPx={textParallaxPx}
@@ -1458,6 +1525,7 @@ function PageContent({
     textAlign: align,
     textX: textX ?? null,
     textY: textY ?? null,
+    textColor: textColor ?? null,
     narrationDurationMs,
     parallaxPx: textParallaxPx,
   };
@@ -1472,6 +1540,7 @@ function PageContent({
           textSize={textSize}
           fontSizePx={fontSizePx}
           textAlign={align}
+          textColor={textColor}
           narrationDurationMs={narrationDurationMs}
         />
       );
@@ -1488,6 +1557,7 @@ function PageContent({
               textSize={textSize}
               fontSizePx={fontSizePx}
               textAlign={align}
+              textColor={textColor}
               narrationDurationMs={narrationDurationMs}
             />
           </div>
@@ -1503,6 +1573,7 @@ function PageContent({
               textSize={textSize}
               fontSizePx={fontSizePx}
               textAlign={align}
+              textColor={textColor}
               narrationDurationMs={narrationDurationMs}
             />
           </div>
@@ -1524,6 +1595,7 @@ function PageContent({
               textSize={textSize}
               fontSizePx={fontSizePx}
               textAlign={align}
+              textColor={textColor}
               narrationDurationMs={narrationDurationMs}
             />
           </div>
@@ -1539,6 +1611,7 @@ function PageContent({
               textSize={textSize}
               fontSizePx={fontSizePx}
               textAlign={align}
+              textColor={textColor}
               narrationDurationMs={narrationDurationMs}
             />
           </div>
@@ -1575,8 +1648,8 @@ function PageContent({
                   fontFamily: ALBUM_FONT,
                   fontSize: videoFontPx(textSize, fontSizePx),
                   direction: "rtl",
-                  color: "white",
-                  textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                  color: resolveOverlayTextColor(textColor ?? null),
+                  textShadow: resolveOverlayTextShadow(textColor ?? null),
                   margin: 0,
                   whiteSpace: "pre-line",
                 }}
@@ -1647,6 +1720,7 @@ export function SceneComposition({
   textAlign,
   textX,
   textY,
+  textColor,
   secondPage,
   motionPreset,
   transitionIn,
@@ -1935,6 +2009,7 @@ export function SceneComposition({
                     textAlign={textAlign}
                     textX={textX}
                     textY={textY}
+                    textColor={textColor}
                     kbScale={kbScale}
                     narrationDurationMs={narrationDurationMs}
                     textParallaxPx={textParallaxPx}
@@ -2004,6 +2079,7 @@ export function SceneComposition({
               textAlign={textAlign}
               textX={textX}
               textY={textY}
+              textColor={textColor}
               kbScale={kbScale}
               narrationDurationMs={narrationDurationMs}
               textParallaxPx={textParallaxPx}

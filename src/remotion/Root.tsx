@@ -41,6 +41,7 @@ export function Root() {
           textAlign: "center",
           textX: null,
           textY: null,
+          textColor: null,
           secondPage: null,
           motionPreset: "ken_burns",
           transitionIn: "fade",

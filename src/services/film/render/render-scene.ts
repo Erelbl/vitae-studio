@@ -611,6 +611,7 @@ const DEFAULT_PAGE_DATA: ScenePageData = {
   textAlign: "start",
   textX: null,
   textY: null,
+  textColor: null,
   slot1: null,
   slot2: null,
 };
@@ -635,7 +636,7 @@ async function fetchScenePageData(
   const { data: pages } = await adminClient
     .from("pages")
     .select(
-      "id, layout_type, text_content, text_size, font_size_px, text_align, text_x, text_y, illustration_storage_path"
+      "id, layout_type, text_content, text_size, font_size_px, text_align, text_x, text_y, text_color, illustration_storage_path"
     )
     .in("id", pageIds);
 
@@ -656,7 +657,7 @@ async function fetchScenePageData(
   // 2. Fetch page_images for ALL pages at once
   const { data: allPageImages } = await adminClient
     .from("page_images")
-    .select("page_id, slot, photo_id, crop_x, crop_y, scale, frame_style, crop_inset_top, crop_inset_right, crop_inset_bottom, crop_inset_left")
+    .select("page_id, slot, photo_id, manual_image_path, crop_x, crop_y, scale, frame_style, crop_inset_top, crop_inset_right, crop_inset_bottom, crop_inset_left")
     .in("page_id", pageIds)
     .in("slot", [1, 2]);
 
@@ -712,6 +713,7 @@ async function fetchScenePageData(
         crop_y: number;
         scale: number;
         photo_id: string | null;
+        manual_image_path: string | null;
         frame_style: string | null;
         crop_inset_top: number;
         crop_inset_right: number;
@@ -725,6 +727,7 @@ async function fetchScenePageData(
         crop_y: (pi.crop_y as number) ?? 0.5,
         scale: (pi.scale as number) ?? 1,
         photo_id: pi.photo_id as string | null,
+        manual_image_path: (pi.manual_image_path as string | null) ?? null,
         frame_style: (pi.frame_style as string | null) ?? null,
         crop_inset_top:    (pi.crop_inset_top    as number) ?? 0,
         crop_inset_right:  (pi.crop_inset_right  as number) ?? 0,
@@ -735,6 +738,25 @@ async function fetchScenePageData(
 
     async function buildSlot(slot: 1 | 2): Promise<SlotImageData | null> {
       const slotData = slotMap.get(slot);
+
+      // manual_image_path takes priority over photo-based illustration path,
+      // matching the preview loader's resolution order.
+      if (slotData?.manual_image_path) {
+        const url = await resolveSlotUrl(slotData.manual_image_path);
+        if (url) {
+          return {
+            url,
+            crop_x:   slotData.crop_x,
+            crop_y:   slotData.crop_y,
+            scale:    slotData.scale,
+            frameStyle:      slotData.frame_style,
+            cropInsetTop:    slotData.crop_inset_top,
+            cropInsetRight:  slotData.crop_inset_right,
+            cropInsetBottom: slotData.crop_inset_bottom,
+            cropInsetLeft:   slotData.crop_inset_left,
+          };
+        }
+      }
 
       if (slotData?.photo_id) {
         const illustPath = photoIllustrationMap.get(slotData.photo_id);
@@ -783,6 +805,7 @@ async function fetchScenePageData(
       textAlign: (page.text_align as string) ?? "start",
       textX: (page.text_x as number | null) ?? null,
       textY: (page.text_y as number | null) ?? null,
+      textColor: (page.text_color as string | null) ?? null,
     });
   }
 
@@ -1152,6 +1175,7 @@ export async function renderScene(
       textAlign: primaryPage.textAlign,
       textX: primaryPage.textX,
       textY: primaryPage.textY,
+      textColor: primaryPage.textColor ?? null,
       // Kling video for the right (primary) page — null → static resolved image.
       // For unified spread scenes rightKlingUrl is always null (spread video used instead).
       klingVideoUrl: rightKlingUrl ?? null,
