@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import type { LayoutType, PageImageSlot, PreviewPage, TextAlign, TextColor } from "@/types/page";
 import { LAYOUT_TYPES } from "@/types/page";
+import { ALBUM_TEXT_DEFAULTS } from "@/lib/album-text-defaults";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ function legacyTextSizeToPx(ts: EditorPage["text_size"]): number {
     case "sm": return 12;
     case "lg": return 18;
     case "xl": return 22;
-    default:   return 15;
+    default:   return ALBUM_TEXT_DEFAULTS.fontSizePx;
   }
 }
 
@@ -525,9 +526,9 @@ function PageEditorPanel({
   const [fontSizePx, setFontSizePx] = useState<number>(
     page.font_size_px ?? legacyTextSizeToPx(page.text_size)
   );
-  const [textAlign, setTextAlign] = useState<TextAlign>(page.text_align ?? "center");
-  const [textColor, setTextColor] = useState<TextColor>(page.text_color ?? "white");
-  const [lineHeight, setLineHeight] = useState<number>(page.line_height ?? 1.4);
+  const [textAlign, setTextAlign] = useState<TextAlign>(page.text_align ?? ALBUM_TEXT_DEFAULTS.textAlign);
+  const [textColor, setTextColor] = useState<TextColor>(page.text_color ?? ALBUM_TEXT_DEFAULTS.textColor);
+  const [lineHeight, setLineHeight] = useState<number>(page.line_height ?? ALBUM_TEXT_DEFAULTS.lineHeight);
   const [textWidthPct, setTextWidthPct] = useState<number>(page.text_width_pct ?? 84);
   const [bgColor, setBgColor] = useState<string | null>(page.bg_color ?? null);
 

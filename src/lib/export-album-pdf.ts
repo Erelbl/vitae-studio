@@ -16,6 +16,7 @@ import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 import type { PreviewData, PreviewPage, LayoutType, PageImageSlot, TextColor } from "@/types/page";
+import { ALBUM_TEXT_DEFAULTS } from "@/lib/album-text-defaults";
 import { parseCoverText, resolveCoverTextStyle } from "@/components/album/AlbumPageView";
 import {
   isFullImagePage,
@@ -130,7 +131,7 @@ function resolveTextSize(textSize?: string | null, fontSizePx?: number | null): 
       case "sm": base = 12; break;
       case "lg": base = 18; break;
       case "xl": base = 22; break;
-      default:   base = 15;
+      default:   base = ALBUM_TEXT_DEFAULTS.fontSizePx;
     }
   }
   return sp(base);
@@ -198,13 +199,13 @@ function buildTextOverlay(
     page.text_size as string | null,
     page.font_size_px
   );
-  const align = page.text_align ?? "center";
-  const isBlack = page.text_color === "black";
+  const align = page.text_align ?? ALBUM_TEXT_DEFAULTS.textAlign;
+  const isBlack = (page.text_color ?? ALBUM_TEXT_DEFAULTS.textColor) === "black";
   const color = isBlack ? "#1a1a1a" : "white";
   const shadow = isBlack
     ? "0 1px 2px rgba(255,255,255,0.7)"
     : "0 1px 4px rgba(0,0,0,0.6)";
-  const lh = String(page.line_height ?? 1.4);
+  const lh = String(page.line_height ?? ALBUM_TEXT_DEFAULTS.lineHeight);
   const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : "84%";
 
   // Custom position (admin-dragged)
@@ -515,12 +516,12 @@ function buildPageElement(page: PreviewPage, personName: string): PageElementRes
     });
     if (page.text_content) {
       const p = document.createElement("p");
-      const lh = String(page.line_height ?? 1.4);
+      const lh = String(page.line_height ?? ALBUM_TEXT_DEFAULTS.lineHeight);
       const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : undefined;
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
-        textAlign: page.text_align ?? "center",
+        textAlign: page.text_align ?? ALBUM_TEXT_DEFAULTS.textAlign,
         lineHeight: lh,
         whiteSpace: "pre-line",
         color: "#1a1a1a",
@@ -553,12 +554,12 @@ function buildPageElement(page: PreviewPage, personName: string): PageElementRes
     });
     if (page.text_content) {
       const p = document.createElement("p");
-      const lh = String(page.line_height ?? 1.4);
+      const lh = String(page.line_height ?? ALBUM_TEXT_DEFAULTS.lineHeight);
       const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : undefined;
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
-        textAlign: page.text_align ?? "center",
+        textAlign: page.text_align ?? ALBUM_TEXT_DEFAULTS.textAlign,
         lineHeight: lh,
         whiteSpace: "pre-line",
         color: "#1a1a1a",
@@ -601,12 +602,12 @@ function buildPageElement(page: PreviewPage, personName: string): PageElementRes
     });
     if (page.text_content) {
       const p = document.createElement("p");
-      const lh = String(page.line_height ?? 1.4);
+      const lh = String(page.line_height ?? ALBUM_TEXT_DEFAULTS.lineHeight);
       const widthPct = page.text_width_pct != null ? `${page.text_width_pct}%` : undefined;
       Object.assign(p.style, {
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
-        textAlign: page.text_align ?? "center",
+        textAlign: page.text_align ?? ALBUM_TEXT_DEFAULTS.textAlign,
         lineHeight: lh,
         whiteSpace: "pre-line",
         color: "#1a1a1a",
@@ -652,7 +653,7 @@ function buildPageElement(page: PreviewPage, personName: string): PageElementRes
         fontFamily: "YardenAlbum, serif",
         fontSize: resolveTextSize(page.text_size as string | null, page.font_size_px),
         color: "white",
-        textAlign: page.text_align ?? "center",
+        textAlign: page.text_align ?? ALBUM_TEXT_DEFAULTS.textAlign,
         zIndex: "10",
       });
       caption.textContent = page.text_content;

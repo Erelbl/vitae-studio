@@ -1,4 +1,5 @@
 import type { LayoutType, PageImageSlot, PreviewPage, TextAlign, TextColor, TextSize } from "@/types/page";
+import { ALBUM_TEXT_DEFAULTS } from "@/lib/album-text-defaults";
 
 interface AlbumPageViewProps {
   page: PreviewPage;
@@ -336,11 +337,11 @@ function ContentPage({ page, editMode }: { page: PreviewPage; editMode?: boolean
   const fs2 = slot2.frameStyle;
   const ts = page.text_size;
   const fspx = page.font_size_px ?? null;
-  const align = (page.text_align ?? "center") as TextAlign;
+  const align = (page.text_align ?? ALBUM_TEXT_DEFAULTS.textAlign) as TextAlign;
   const tx = page.text_x ?? null;
   const ty = page.text_y ?? null;
-  const tc = (page.text_color ?? null) as TextColor | null;
-  const lh = page.line_height ?? null;
+  const tc = (page.text_color ?? ALBUM_TEXT_DEFAULTS.textColor) as TextColor;
+  const lh = page.line_height ?? ALBUM_TEXT_DEFAULTS.lineHeight;
   const twp = page.text_width_pct ?? null;
   const bgColor = page.bg_color ?? null;
 
@@ -700,7 +701,7 @@ function resolveTextSize(textSize?: TextSize | null, fontSizePx?: number | null)
     case "lg": return "18px";
     case "xl": return "22px";
     case "md":
-    default:   return "15px";
+    default:   return `${ALBUM_TEXT_DEFAULTS.fontSizePx}px`;
   }
 }
 
