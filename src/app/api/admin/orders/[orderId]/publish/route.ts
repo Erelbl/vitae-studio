@@ -30,7 +30,7 @@ export async function POST(
   const { data: order, error: fetchError } = await adminClient
     .from("orders")
     .select(
-      "id, status, buyer_email, buyer_name, person_name, access_token, access_token_expires_at, preview_round, preview_status"
+      "id, status, buyer_email, buyer_name, person_name, access_token, access_token_expires_at, preview_round, preview_status, completed_at"
     )
     .eq("id", orderId)
     .single();
@@ -41,11 +41,21 @@ export async function POST(
 
   const currentStatus = order.status as OrderStatus;
 
-  // Allow publish from preview_ready, admin_review, or re-publish when
-  // already approved with changes_requested (iteration support)
-  const isRepublish =
-    currentStatus === "approved" &&
-    order.preview_status === "changes_requested";
+  // Truly terminal states: no further preview rounds once delivered/completed.
+  const isTerminal = currentStatus === "delivered" || Boolean(order.completed_at);
+  if (isTerminal) {
+    return NextResponse.json(
+      {
+        error: `Cannot publish a new preview: order is in a terminal state ("${currentStatus}").`,
+      },
+      { status: 409 }
+    );
+  }
+
+  // Once an order has been published at least once (status "approved"), admin
+  // can always publish another preview round — regardless of whether the
+  // previous round was approved, has no feedback yet, or had changes requested.
+  const isRepublish = currentStatus === "approved";
 
   if (!isRepublish) {
     try {
@@ -81,7 +91,9 @@ export async function POST(
   const now = new Date().toISOString();
   const newPreviewRound = ((order.preview_round as number) || 0) + 1;
 
-  // Update order: status + preview loop fields
+  // Update order: status + preview loop fields.
+  // Every new publish starts a fresh review round: it is not yet approved,
+  // and any feedback/approval from a prior round no longer applies.
   const { error: updateError } = await adminClient
     .from("orders")
     .update({
@@ -90,6 +102,9 @@ export async function POST(
       preview_status: "sent_to_customer",
       preview_sent_at: now,
       preview_round: newPreviewRound,
+      preview_approved_at: null,
+      preview_feedback: null,
+      preview_feedback_at: null,
       ...tokenUpdate,
     })
     .eq("id", orderId);

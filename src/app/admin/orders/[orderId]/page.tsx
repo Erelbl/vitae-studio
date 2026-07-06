@@ -345,9 +345,15 @@ export default async function AdminOrderDetailPage({
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
 
   const previewStatus = (order.preview_status as PreviewStatus | null) || "draft";
+  // Admin can always publish another preview round once the order has entered
+  // the "approved" (published) status, regardless of the current preview_status
+  // (sent/approved/changes_requested) — only truly terminal states block it.
+  const isTerminalForPublish =
+    currentStatus === "delivered" || Boolean(order.completed_at);
   const canPublish =
-    PUBLISHABLE_STATUSES.includes(currentStatus) ||
-    (currentStatus === "approved" && previewStatus === "changes_requested");
+    !isTerminalForPublish &&
+    (PUBLISHABLE_STATUSES.includes(currentStatus) || currentStatus === "approved");
+  const hasBeenPublished = (order.preview_round as number) > 0;
   const isGenerating = GENERATING_IN_PROGRESS_STATUSES.includes(currentStatus);
   const generateDisabled = isGenerating || currentStatus === "delivered";
   const pollerActive = isGenerating;
@@ -451,7 +457,11 @@ export default async function AdminOrderDetailPage({
               {pageCount > 0 && !isGenerating && (
                 <ImproveRhymeButton orderId={orderId} disabled={generateDisabled} />
               )}
-              <PublishButton orderId={orderId} disabled={!canPublish} />
+              <PublishButton
+                orderId={orderId}
+                disabled={!canPublish}
+                isRepublish={hasBeenPublished}
+              />
               {currentStatus === "approved" && previewStatus === "approved" && (
                 <span className="text-sm text-green-700 font-medium">✓ אושר ע״י הלקוח</span>
               )}

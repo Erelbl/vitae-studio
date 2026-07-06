@@ -7,16 +7,21 @@ import { Button } from "@/components/ui/button";
 export function PublishButton({
   orderId,
   disabled = false,
+  isRepublish = false,
 }: {
   orderId: string;
   disabled?: boolean;
+  isRepublish?: boolean;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handlePublish() {
-    if (!confirm("לפרסם את האלבום ללקוח? הלקוח יוכל לצפות בתצוגה המקדימה לאחר מכן.")) {
+    const confirmMessage = isRepublish
+      ? "לפרסם סבב תצוגה מקדימה נוסף ללקוח? הסטטוס יתאפס לממתין לבדיקת הלקוח."
+      : "לפרסם את האלבום ללקוח? הלקוח יוכל לצפות בתצוגה המקדימה לאחר מכן.";
+    if (!confirm(confirmMessage)) {
       return;
     }
     setLoading(true);
@@ -44,7 +49,7 @@ export function PublishButton({
         onClick={handlePublish}
         disabled={disabled || loading}
       >
-        {loading ? "מפרסם..." : "פרסם ללקוח"}
+        {loading ? "מפרסם..." : isRepublish ? "פרסם שוב ללקוח" : "פרסם ללקוח"}
       </Button>
       {error && <span className="text-sm text-destructive">{error}</span>}
     </div>
