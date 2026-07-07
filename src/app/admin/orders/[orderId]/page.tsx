@@ -59,9 +59,6 @@ const OCCASION_LABELS: Record<string, string> = {
   other: "אחר",
 };
 
-// Statuses where "פרסם ללקוח" is enabled
-const PUBLISHABLE_STATUSES: OrderStatus[] = ["preview_ready", "admin_review"];
-
 // Statuses that indicate generation is actively running
 const GENERATING_IN_PROGRESS_STATUSES: OrderStatus[] = [
   "generating_text",
@@ -345,14 +342,15 @@ export default async function AdminOrderDetailPage({
   const responses = (questionnaireRow?.responses ?? {}) as Partial<QuestionnaireResponses>;
 
   const previewStatus = (order.preview_status as PreviewStatus | null) || "draft";
-  // Admin can always publish another preview round once the order has entered
-  // the "approved" (published) status, regardless of the current preview_status
-  // (sent/approved/changes_requested) — only truly terminal states block it.
+  // Publish eligibility depends ONLY on: generated pages existing, and the
+  // order not being in a truly terminal state. It must never depend on
+  // preview_round / preview_status / preview_sent_at / preview_approved_at /
+  // preview_feedback(_at), nor on order.status beyond the terminal check —
+  // otherwise republishing breaks whenever status drifts away from "approved"
+  // (e.g. after a story/illustration regeneration cycle).
   const isTerminalForPublish =
     currentStatus === "delivered" || Boolean(order.completed_at);
-  const canPublish =
-    !isTerminalForPublish &&
-    (PUBLISHABLE_STATUSES.includes(currentStatus) || currentStatus === "approved");
+  const canPublish = !isTerminalForPublish && pageCount > 0;
   const hasBeenPublished = (order.preview_round as number) > 0;
   const isGenerating = GENERATING_IN_PROGRESS_STATUSES.includes(currentStatus);
   const generateDisabled = isGenerating || currentStatus === "delivered";

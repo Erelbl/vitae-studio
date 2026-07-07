@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertTransition } from "@/lib/state-machine";
 import { sendPreviewReadyEmail } from "@/lib/email/send-preview-ready";
 import {
   generateAccessToken,
@@ -40,34 +39,38 @@ export async function POST(
   }
 
   const currentStatus = order.status as OrderStatus;
+  const currentPreviewRound = (order.preview_round as number) || 0;
 
   // Truly terminal states: no further preview rounds once delivered/completed.
+  // This is the ONLY status-based gate — publish eligibility must never depend
+  // on preview_round, preview_sent_at, preview_approved_at, preview_feedback(_at),
+  // preview_status, or how many times the order has been published before.
   const isTerminal = currentStatus === "delivered" || Boolean(order.completed_at);
-  if (isTerminal) {
+
+  // Real safety gate #2: there must be generated album pages to preview.
+  const { count: pagesCount, error: pagesCountError } = await adminClient
+    .from("pages")
+    .select("id", { count: "exact", head: true })
+    .eq("order_id", orderId);
+
+  const hasPages = !pagesCountError && (pagesCount ?? 0) > 0;
+  const allowed = hasPages && !isTerminal;
+
+  console.log(
+    `[publish] order=${orderId} status=${currentStatus} preview_status=${order.preview_status} preview_round=${currentPreviewRound} pagesCount=${pagesCount ?? 0} allowed=${allowed}${
+      allowed ? "" : ` reason=${isTerminal ? `terminal_status(${currentStatus})` : "no_pages_generated"}`
+    }`
+  );
+
+  if (!allowed) {
     return NextResponse.json(
       {
-        error: `Cannot publish a new preview: order is in a terminal state ("${currentStatus}").`,
+        error: isTerminal
+          ? `Cannot publish a new preview: order is in a terminal state ("${currentStatus}").`
+          : "Cannot publish: order has no generated pages yet.",
       },
       { status: 409 }
     );
-  }
-
-  // Once an order has been published at least once (status "approved"), admin
-  // can always publish another preview round — regardless of whether the
-  // previous round was approved, has no feedback yet, or had changes requested.
-  const isRepublish = currentStatus === "approved";
-
-  if (!isRepublish) {
-    try {
-      assertTransition(currentStatus, "approved");
-    } catch {
-      return NextResponse.json(
-        {
-          error: `Cannot publish from status "${currentStatus}". Order must be in preview_ready or admin_review.`,
-        },
-        { status: 409 }
-      );
-    }
   }
 
   // Ensure a valid access token exists (refresh if expired or missing)
@@ -89,7 +92,7 @@ export async function POST(
   }
 
   const now = new Date().toISOString();
-  const newPreviewRound = ((order.preview_round as number) || 0) + 1;
+  const newPreviewRound = currentPreviewRound + 1;
 
   // Update order: status + preview loop fields.
   // Every new publish starts a fresh review round: it is not yet approved,
